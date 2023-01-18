@@ -1,0 +1,10 @@
+{
+  "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
+  "integration_type": "orchestrator",
+  "name": "Sample Orchestrator Extension",
+  "status": "pilot",
+  "description": "A sample orchestrator with a sample certificate store type for testing and education.",
+  "link_github": false,
+  "update_catalog": false,
+  "support_level": "kf-community"
+}
