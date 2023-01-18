@@ -122,40 +122,40 @@ namespace Keyfactor.Extensions.Orchestrator.SOS
                 X509Certificate2 returncert = submitReenrollment.Invoke(csr64);
 
 
-                SampleCertStore LocalCertStore = JsonConvert.DeserializeObject<SampleCertStore>
+                KubernetesCertStore LocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>
                     (File.ReadAllText(storepath));
                 Cert newcert = new Cert();
 
-                newcert.alias = returncert.Thumbprint.ToString();
-                newcert.certdata = returncert.GetRawCertDataString();
-                newcert.privatekey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
+                newcert.Alias = returncert.Thumbprint.ToString();
+                newcert.CertData = returncert.GetRawCertDataString();
+                newcert.PrivateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
 
-                if (config.JobProperties["sampleentryparameter1"].ToString() != null || config.JobProperties["sampleentryparameter1"].ToString() != "")
-                {
-                    newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
-                }
-                else
-                {
-                    newcert.sampleentryparameter1 = "";
-                }
-                try
-                {
-                    if (config.JobProperties["sampleentryparameter2"] != null || config.JobProperties["sampleentryparameter2"].ToString() != "")
-                    {
-                        newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
-                    }
-                    else
-                    {
-                        newcert.sampleentryparameter2 = "";
-                    }
-                }
-                catch (Exception)
-                {
-                    newcert.sampleentryparameter2 = "";
-                }
+                // if (config.JobProperties["sampleentryparameter1"].ToString() != null || config.JobProperties["sampleentryparameter1"].ToString() != "")
+                // {
+                //     newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
+                // }
+                // else
+                // {
+                //     newcert.sampleentryparameter1 = "";
+                // }
+                // try
+                // {
+                //     if (config.JobProperties["sampleentryparameter2"] != null || config.JobProperties["sampleentryparameter2"].ToString() != "")
+                //     {
+                //         newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
+                //     }
+                //     else
+                //     {
+                //         newcert.sampleentryparameter2 = "";
+                //     }
+                // }
+                // catch (Exception)
+                // {
+                //     newcert.sampleentryparameter2 = "";
+                // }
                 Cert[] newcertarray = { newcert };
-                newcertarray = newcertarray.Concat(LocalCertStore.certs).ToArray();
-                LocalCertStore.certs = newcertarray;
+                newcertarray = newcertarray.Concat(LocalCertStore.Certs).ToArray();
+                LocalCertStore.Certs = newcertarray;
 
                 string convertedcertstore = JsonConvert.SerializeObject(LocalCertStore);
                 File.WriteAllText(storepath, convertedcertstore);

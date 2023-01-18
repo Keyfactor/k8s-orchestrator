@@ -71,20 +71,20 @@ namespace Keyfactor.Extensions.Orchestrator.SOS
                         // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
                         // 2) Custom logic to add certificate to certificate store (config.CertificateStoreDetails.StorePath) possibly using alias as an identifier if applicable (config.JobCertificate.Alias).  Use alias and overwrite flag (config.Overwrite)
                         //     to determine if job should overwrite an existing certificate in the store, for example a renewal.
-                        SampleCertStore LocalCertStore = JsonConvert.DeserializeObject<SampleCertStore>(File.ReadAllText(storepath));
+                        KubernetesCertStore LocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storepath));
                         Cert newcert = new Cert();
                         byte[] bytes = Convert.FromBase64String(config.JobCertificate.Contents.ToString());
                         var cert = new X509Certificate2(bytes);
 
-                        newcert.alias = cert.Thumbprint.ToString();
-                        newcert.certdata = config.JobCertificate.Contents.ToString();
-                        newcert.privatekey = config.JobCertificate.PrivateKeyPassword;
+                        newcert.Alias = cert.Thumbprint.ToString();
+                        newcert.CertData = config.JobCertificate.Contents.ToString();
+                        newcert.PrivateKey = config.JobCertificate.PrivateKeyPassword;
 
-                        newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
-                        newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
+                        // newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
+                        // newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
                         Cert[] newcertarray = { newcert };
-                        newcertarray = newcertarray.Concat(LocalCertStore.certs).ToArray();
-                        LocalCertStore.certs = newcertarray;
+                        newcertarray = newcertarray.Concat(LocalCertStore.Certs).ToArray();
+                        LocalCertStore.Certs = newcertarray;
 
                         string convertedcertstore = JsonConvert.SerializeObject(LocalCertStore);
                         File.WriteAllText(storepath, convertedcertstore);
@@ -94,12 +94,12 @@ namespace Keyfactor.Extensions.Orchestrator.SOS
                         //Code logic to:
                         // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
                         // 2) Custom logic to remove the certificate in a certificate store (config.CertificateStoreDetails.StorePath), possibly using alias (config.JobCertificate.Alias) or certificate thumbprint to identify the certificate (implementation dependent)
-                        SampleCertStore RemoveLocalCertStore= JsonConvert.DeserializeObject<SampleCertStore>(File.ReadAllText(storepath));
+                        KubernetesCertStore RemoveLocalCertStore= JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storepath));
                         var removealias = config.JobCertificate.Alias.ToString();
-                        var converted = RemoveLocalCertStore.certs.ToList();
-                        converted.RemoveAll(x => x.alias == removealias);
+                        var converted = RemoveLocalCertStore.Certs.ToList();
+                        converted.RemoveAll(x => x.Alias == removealias);
                         var rmarray = converted.ToArray<Cert>();
-                        RemoveLocalCertStore.certs = rmarray;
+                        RemoveLocalCertStore.Certs = rmarray;
                         string remconvertedcertstore = JsonConvert.SerializeObject(RemoveLocalCertStore);
                         File.WriteAllText(storepath, remconvertedcertstore);
                         break;
@@ -110,7 +110,7 @@ namespace Keyfactor.Extensions.Orchestrator.SOS
                         // 2) Custom logic to first check if the store already exists and add it if not.  If it already exists, implementation dependent as to how to handle - error, warning, success
                         if (!File.Exists(storepath))
                         {
-                            SampleCertStore newstore = new SampleCertStore();
+                            KubernetesCertStore newstore = new KubernetesCertStore();
                             string newstoreconv = JsonConvert.SerializeObject(newstore);
                             File.WriteAllText(storepath, newstoreconv);
                         }
