@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <RootNamespace>Keyfactor.Extensions.Orchestrator.SOS</RootNamespace>
+    <RootNamespace>Keyfactor.Extensions.Orchestrator.Kube</RootNamespace>
     <LangVersion>latest</LangVersion>
   </PropertyGroup>
 

@@ -10,17 +10,15 @@
 
 using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Security.Cryptography.X509Certificates;
+
 using Keyfactor.Logging;
-using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Orchestrators.Common.Enums;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using Org.BouncyCastle.Asn1.Pkcs;
-using Org.BouncyCastle.Utilities;
-using System.Security.Cryptography;
 
-namespace Keyfactor.Extensions.Orchestrator.SOS;
+namespace Keyfactor.Extensions.Orchestrator.Kube;
 
 // The Inventory class implementes IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
 //  and return those certificates back to Keyfactor for storing in its database.  Private keys will NOT be passed back to Keyfactor Command 
@@ -41,6 +39,13 @@ public class Inventory : IInventoryJobExtension
 
         public Cert[] Certs { get; set; }
     }
+    
+    public class KubeCreds
+    {
+        public string KubeServer { get; set; } = "";
+        public string KubeToken { get; set; } = "";
+        public string KubeCert { get; set; } = "";
+    }
 
     public class Cert
     {
@@ -54,7 +59,7 @@ public class Inventory : IInventoryJobExtension
 
     //Necessary to implement IInventoryJobExtension but not used.  Leave as empty string.
     // public string ExtensionName => "Kubernetes";
-    public string ExtensionName => "SOS";
+    public string ExtensionName => "Kubernetes";
 
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
@@ -81,9 +86,18 @@ public class Inventory : IInventoryJobExtension
         var properties = config.CertificateStoreDetails.Properties;
         var storepassword = config.CertificateStoreDetails.StorePassword;
 
+        logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
         logger.LogInformation($"Processing store path: {storepath}");
         logger.LogTrace($"Store properties: {properties}");
         logger.LogTrace($"Store password: {storepassword}"); // TODO: Remove this before production
+        logger.LogDebug($"Server: { config.CertificateStoreDetails.ClientMachine }");
+        logger.LogDebug($"Store Path: { config.CertificateStoreDetails.StorePath }");
+        logger.LogDebug($"Job Properties:");
+        foreach (KeyValuePair<string, object> keyValue in config.JobProperties ?? new Dictionary<string,object>())
+        {
+            logger.LogDebug($"    {keyValue.Key}: {keyValue.Value}");
+        }
+
         //List<AgentCertStoreInventoryItem> is the collection that the interface expects to return from this job.  It will contain a collection of certificates found in the store along with other information about those certificates
         var inventoryItems = new List<CurrentInventoryItem>();
 
@@ -95,6 +109,9 @@ public class Inventory : IInventoryJobExtension
             // 2) Custom logic to retrieve certificates from certificate store.
             // read file into a string and deserialize JSON to a type
             // string storetypename = "Kubernetes";
+            
+            // Load credentials file from localCertStore.KubeSvcCreds // TODO: Implement config passed from store params or password input
+            // var kubeCreds = JsonConvert.DeserializeObject<KubeCreds>(File.ReadAllText(localCertStore.KubeSvcCreds));
             var c = new KubeCertificateManagerClient("", "default");
 
             if (config.CertificateStoreDetails.Properties != "")
@@ -106,6 +123,12 @@ public class Inventory : IInventoryJobExtension
                 logger.LogDebug($"KubernetesCertStore: {localCertStore.KubeSecretType}");
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.KubeSvcCreds}");
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.Certs}");
+                
+                ///TODO: What is _resolver?
+                // string userName = PAMUtilities.ResolvePAMField(_resolver, logger, "Server User Name", config.ServerUsername);
+                // string userPassword = PAMUtilities.ResolvePAMField(_resolver, logger, "Server Password", config.ServerPassword);
+                // string storePassword = PAMUtilities.ResolvePAMField(_resolver, logger, "Store Password", config.CertificateStoreDetails.StorePassword);
+
                 switch (localCertStore.KubeSecretType)
                 {
                     case "secret":

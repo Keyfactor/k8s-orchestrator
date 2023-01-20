@@ -20,8 +20,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.IO;
 using System.Security.Cryptography;
 
-using static Keyfactor.Extensions.Orchestrator.SOS.Inventory;
-namespace Keyfactor.Extensions.Orchestrator.SOS
+using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
+namespace Keyfactor.Extensions.Orchestrator.Kube
 {
     // The Reenrollment class implementes IAgentJobExtension and is meant to:
     //  1) Generate a new public/private keypair locally

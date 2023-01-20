@@ -9,7 +9,7 @@ The compiled binaries can be deployed to the extensions folder at the location o
 installation. However, to get the most use out of this extension, it is recommended to use the Visual Studio project.
 You should either install Visual Studio on the machine you run the orchestrator or link the debugger remotely. 
 In case you setup Visual Studio locally, you could use a symlink to link the Visual studio output directory to 
-the extensions folder, specifically making a subfolder named "SOS". Once this is done and the code is compiled, 
+the extensions folder, specifically making a subfolder named "Kubernetes". Once this is done and the code is compiled, 
 you can attach the Visual Studio debugger to the Universal Orchestrator process for efficient debugging and variable inspection.
 The Sample Key Store certificate store type also needs to be added to Keyfactor. The exact settings are available in the install folder
 in this repository. This extension is configured to automatically log all incoming data it receives from the Universal Orchestrator.
@@ -33,7 +33,7 @@ This data appears as follows"
 	"JobProperties":null,
 	"JobTypeId":"000",
 	"JobId":"0000",
-	"Capability":"CertStores.SOS.Inventory"
+	"Capability":"CertStores.Kube.Inventory"
 }
 
 ```

@@ -1,21 +1,47 @@
 ﻿{
 	"extensions": {
 		"Keyfactor.Orchestrators.Extensions.IOrchestratorJobExtension": {
-			"CertStores.SOS.Inventory": {
-				"assemblypath": "Keyfactor.Orchestrators.SOS.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.SOS.Inventory"
+			"CertStores.KubeSecret.Inventory": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Secret.Inventory"
 			},
-			"CertStores.SOS.Discovery": {
-				"assemblypath": "Keyfactor.Orchestrators.SOS.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.SOS.Discovery"
+			"CertStores.KubeSecret.Discovery": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Secret.Discovery"
 			},
-			"CertStores.SOS.Management": {
-				"assemblypath": "Keyfactor.Orchestrators.SOS.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.SOS.Management"
+			"CertStores.KubeSecret.Management": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Secret.Management"
 			},
-			"CertStores.SOS.Reenrollment": {
-				"assemblypath": "Keyfactor.Orchestrators.SOS.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.SOS.Reenrollment"
+			"CertStores.KubeSecret.Reenrollment": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Secret.Reenrollment"
+			},
+
+			"CertStores.KubeTLSSecret.Inventory": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.TLSSecret.Inventory"
+			},
+			"CertStores.KubeTLSSecret.Discovery": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.TLSSecret..Discovery"
+			},
+			"CertStores.KubeTLSSecret.Management": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.TLSSecret.Management"
+			},
+			"CertStores.KubeTLSSecret.Reenrollment": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.TLSSecret.Reenrollment"
+			},
+
+			"CertStores.KubeCertificate.Inventory": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Certificate.Inventory"
+			},
+			"CertStores.KubeCertificate.Discovery": {
+				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Certificate.Discovery"
 			}
 		}
 	}

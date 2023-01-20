@@ -21,13 +21,13 @@ using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 
-namespace Keyfactor.Extensions.Orchestrator.SOS
+namespace Keyfactor.Extensions.Orchestrator.Kube
 {
     // The Discovery class implementes IAgentJobExtension and is meant to find all certificate stores based on the information passed when creating the job in KF Command 
     public class Discovery : IDiscoveryJobExtension
     {
         //Necessary to implement IDiscoveryJobExtension but not used.  Leave as empty string.
-        public string ExtensionName => "SOS";
+        public string ExtensionName => "Kubernetes";
 
         //Job Entry Point
         public JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)

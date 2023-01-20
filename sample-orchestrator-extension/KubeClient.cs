@@ -13,7 +13,7 @@ using k8s;
 using k8s.Models;
 
 
-namespace Keyfactor.Extensions.Orchestrator.SOS;
+namespace Keyfactor.Extensions.Orchestrator.Kube;
 
 public class KubeCertificateManagerClient
 {
