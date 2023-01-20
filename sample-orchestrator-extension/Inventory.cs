@@ -11,7 +11,6 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
-
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -39,11 +38,13 @@ public class Inventory : IInventoryJobExtension
 
         public Cert[] Certs { get; set; }
     }
-    
+
     public class KubeCreds
     {
         public string KubeServer { get; set; } = "";
+
         public string KubeToken { get; set; } = "";
+
         public string KubeCert { get; set; } = "";
     }
 
@@ -59,7 +60,7 @@ public class Inventory : IInventoryJobExtension
 
     //Necessary to implement IInventoryJobExtension but not used.  Leave as empty string.
     // public string ExtensionName => "Kubernetes";
-    public string ExtensionName => "Kubernetes";
+    public string ExtensionName => "Kube";
 
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
@@ -90,10 +91,10 @@ public class Inventory : IInventoryJobExtension
         logger.LogInformation($"Processing store path: {storepath}");
         logger.LogTrace($"Store properties: {properties}");
         logger.LogTrace($"Store password: {storepassword}"); // TODO: Remove this before production
-        logger.LogDebug($"Server: { config.CertificateStoreDetails.ClientMachine }");
-        logger.LogDebug($"Store Path: { config.CertificateStoreDetails.StorePath }");
+        logger.LogDebug($"Server: {config.CertificateStoreDetails.ClientMachine}");
+        logger.LogDebug($"Store Path: {config.CertificateStoreDetails.StorePath}");
         logger.LogDebug($"Job Properties:");
-        foreach (KeyValuePair<string, object> keyValue in config.JobProperties ?? new Dictionary<string,object>())
+        foreach (var keyValue in config.JobProperties ?? new Dictionary<string, object>())
         {
             logger.LogDebug($"    {keyValue.Key}: {keyValue.Value}");
         }
@@ -109,7 +110,7 @@ public class Inventory : IInventoryJobExtension
             // 2) Custom logic to retrieve certificates from certificate store.
             // read file into a string and deserialize JSON to a type
             // string storetypename = "Kubernetes";
-            
+
             // Load credentials file from localCertStore.KubeSvcCreds // TODO: Implement config passed from store params or password input
             // var kubeCreds = JsonConvert.DeserializeObject<KubeCreds>(File.ReadAllText(localCertStore.KubeSvcCreds));
             var c = new KubeCertificateManagerClient("", "default");
@@ -123,7 +124,7 @@ public class Inventory : IInventoryJobExtension
                 logger.LogDebug($"KubernetesCertStore: {localCertStore.KubeSecretType}");
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.KubeSvcCreds}");
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.Certs}");
-                
+
                 ///TODO: What is _resolver?
                 // string userName = PAMUtilities.ResolvePAMField(_resolver, logger, "Server User Name", config.ServerUsername);
                 // string userPassword = PAMUtilities.ResolvePAMField(_resolver, logger, "Server Password", config.ServerPassword);
@@ -135,12 +136,13 @@ public class Inventory : IInventoryJobExtension
                         // To prevents the screen from 
                         // running and closing quickly
                         // Console.ReadKey();
-                        logger.LogDebug($"Querying Kubernetes {localCertStore.KubeSecretType} API for {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}");
+                        logger.LogDebug(
+                            $"Querying Kubernetes {localCertStore.KubeSecretType} API for {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}");
                         try
                         {
                             var certData = c.GetCertificateStoreSecret(
-                                secretName: localCertStore.KubeSecretName,
-                                namespaceName: localCertStore.KubeNamespace
+                                localCertStore.KubeSecretName,
+                                localCertStore.KubeNamespace
                             );
                             var certificatesBytes = certData.Data["certificates"];
                             var certificates = System.Text.Encoding.UTF8.GetString(certificatesBytes);
@@ -149,16 +151,19 @@ public class Inventory : IInventoryJobExtension
                             {
                                 logger.LogInformation(cert);
                                 string[] certs = { cert };
-                                string alias = "meowing";
+                                var alias = "meowing";
 
                                 inventoryItems.Add(new CurrentInventoryItem()
                                 {
-                                    ItemStatus = OrchestratorInventoryItemStatus.Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
+                                    ItemStatus = OrchestratorInventoryItemStatus
+                                        .Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
                                     Alias = alias,
                                     PrivateKeyEntry =
                                         false, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
-                                    UseChainLevel = false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
-                                    Certificates = certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
+                                    UseChainLevel =
+                                        false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
+                                    Certificates =
+                                        certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
                                 });
                             }
                             try
@@ -166,18 +171,24 @@ public class Inventory : IInventoryJobExtension
                                 //Sends inventoried certificates back to KF Command
                                 submitInventory.Invoke(inventoryItems);
                                 //Status: 2=Success, 3=Warning, 4=Error
-                                return new JobResult() { Result = Keyfactor.Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Success, JobHistoryId = config.JobHistoryId };
+                                return new JobResult() { Result = OrchestratorJobStatusJobResult.Success, JobHistoryId = config.JobHistoryId };
                             }
                             catch (Exception ex)
                             {
                                 // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
                                 //  may not be reflected in Keyfactor Command.
-                                return new JobResult() { Result = Keyfactor.Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId, FailureMessage = "Custom message you want to show to show up as the error message in Job History in KF Command" };
+                                return new JobResult()
+                                {
+                                    Result = OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId,
+                                    FailureMessage = "Custom message you want to show to show up as the error message in Job History in KF Command"
+                                };
                             }
-                        } catch (k8s.Autorest.HttpOperationException e)
+                        }
+                        catch (k8s.Autorest.HttpOperationException e)
                         {
                             logger.LogError(e.Message);
-                            var certDataErrorMsg = $"Kubernetes {localCertStore.KubeSecretType} '{localCertStore.KubeSecretName}' was not found in namespace '{localCertStore.KubeNamespace}'.";
+                            var certDataErrorMsg =
+                                $"Kubernetes {localCertStore.KubeSecretType} '{localCertStore.KubeSecretName}' was not found in namespace '{localCertStore.KubeNamespace}'.";
                             logger.LogError(certDataErrorMsg);
                             return new JobResult()
                             {
@@ -185,7 +196,8 @@ public class Inventory : IInventoryJobExtension
                                 JobHistoryId = config.JobHistoryId,
                                 FailureMessage = certDataErrorMsg
                             };
-                        } catch (Exception e)
+                        }
+                        catch (Exception e)
                         {
                             logger.LogError(e.Message);
                             var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
@@ -197,7 +209,7 @@ public class Inventory : IInventoryJobExtension
                                 FailureMessage = certDataErrorMsg
                             };
                         }
-                        
+
                         // foreach (var cert in csrs)
                         // {
                         //     string[] certs = { cert };
@@ -244,7 +256,8 @@ public class Inventory : IInventoryJobExtension
                 {
                     Result = OrchestratorJobStatusJobResult.Failure,
                     JobHistoryId = config.JobHistoryId,
-                    FailureMessage = $"Invalid configuration. A KubernetesCertStore type must have addition properties: {string.Join(", ", RequiredProperties)}, {string.Join(", ", SupportedKubeStoreTypes)}"
+                    FailureMessage =
+                        $"Invalid configuration. A KubernetesCertStore type must have addition properties: {string.Join(", ", RequiredProperties)}, {string.Join(", ", SupportedKubeStoreTypes)}"
                 };
             }
 

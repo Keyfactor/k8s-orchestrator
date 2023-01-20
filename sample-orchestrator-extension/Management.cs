@@ -29,7 +29,7 @@ namespace Keyfactor.Extensions.Orchestrator.Kube;
 public class Management : IManagementJobExtension
 {
     //Necessary to implement IManagementJobExtension but not used.  Leave as empty string.
-    public string ExtensionName => "Kubernetes";
+    public string ExtensionName => "Kube";
 
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)

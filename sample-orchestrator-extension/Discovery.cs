@@ -27,7 +27,7 @@ namespace Keyfactor.Extensions.Orchestrator.Kube
     public class Discovery : IDiscoveryJobExtension
     {
         //Necessary to implement IDiscoveryJobExtension but not used.  Leave as empty string.
-        public string ExtensionName => "Kubernetes";
+        public string ExtensionName => "Kube";
 
         //Job Entry Point
         public JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)
