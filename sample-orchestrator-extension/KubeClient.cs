@@ -145,10 +145,6 @@ public class KubeCertificateManagerClient
                         var secret_response = Client.CoreV1.ReplaceNamespacedSecret(secret, secretName, namespaceName);
                         return secret_response;
                     }
-                    
-                    // append certificate to existing secret
-                    
-
                 }
                 else
                 {
