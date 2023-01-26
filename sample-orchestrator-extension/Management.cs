@@ -16,16 +16,10 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
 using System.IO;
-using Newtonsoft.Json.Linq;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
-using System.Collections.Generic;
-using k8s;
-using k8s.Models;
-using System.Threading;
-using System.Diagnostics.Metrics;
+using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
@@ -33,8 +27,6 @@ public class Management : IManagementJobExtension
 {
     //Necessary to implement IManagementJobExtension but not used.  Leave as empty string.
     public string ExtensionName => "Kube";
-
-    private static Mutex mutex = new(false, "ModifyStore");
 
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)
@@ -63,10 +55,10 @@ public class Management : IManagementJobExtension
         logger.LogDebug($"Following info received from command:");
         logger.LogDebug(JsonConvert.SerializeObject(config));
         logger.LogDebug(config.ToString());
-        var storetypename = "kubernetes";
-        var storepath = config.CertificateStoreDetails.StorePath + @"\" + storetypename;
+        var storeTypeName = "kubernetes";
+        var storePath = config.CertificateStoreDetails.StorePath + @"\" + storeTypeName;
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
-        var certAlias = config.JobCertificate.Alias;
+        // var certAlias = config.JobCertificate.Alias;
         try
         {
             //Management jobs, unlike Discovery, Inventory, and Reenrollment jobs can have 3 different purposes:
@@ -114,40 +106,39 @@ public class Management : IManagementJobExtension
                         {
                             var pemString = PemUtilities.DERToPEM(cert.RawData, PemUtilities.PemObjectType.Certificate);
 
-                            string[] key_pems = null;
+                            string[] keyPems;
                             if (localCertStore.KubeSecretType == "tls_secret")
                             {
-                                var key_bytes = cert.GetRSAPrivateKey().ExportRSAPrivateKey();
-                                var kem_pem = PemUtilities.DERToPEM(key_bytes, PemUtilities.PemObjectType.PrivateKey);
-                                key_pems = new string[] { kem_pem };
+                                var keyBytes = cert.GetRSAPrivateKey().ExportRSAPrivateKey();
+                                var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+                                keyPems = new string[] { kemPem };
                             }
                             else
                             {
-                                key_pems = cert.GetRSAPrivateKey()?.ToString().Split(";") ?? string.Empty.Split(";");
+                                keyPems = cert.GetRSAPrivateKey()?.ToString().Split(";") ?? string.Empty.Split(";");
                             }
 
-                            var cert_pems = pemString.Split(";"); // TODO: Implement multiple certs
-                            var ca_pems = "".Split(";"); // TODO: Implement CA certs
-                            var chain_pems = "".Split(";"); // TODO: Implement chain certs
+                            var certPems = pemString.Split(";"); // TODO: Implement multiple certs
+                            var caPems = "".Split(";"); // TODO: Implement CA certs
+                            var chainPems = "".Split(";"); // TODO: Implement chain certs
                             var kfid = 0; // TODO: Implement KFID
-                            var secretName = localCertStore.KubeSecretName;
-                            var namespaceName = localCertStore.KubeNamespace;
+                            // var secretName = localCertStore.KubeSecretName;
+                            // var namespaceName = localCertStore.KubeNamespace;
                             var secretType = localCertStore.KubeSecretType;
-                            var overwrite = true;
-
 
                             if (secretType == "secret" || secretType == "tls_secret")
                             {
                                 var createResponse = c.CreateCertificateStoreSecret(
-                                    key_pems,
-                                    cert_pems,
-                                    ca_pems,
-                                    chain_pems,
+                                    keyPems,
+                                    certPems,
+                                    caPems,
+                                    chainPems,
                                     kfid,
                                     localCertStore.KubeSecretName,
                                     localCertStore.KubeNamespace,
                                     localCertStore.KubeSecretType,
-                                    true
+                                    true,
+                                    config.Overwrite
                                 );
                                 logger.LogTrace(createResponse.ToString());
                             }
@@ -183,7 +174,7 @@ public class Management : IManagementJobExtension
                         }
 
                     }
-                    else if (localCertStore.KubeSecretType == "csr")
+                    if (localCertStore.KubeSecretType == "csr")
                     {
                         var csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
                         logger.LogError(csrErrorMsg);
@@ -206,38 +197,30 @@ public class Management : IManagementJobExtension
                         };
                     }
 
-
-                    Cert[] newcertarray = { newCert };
-                    newcertarray = newcertarray.Concat(localCertStore.Certs).ToArray();
-                    localCertStore.Certs = newcertarray;
-
-                    var convertedcertstore = JsonConvert.SerializeObject(localCertStore);
-                    File.WriteAllText(storepath, convertedcertstore);
-                    break;
                 case CertStoreOperationType.Remove:
                     //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
                     //Code logic to:
                     // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
                     // 2) Custom logic to remove the certificate in a certificate store (config.CertificateStoreDetails.StorePath), possibly using alias (config.JobCertificate.Alias) or certificate thumbprint to identify the certificate (implementation dependent)
-                    var RemovelocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storepath));
-                    var removealias = config.JobCertificate.Alias.ToString();
-                    var converted = RemovelocalCertStore.Certs.ToList();
+                    var removeLocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storePath));
+                    var removealias = config.JobCertificate.Alias;
+                    var converted = removeLocalCertStore.Certs.ToList();
                     converted.RemoveAll(x => x.Alias == removealias);
                     var rmarray = converted.ToArray<Cert>();
-                    RemovelocalCertStore.Certs = rmarray;
-                    var remconvertedcertstore = JsonConvert.SerializeObject(RemovelocalCertStore);
-                    File.WriteAllText(storepath, remconvertedcertstore);
+                    removeLocalCertStore.Certs = rmarray;
+                    var remconvertedcertstore = JsonConvert.SerializeObject(removeLocalCertStore);
+                    File.WriteAllText(storePath, remconvertedcertstore);
                     break;
                 case CertStoreOperationType.Create:
                     //OperationType == Create - Create an empty certificate store in the provided location
                     //Code logic to:
                     // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) where the certificate store (config.CertificateStoreDetails.StorePath) will be located
                     // 2) Custom logic to first check if the store already exists and add it if not.  If it already exists, implementation dependent as to how to handle - error, warning, success
-                    if (!File.Exists(storepath))
+                    if (!File.Exists(storePath))
                     {
                         var newstore = new KubernetesCertStore();
                         var newstoreconv = JsonConvert.SerializeObject(newstore);
-                        File.WriteAllText(storepath, newstoreconv);
+                        File.WriteAllText(storePath, newstoreconv);
                     }
                     break;
                 default:

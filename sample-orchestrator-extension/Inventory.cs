@@ -5,7 +5,7 @@
 // required by applicable law or agreed to in writing, software distributed   
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES   
 // OR CONDITIONS OF ANY KIND, either express or implied. See the License for  
-// thespecific language governing permissions and limitations under the       
+// the specific language governing permissions and limitations under the       
 // License. 
 
 using System;
@@ -20,12 +20,12 @@ using Newtonsoft.Json;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
-// The Inventory class implementes IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
+// The Inventory class implements IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
 //  and return those certificates back to Keyfactor for storing in its database.  Private keys will NOT be passed back to Keyfactor Command 
 public class Inventory : IInventoryJobExtension
 {
-    public static readonly string[] SupportedKubeStoreTypes = new string[] { "secret", "certificate" };
-    public static readonly string[] RequiredProperties = new string[] { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
+    private static readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
+    private static readonly string[] RequiredProperties = { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
 
     public class KubernetesCertStore
     {
@@ -128,7 +128,8 @@ public class Inventory : IInventoryJobExtension
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.KubeSvcCreds}");
                 logger.LogTrace($"KubernetesCertStore: {localCertStore.Certs}");
 
-                ///TODO: What is _resolver?
+                var hasPrivateKey = false;
+                // TODO: What is _resolver?
                 // string userName = PAMUtilities.ResolvePAMField(_resolver, logger, "Server User Name", config.ServerUsername);
                 // string userPassword = PAMUtilities.ResolvePAMField(_resolver, logger, "Server Password", config.ServerPassword);
                 // string storePassword = PAMUtilities.ResolvePAMField(_resolver, logger, "Store Password", config.CertificateStoreDetails.StorePassword);
@@ -148,17 +149,18 @@ public class Inventory : IInventoryJobExtension
                                 localCertStore.KubeNamespace
                             );
                             var certificatesBytes = certData.Data["certificates"];
-                            var certificates = System.Text.Encoding.UTF8.GetString(certificatesBytes);
+                            var certificates = Encoding.UTF8.GetString(certificatesBytes);
                             var certsList = certificates.Split(CertChainSeparator);
-                            var alias = "";
                             foreach (var cert in certsList)
                             {
                                 logger.LogInformation(cert);
                                 // load as x509
+                                string alias;
                                 try
                                 {
-                                    var certFormatted = new X509Certificate2();
-                                    certFormatted = cert.Contains("BEGIN CERTIFICATE") ? new X509Certificate2(Encoding.UTF8.GetBytes(cert)) : new X509Certificate2(Convert.FromBase64String(cert));
+                                    var certFormatted = cert.Contains("BEGIN CERTIFICATE")
+                                        ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
+                                        : new X509Certificate2(Convert.FromBase64String(cert));
                                     alias = certFormatted.Thumbprint;
                                 }
                                 catch (Exception e)
@@ -180,9 +182,9 @@ public class Inventory : IInventoryJobExtension
                                         .Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
                                     Alias = alias,
                                     PrivateKeyEntry =
-                                        false, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
+                                        hasPrivateKey, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
                                     UseChainLevel =
-                                        false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
+                                        true, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
                                     Certificates =
                                         certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
                                 });
@@ -201,7 +203,7 @@ public class Inventory : IInventoryJobExtension
                                 return new JobResult()
                                 {
                                     Result = OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId,
-                                    FailureMessage = "Custom message you want to show to show up as the error message in Job History in KF Command"
+                                    FailureMessage = ex.Message
                                 };
                             }
                         }
@@ -231,33 +233,38 @@ public class Inventory : IInventoryJobExtension
                             };
                         }
 
-                        // 3) Add certificates (no private keys) to the collection below.  If multiple certs in a store comprise a chain, the Certificates array will house multiple certs per InventoryItem.  If multiple certs
-                        //     in a store comprise separate unrelated certs, there will be one InventoryItem object created per certificate.
+                    // 3) Add certificates (no private keys) to the collection below.  If multiple certs in a store comprise a chain, the Certificates array will house multiple certs per InventoryItem.  If multiple certs
+                    //     in a store comprise separate unrelated certs, there will be one InventoryItem object created per certificate.
 
-                        //**** Will need to uncomment the block below and code to the extension's specific needs.  This builds the collection of certificates and related information that will be passed back to the KF Orchestrator service and then Command.
-                        break;
+                    //**** Will need to uncomment the block below and code to the extension's specific needs.  This builds the collection of certificates and related information that will be passed back to the KF Orchestrator service and then Command.
                     case "tls_secret":
                         logger.LogDebug(
                             $"Querying Kubernetes {localCertStore.KubeSecretType} API for {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}");
                         try
                         {
+                            hasPrivateKey = true;
                             var certData = c.GetCertificateStoreSecret(
                                 localCertStore.KubeSecretName,
                                 localCertStore.KubeNamespace
                             );
                             var certificatesBytes = certData.Data["tls.crt"];
                             var privateKeyBytes = certData.Data["tls.key"];
-                            var certificates = System.Text.Encoding.UTF8.GetString(certificatesBytes);
+                            if (privateKeyBytes == null)
+                            {
+                                hasPrivateKey = false;
+                            }
+                            var certificates = Encoding.UTF8.GetString(certificatesBytes);
                             var certsList = certificates.Split(CertChainSeparator);
-                            var alias = "";
                             foreach (var cert in certsList)
                             {
                                 logger.LogInformation(cert);
                                 // load as x509
+                                string alias;
                                 try
                                 {
-                                    var certFormatted = new X509Certificate2();
-                                    certFormatted = cert.Contains("BEGIN CERTIFICATE") ? new X509Certificate2(Encoding.UTF8.GetBytes(cert)) : new X509Certificate2(Convert.FromBase64String(cert));
+                                    var certFormatted = cert.Contains("BEGIN CERTIFICATE")
+                                        ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
+                                        : new X509Certificate2(Convert.FromBase64String(cert));
                                     alias = certFormatted.Thumbprint;
                                 }
                                 catch (Exception e)
@@ -279,7 +286,7 @@ public class Inventory : IInventoryJobExtension
                                         .Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
                                     Alias = alias,
                                     PrivateKeyEntry =
-                                        false, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
+                                        hasPrivateKey, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
                                     UseChainLevel =
                                         false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
                                     Certificates =
@@ -300,7 +307,7 @@ public class Inventory : IInventoryJobExtension
                                 return new JobResult()
                                 {
                                     Result = OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId,
-                                    FailureMessage = "Custom message you want to show to show up as the error message in Job History in KF Command"
+                                    FailureMessage = ex.Message
                                 };
                             }
                         }
@@ -363,29 +370,6 @@ public class Inventory : IInventoryJobExtension
         catch (Exception ex)
         {
             //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
-            {
-                Result = OrchestratorJobStatusJobResult.Failure,
-                JobHistoryId = config.JobHistoryId,
-                FailureMessage = ex.ToString()
-            };
-        }
-
-        try
-        {
-            //Sends inventoried certificates back to KF Command
-            submitInventory.Invoke(inventoryItems);
-            //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
-            {
-                Result = OrchestratorJobStatusJobResult.Success,
-                JobHistoryId = config.JobHistoryId
-            };
-        }
-        catch (Exception ex)
-        {
-            // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
-            //  may not be reflected in Keyfactor Command.
             return new JobResult()
             {
                 Result = OrchestratorJobStatusJobResult.Failure,

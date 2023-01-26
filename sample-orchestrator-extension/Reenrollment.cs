@@ -5,181 +5,175 @@
 // required by applicable law or agreed to in writing, software distributed   
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES   
 // OR CONDITIONS OF ANY KIND, either express or implied. See the License for  
-// thespecific language governing permissions and limitations under the       
+// the specific language governing permissions and limitations under the       
 // License. 
 
 using System;
 using System.Collections.Generic;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
-
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
 using System.Security.Cryptography;
-
 using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
-namespace Keyfactor.Extensions.Orchestrator.Kube
+
+namespace Keyfactor.Extensions.Orchestrator.Kube;
+// The Re-enrollment class implements IAgentJobExtension and is meant to:
+//  1) Generate a new public/private keypair locally
+//  2) Generate a CSR from the keypair,
+//  3) Submit the CSR to KF Command to enroll the certificate and retrieve the certificate back
+//  4) Deploy the newly re-enrolled certificate to a certificate store
+
+public class Reenrollment : IReenrollmentJobExtension
 {
-    // The Reenrollment class implementes IAgentJobExtension and is meant to:
-    //  1) Generate a new public/private keypair locally
-    //  2) Generate a CSR from the keypair,
-    //  3) Submit the CSR to KF Command to enroll the certificate and retrieve the certificate back
-    //  4) Deploy the newly re-enrolled certificate to a certificate store
 
+    //Necessary to implement IReenrollmentJobExtension but not used.  Leave as empty string.
+    public string ExtensionName => "";
 
-
-    public class Reenrollment : IReenrollmentJobExtension
+    //Job Entry Point
+    public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
     {
+        //METHOD ARGUMENTS...
+        //config - contains context information passed from KF Command to this job run:
+        //
+        // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
+        //
+        // config.ServerUsername, config.ServerPassword - credentials for orchestrated server - use to authenticate to certificate store server.
+        // config.CertificateStoreDetails.ClientMachine - server name or IP address of orchestrated server
+        // config.CertificateStoreDetails.StorePath - location path of certificate store on orchestrated server
+        // config.CertificateStoreDetails.StorePassword - if the certificate store has a password, it would be passed here
+        // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
+        //
+        // config.JobProperties = Dictionary of custom parameters to use in building CSR and placing enrolled certificate in a the proper certificate store
 
-        //Necessary to implement IReenrollmentJobExtension but not used.  Leave as empty string.
-        public string ExtensionName => "";
-
-        //Job Entry Point
-        public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
+        //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+        var logger = LogHandler.GetClassLogger(GetType());
+        logger.LogDebug($"Begin Reenrollment... test");
+        logger.LogDebug($"Following info received from command:");
+        logger.LogDebug(JsonConvert.SerializeObject(config));
+        //this is passed as a string
+        var storeTypeName = JsonConvert.DeserializeObject<Dictionary<string, string>>
+            (config.CertificateStoreDetails.Properties)["storeparameter1"];
+        var storePath = config.CertificateStoreDetails.StorePath + @"\" + storeTypeName;
+        try
         {
-            //METHOD ARGUMENTS...
-            //config - contains context information passed from KF Command to this job run:
-            //
-            // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
-            //
-            // config.ServerUsername, config.ServerPassword - credentials for orchestrated server - use to authenticate to certificate store server.
-            // config.CertificateStoreDetails.ClientMachine - server name or IP address of orchestrated server
-            // config.CertificateStoreDetails.StorePath - location path of certificate store on orchestrated server
-            // config.CertificateStoreDetails.StorePassword - if the certificate store has a password, it would be passed here
-            // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
-            //
-            // config.JobProperties = Dictionary of custom parameters to use in building CSR and placing enrolled certiciate in a the proper certificate store
+            //Code logic to:
+            //  1) Generate a new public/private keypair locally from any config.JobProperties passed
+            //  2) Generate a CSR from the keypair (PKCS10),
+            //  3) Submit the CSR to KF Command to enroll the certificate using:
+            //      string resp = (string)submitEnrollmentRequest.Invoke(Convert.ToBase64String(PKCS10_bytes);
+            //      X509Certificate2 cert = new X509Certificate2(Convert.FromBase64String(resp));
+            //  4) Deploy the newly re-enrolled certificate (cert in #3) to a certificate store
+            // RSAKeyPairGenerator generates the RSA Key pair based on the random number
 
-            //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-            ILogger logger = LogHandler.GetClassLogger(this.GetType());
-            logger.LogDebug($"Begin Reenrollment... test");
-            logger.LogDebug($"Following info received from command:");
-            logger.LogDebug(JsonConvert.SerializeObject(config));
-            //this is passed as a string
-            string storetypename = JsonConvert.DeserializeObject<Dictionary<string, string>>
-                (config.CertificateStoreDetails.Properties)["storeparameter1"];
-            string storepath = config.CertificateStoreDetails.StorePath + @"\" + storetypename;
-            try
+
+            var infoFromCommand = new X500DistinguishedName
+                (config.JobProperties["subjectText"].ToString());
+
+            var rsa = RSA.Create(2048);
+            var certificateRequest
+                = new CertificateRequest(infoFromCommand.Name, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+            certificateRequest.CertificateExtensions.Add(
+                new X509BasicConstraintsExtension(false, false, 0, false));
+            certificateRequest.CertificateExtensions.Add(
+                new X509KeyUsageExtension(
+                    X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation,
+                    false));
+
+            // Add the SubjectAlternativeName extension
+            var sanBuilder = new SubjectAlternativeNameBuilder();
+            var sanList = new List<string>("test.com,*.test.com".Split(','));
+            foreach (var sanItem in sanList)
             {
-                //Code logic to:
-                //  1) Generate a new public/private keypair locally from any config.JobProperties passed
-                //  2) Generate a CSR from the keypair (PKCS10),
-                //  3) Submit the CSR to KF Command to enroll the certificate using:
-                //      string resp = (string)submitEnrollmentRequest.Invoke(Convert.ToBase64String(PKCS10_bytes);
-                //      X509Certificate2 cert = new X509Certificate2(Convert.FromBase64String(resp));
-                //  4) Deploy the newly re-enrolled certificate (cert in #3) to a certificate store
-                // RSAKeyPairGenerator generates the RSA Key pair based on the random number
-
-
-                X500DistinguishedName infofromcommand = new X500DistinguishedName
-                    (config.JobProperties["subjectText"].ToString());
-
-                RSA rsa = RSA.Create(2048);
-                CertificateRequest certificateRequest
-                    = new CertificateRequest
-                    (infofromcommand.Name, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-                certificateRequest.CertificateExtensions.Add(
-                    new X509BasicConstraintsExtension(false, false, 0, false));
-                certificateRequest.CertificateExtensions.Add(
-                    new X509KeyUsageExtension(
-                        X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation,
-                        false));
-
-                // Add the SubjectAlternativeName extension
-                var sanBuilder = new SubjectAlternativeNameBuilder();
-                List<string> sanlist = new List<string>("test.com,*.test.com".Split(','));
-                foreach (string sanitem in sanlist)
-                {
-                    sanBuilder.AddDnsName(sanitem.Trim());
-                }
-
-                certificateRequest.CertificateExtensions.Add(sanBuilder.Build());
-
-                //Timestamp oid
-                certificateRequest.CertificateExtensions.Add(
-                    new X509EnhancedKeyUsageExtension(
-                        new OidCollection
-                        {
-                    new Oid("1.3.6.1.5.5.7.3.8")
-                        },
-                        true));
-
-                certificateRequest.CertificateExtensions.Add(
-                    new X509SubjectKeyIdentifierExtension(certificateRequest.PublicKey, false));
-
-                var bytecsr = certificateRequest.CreateSigningRequest();
-
-
-                string csr64 = Convert.ToBase64String(bytecsr);
-                logger.LogDebug("Submitting csr.");
-                logger.LogDebug(csr64);
-                /** START Option 2 --- */
-                // Get the enrollment data from config.Job.Properties
-
-                X509Certificate2 returncert = submitReenrollment.Invoke(csr64);
-
-
-                KubernetesCertStore LocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>
-                    (File.ReadAllText(storepath));
-                Cert newcert = new Cert();
-
-                newcert.Alias = returncert.Thumbprint.ToString();
-                newcert.CertData = returncert.GetRawCertDataString();
-                newcert.PrivateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
-
-                // if (config.JobProperties["sampleentryparameter1"].ToString() != null || config.JobProperties["sampleentryparameter1"].ToString() != "")
-                // {
-                //     newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
-                // }
-                // else
-                // {
-                //     newcert.sampleentryparameter1 = "";
-                // }
-                // try
-                // {
-                //     if (config.JobProperties["sampleentryparameter2"] != null || config.JobProperties["sampleentryparameter2"].ToString() != "")
-                //     {
-                //         newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
-                //     }
-                //     else
-                //     {
-                //         newcert.sampleentryparameter2 = "";
-                //     }
-                // }
-                // catch (Exception)
-                // {
-                //     newcert.sampleentryparameter2 = "";
-                // }
-                Cert[] newcertarray = { newcert };
-                newcertarray = newcertarray.Concat(LocalCertStore.Certs).ToArray();
-                LocalCertStore.Certs = newcertarray;
-
-                string convertedcertstore = JsonConvert.SerializeObject(LocalCertStore);
-                File.WriteAllText(storepath, convertedcertstore);
-
-
-            }
-            catch (Exception ex)
-            {
-                //Status: 2=Success, 3=Warning, 4=Error
-                return new JobResult()
-                {
-                    Result = Keyfactor.Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure, 
-                    JobHistoryId = config.JobHistoryId, 
-                    FailureMessage = ex.Message,
-                };
+                sanBuilder.AddDnsName(sanItem.Trim());
             }
 
+            certificateRequest.CertificateExtensions.Add(sanBuilder.Build());
+
+            //Timestamp oid
+            certificateRequest.CertificateExtensions.Add(
+                new X509EnhancedKeyUsageExtension(
+                    new OidCollection
+                    {
+                        new("1.3.6.1.5.5.7.3.8")
+                    },
+                    true));
+
+            certificateRequest.CertificateExtensions.Add(
+                new X509SubjectKeyIdentifierExtension(certificateRequest.PublicKey, false));
+
+            var byteCsr = certificateRequest.CreateSigningRequest();
+
+
+            var csr64 = Convert.ToBase64String(byteCsr);
+            logger.LogDebug("Submitting csr.");
+            logger.LogDebug(csr64);
+            /** START Option 2 --- */
+            // Get the enrollment data from config.Job.Properties
+
+            var returnCert = submitReenrollment.Invoke(csr64);
+
+
+            var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>
+                (File.ReadAllText(storePath));
+            var newcert = new Cert();
+
+            newcert.Alias = returnCert.Thumbprint;
+            newcert.CertData = returnCert.GetRawCertDataString();
+            newcert.PrivateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
+
+            // if (config.JobProperties["sampleentryparameter1"].ToString() != null || config.JobProperties["sampleentryparameter1"].ToString() != "")
+            // {
+            //     newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
+            // }
+            // else
+            // {
+            //     newcert.sampleentryparameter1 = "";
+            // }
+            // try
+            // {
+            //     if (config.JobProperties["sampleentryparameter2"] != null || config.JobProperties["sampleentryparameter2"].ToString() != "")
+            //     {
+            //         newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
+            //     }
+            //     else
+            //     {
+            //         newcert.sampleentryparameter2 = "";
+            //     }
+            // }
+            // catch (Exception)
+            // {
+            //     newcert.sampleentryparameter2 = "";
+            // }
+            Cert[] newCertArray = { newcert };
+            newCertArray = newCertArray.Concat(localCertStore.Certs).ToArray();
+            localCertStore.Certs = newCertArray;
+
+            var convertedCertStore = JsonConvert.SerializeObject(localCertStore);
+            File.WriteAllText(storePath, convertedCertStore);
+
+
+        }
+        catch (Exception ex)
+        {
             //Status: 2=Success, 3=Warning, 4=Error
             return new JobResult()
             {
-                Result = Keyfactor.Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Success, 
-                JobHistoryId = config.JobHistoryId
+                Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure,
+                JobHistoryId = config.JobHistoryId,
+                FailureMessage = ex.Message
             };
         }
+
+        //Status: 2=Success, 3=Warning, 4=Error
+        return new JobResult()
+        {
+            Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Success,
+            JobHistoryId = config.JobHistoryId
+        };
     }
 }
 

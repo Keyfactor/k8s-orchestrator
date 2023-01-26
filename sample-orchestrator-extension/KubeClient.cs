@@ -6,14 +6,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
 using System.Text;
 using System;
-using System.Linq;
-using IdentityModel;
-using Keyfactor.Logging;
-using Microsoft.Extensions.Logging;
 using k8s;
 using k8s.Models;
-using YamlDotNet.Core.Events;
-
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
@@ -36,14 +30,13 @@ public class KubeCertificateManagerClient
         //var stream = new FileStream(strSettingsJsonFilePath,
         //   FileMode.Open
         //);
-        var logger = LogHandler.GetClassLogger(GetType());
         var config = credentialFileName == ""
             ? KubernetesClientConfiguration.BuildDefaultConfig()
             : KubernetesClientConfiguration.BuildConfigFromConfigFile();
 
         IKubernetes client = new Kubernetes(config);
-        Console.WriteLine("Starting Request!");
-        var csr = client.CoreV1.ListNamespace();
+        
+        _ = client.CoreV1.ListNamespace();
         Client = client;
         return client;
     }
@@ -53,17 +46,17 @@ public class KubeCertificateManagerClient
         return Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
     }
 
-    public V1Secret CreateCertificateStoreSecret(string[] key_pems, string[] cert_pems, string[] ca_cert_pems, string[] chain_pems, int kfid, string secretName,
-        string namespaceName, string secretType, bool append = false)
+    public V1Secret CreateCertificateStoreSecret(string[] keyPems, string[] certPems, string[] caCertPems, string[] chainPems, int kfid, string secretName,
+        string namespaceName, string secretType, bool append = false, bool overwrite = false)
     {
-        var cert_pem = string.Join("\n", cert_pems);
-        var key_pem = string.Join("\n", key_pems);
-        var ca_cert_pem = string.Join("\n", ca_cert_pems);
-        var chain_pem = string.Join("\n\n", chain_pems);
-        var secret = new V1Secret();
+        var certPem = string.Join("\n", certPems);
+        var keyPem = string.Join("\n", keyPems);
+        var caCertPem = string.Join("\n", caCertPems);
+        var chainPem = string.Join("\n\n", chainPems);
+        V1Secret k8sSecretData;
         if (secretType != "tls_secret")
         {
-            secret = new V1Secret
+            k8sSecretData = new V1Secret
             {
                 Metadata = new V1ObjectMeta
                 {
@@ -73,17 +66,17 @@ public class KubeCertificateManagerClient
 
                 Data = new Dictionary<string, byte[]>
                 {
-                    { "private_keys", Encoding.UTF8.GetBytes(key_pem) },
-                    { "certificates", Encoding.UTF8.GetBytes(cert_pem) },
-                    { "ca_certificates", Encoding.UTF8.GetBytes(ca_cert_pem) },
-                    { "chain", Encoding.UTF8.GetBytes(chain_pem) },
+                    { "private_keys", Encoding.UTF8.GetBytes(keyPem) },
+                    { "certificates", Encoding.UTF8.GetBytes(certPem) },
+                    { "ca_certificates", Encoding.UTF8.GetBytes(caCertPem) },
+                    { "chain", Encoding.UTF8.GetBytes(chainPem) },
                     { "kfid", Encoding.UTF8.GetBytes(kfid.ToString()) }
                 }
             };
         }
         else
         {
-            secret = new V1Secret
+            k8sSecretData = new V1Secret
             {
                 Metadata = new V1ObjectMeta
                 {
@@ -91,13 +84,13 @@ public class KubeCertificateManagerClient
                     NamespaceProperty = namespaceName
 
                 },
-                
+
                 Type = "kubernetes.io/tls",
-                
+
                 Data = new Dictionary<string, byte[]>
                 {
-                    { "tls.key", Encoding.UTF8.GetBytes(key_pem) },
-                    { "tls.crt", Encoding.UTF8.GetBytes(cert_pem) }
+                    { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                    { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
                 }
             };
         }
@@ -105,51 +98,58 @@ public class KubeCertificateManagerClient
 
         try
         {
-            var secret_response = Client.CoreV1.CreateNamespacedSecret(secret, namespaceName);
-            return secret_response;
+            var secretResponse = Client.CoreV1.CreateNamespacedSecret(k8sSecretData, namespaceName);
+            return secretResponse;
         }
         catch (k8s.Autorest.HttpOperationException e)
         {
             if (e.Message.Contains("Conflict"))
             {
-                V1Secret existingSecret = null;
                 if (append)
                 {
-                    existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
+                    var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
                     if (existingSecret == null)
                     {
                         throw new Exception(
                             $"Create secret {secretName} in Kubernetes namespace {namespaceName} failed. Also unable to read secret, please verify credentials have correct access.");
                     }
-                    // check if certifcate already exists in "certificates" field
-                    if (secretType == "secret") {
-                        var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
-                        if (existingCerts.Contains(cert_pem))
-                        {
-                            return existingSecret;
-                        }
-                        var newCerts = existingCerts;
-                        if (existingCerts.Length > 0)
-                        {
-                            newCerts = newCerts + ",";
-                        }
-                        newCerts = newCerts + cert_pem;
-
-                        existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(newCerts);
-                        var secret_response = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
-                        return secret_response;
-                    } else if (secretType == "tls_secret")
+                    switch (secretType)
                     {
+                        // check if certificate already exists in "certificates" field
+                        case "secret":
+                        {
+                            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
+                            if (existingCerts.Contains(certPem))
+                            {
+                                return existingSecret;
+                            }
+                            var newCerts = existingCerts;
+                            if (existingCerts.Length > 0)
+                            {
+                                newCerts = newCerts + ",";
+                            }
+                            newCerts = newCerts + certPem;
+
+                            existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(newCerts);
+                            var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
+                            return secretResponse;
+                        }
                         // TODO: Check if overwrite is specified if not then fail.
                         // TODO: Check if multiple certs are trying to be added which is not supported.
-                        var secret_response = Client.CoreV1.ReplaceNamespacedSecret(secret, secretName, namespaceName);
-                        return secret_response;
+                        case "tls_secret" when !overwrite:
+                            throw new Exception("Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.");
+                        case "tls_secret":
+                        {
+                            var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(k8sSecretData, secretName, namespaceName);
+                            return secretResponse;
+                        }
                     }
+
                 }
                 else
                 {
-                    var secret_response = Client.CoreV1.ReplaceNamespacedSecret(secret, secretName, namespaceName);
-                    return secret_response;
+                    var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(k8sSecretData, secretName, namespaceName);
+                    return secretResponse;
                 }
             }
         }
@@ -257,7 +257,7 @@ public class KubeCertificateManagerClient
                         "\r\n-----END PUBLIC KEY-----";
         return new CsrObject
         {
-            CSR = csrPem,
+            Csr = csrPem,
             PrivateKey = keyPem,
             PublicKey = pubKeyPem
         };
@@ -302,7 +302,7 @@ public class KubeCertificateManagerClient
 
     public struct CsrObject
     {
-        public string CSR;
+        public string Csr;
         public string PrivateKey;
         public string PublicKey;
     }
