@@ -13,6 +13,7 @@ using System;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Common.Enums;
+using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
@@ -23,6 +24,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
 using k8s;
 using k8s.Models;
+using System.Threading;
+using System.Diagnostics.Metrics;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
@@ -30,6 +33,8 @@ public class Management : IManagementJobExtension
 {
     //Necessary to implement IManagementJobExtension but not used.  Leave as empty string.
     public string ExtensionName => "Kube";
+
+    private static Mutex mutex = new(false, "ModifyStore");
 
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)
@@ -52,14 +57,16 @@ public class Management : IManagementJobExtension
         // config.JobCertificate.PrivateKeyPassword - For a Management Add job, if the certificate being added includes the private key (therefore, a pfx is passed in config.JobCertificate.EntryContents), this will be the password for the pfx.
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+
         var logger = LogHandler.GetClassLogger(GetType());
         logger.LogDebug($"Begin Management...");
         logger.LogDebug($"Following info received from command:");
         logger.LogDebug(JsonConvert.SerializeObject(config));
-
         logger.LogDebug(config.ToString());
         var storetypename = "kubernetes";
         var storepath = config.CertificateStoreDetails.StorePath + @"\" + storetypename;
+        var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
+        var certAlias = config.JobCertificate.Alias;
         try
         {
             //Management jobs, unlike Discovery, Inventory, and Reenrollment jobs can have 3 different purposes:
@@ -89,7 +96,7 @@ public class Management : IManagementJobExtension
 
                     var newCert = new Cert();
                     var certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-                    var cert = new X509Certificate2(certBytes);
+                    var cert = new X509Certificate2(certBytes, certPassword);
 
                     newCert.Alias = cert.Thumbprint;
                     newCert.CertData = config.JobCertificate.Contents;
@@ -105,15 +112,57 @@ public class Management : IManagementJobExtension
                         logger.LogInformation("Creating Kubernetes secret...");
                         try
                         {
-                            var createResponse = c.CreateCertificateStoreSecret(
-                                newCert.PrivateKey.Split(";"), // TODO: Implement multiple private keys
-                                newCert.CertData.Split(";"), // TODO: Implement multiple certs
-                                "".Split(";"), // TODO: Implement CA certs
-                                "".Split(";"), // TODO: Implement chain certs
-                                0, // TODO: Implement KFID
-                                localCertStore.KubeSecretName,
-                                localCertStore.KubeNamespace
-                            );
+                            var pemString = PemUtilities.DERToPEM(cert.RawData, PemUtilities.PemObjectType.Certificate);
+
+                            string[] key_pems = null;
+                            if (localCertStore.KubeSecretType == "tls_secret")
+                            {
+                                var key_bytes = cert.GetRSAPrivateKey().ExportRSAPrivateKey();
+                                var kem_pem = PemUtilities.DERToPEM(key_bytes, PemUtilities.PemObjectType.PrivateKey);
+                                key_pems = new string[] { kem_pem };
+                            }
+                            else
+                            {
+                                key_pems = cert.GetRSAPrivateKey()?.ToString().Split(";") ?? string.Empty.Split(";");
+                            }
+
+                            var cert_pems = pemString.Split(";"); // TODO: Implement multiple certs
+                            var ca_pems = "".Split(";"); // TODO: Implement CA certs
+                            var chain_pems = "".Split(";"); // TODO: Implement chain certs
+                            var kfid = 0; // TODO: Implement KFID
+                            var secretName = localCertStore.KubeSecretName;
+                            var namespaceName = localCertStore.KubeNamespace;
+                            var secretType = localCertStore.KubeSecretType;
+                            var overwrite = true;
+
+
+                            if (secretType == "secret" || secretType == "tls_secret")
+                            {
+                                var createResponse = c.CreateCertificateStoreSecret(
+                                    key_pems,
+                                    cert_pems,
+                                    ca_pems,
+                                    chain_pems,
+                                    kfid,
+                                    localCertStore.KubeSecretName,
+                                    localCertStore.KubeNamespace,
+                                    localCertStore.KubeSecretType,
+                                    true
+                                );
+                                logger.LogTrace(createResponse.ToString());
+                            }
+                            else
+                            {
+                                return new JobResult()
+                                {
+                                    Result = OrchestratorJobStatusJobResult.Failure,
+                                    JobHistoryId = config.JobHistoryId,
+                                    FailureMessage = $"Secret type {secretType} not supported."
+                                };
+                            }
+
+
+                            // throw new Exception("Force break");
 
                             return new JobResult()
                             {

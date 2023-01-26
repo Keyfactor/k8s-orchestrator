@@ -15,6 +15,7 @@
     <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.1.2" />
     <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
     <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorRegistrationUpdater" Version="1.0.3" />
+    <PackageReference Include="Keyfactor.PKI" Version="5.0.0" />
     <PackageReference Include="KubernetesClient.Classic" Version="10.0.16" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
   </ItemGroup>

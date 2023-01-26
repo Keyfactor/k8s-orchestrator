@@ -11,6 +11,7 @@
 using System;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -61,6 +62,8 @@ public class Inventory : IInventoryJobExtension
     //Necessary to implement IInventoryJobExtension but not used.  Leave as empty string.
     // public string ExtensionName => "Kubernetes";
     public string ExtensionName => "Kube";
+
+    public static string CertChainSeparator = ",";
 
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
@@ -146,13 +149,31 @@ public class Inventory : IInventoryJobExtension
                             );
                             var certificatesBytes = certData.Data["certificates"];
                             var certificates = System.Text.Encoding.UTF8.GetString(certificatesBytes);
-                            var certsList = certificates.Split(";");
+                            var certsList = certificates.Split(CertChainSeparator);
+                            var alias = "";
                             foreach (var cert in certsList)
                             {
                                 logger.LogInformation(cert);
-                                string[] certs = { cert };
-                                var alias = "meowing";
+                                // load as x509
+                                try
+                                {
+                                    var certFormatted = new X509Certificate2();
+                                    certFormatted = cert.Contains("BEGIN CERTIFICATE") ? new X509Certificate2(Encoding.UTF8.GetBytes(cert)) : new X509Certificate2(Convert.FromBase64String(cert));
+                                    alias = certFormatted.Thumbprint;
+                                }
+                                catch (Exception e)
+                                {
+                                    logger.LogError(e.Message);
+                                    return new JobResult()
+                                    {
+                                        Result = OrchestratorJobStatusJobResult.Failure,
+                                        JobHistoryId = config.JobHistoryId,
+                                        FailureMessage = e.Message
+                                    };
+                                }
 
+
+                                string[] certs = { cert };
                                 inventoryItems.Add(new CurrentInventoryItem()
                                 {
                                     ItemStatus = OrchestratorInventoryItemStatus
@@ -210,27 +231,104 @@ public class Inventory : IInventoryJobExtension
                             };
                         }
 
-                        // foreach (var cert in csrs)
-                        // {
-                        //     string[] certs = { cert };
-                        //
-                        //     string alias = cert;
-                        //     inventoryItems.Add(new CurrentInventoryItem()
-                        //     {
-                        //         ItemStatus = OrchestratorInventoryItemStatus.Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
-                        //         Alias = alias,
-                        //         PrivateKeyEntry =
-                        //             false, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
-                        //         UseChainLevel = false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
-                        //         Certificates = certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
-                        //     });
-                        // }
-
                         // 3) Add certificates (no private keys) to the collection below.  If multiple certs in a store comprise a chain, the Certificates array will house multiple certs per InventoryItem.  If multiple certs
                         //     in a store comprise separate unrelated certs, there will be one InventoryItem object created per certificate.
 
                         //**** Will need to uncomment the block below and code to the extension's specific needs.  This builds the collection of certificates and related information that will be passed back to the KF Orchestrator service and then Command.
                         break;
+                    case "tls_secret":
+                        logger.LogDebug(
+                            $"Querying Kubernetes {localCertStore.KubeSecretType} API for {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}");
+                        try
+                        {
+                            var certData = c.GetCertificateStoreSecret(
+                                localCertStore.KubeSecretName,
+                                localCertStore.KubeNamespace
+                            );
+                            var certificatesBytes = certData.Data["tls.crt"];
+                            var privateKeyBytes = certData.Data["tls.key"];
+                            var certificates = System.Text.Encoding.UTF8.GetString(certificatesBytes);
+                            var certsList = certificates.Split(CertChainSeparator);
+                            var alias = "";
+                            foreach (var cert in certsList)
+                            {
+                                logger.LogInformation(cert);
+                                // load as x509
+                                try
+                                {
+                                    var certFormatted = new X509Certificate2();
+                                    certFormatted = cert.Contains("BEGIN CERTIFICATE") ? new X509Certificate2(Encoding.UTF8.GetBytes(cert)) : new X509Certificate2(Convert.FromBase64String(cert));
+                                    alias = certFormatted.Thumbprint;
+                                }
+                                catch (Exception e)
+                                {
+                                    logger.LogError(e.Message);
+                                    return new JobResult()
+                                    {
+                                        Result = OrchestratorJobStatusJobResult.Failure,
+                                        JobHistoryId = config.JobHistoryId,
+                                        FailureMessage = e.Message
+                                    };
+                                }
+
+
+                                string[] certs = { cert };
+                                inventoryItems.Add(new CurrentInventoryItem()
+                                {
+                                    ItemStatus = OrchestratorInventoryItemStatus
+                                        .Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
+                                    Alias = alias,
+                                    PrivateKeyEntry =
+                                        false, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
+                                    UseChainLevel =
+                                        false, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
+                                    Certificates =
+                                        certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
+                                });
+                            }
+                            try
+                            {
+                                //Sends inventoried certificates back to KF Command
+                                submitInventory.Invoke(inventoryItems);
+                                //Status: 2=Success, 3=Warning, 4=Error
+                                return new JobResult() { Result = OrchestratorJobStatusJobResult.Success, JobHistoryId = config.JobHistoryId };
+                            }
+                            catch (Exception ex)
+                            {
+                                // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
+                                //  may not be reflected in Keyfactor Command.
+                                return new JobResult()
+                                {
+                                    Result = OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId,
+                                    FailureMessage = "Custom message you want to show to show up as the error message in Job History in KF Command"
+                                };
+                            }
+                        }
+                        catch (k8s.Autorest.HttpOperationException e)
+                        {
+                            logger.LogError(e.Message);
+                            var certDataErrorMsg =
+                                $"Kubernetes {localCertStore.KubeSecretType} '{localCertStore.KubeSecretName}' was not found in namespace '{localCertStore.KubeNamespace}'.";
+                            logger.LogError(certDataErrorMsg);
+                            return new JobResult()
+                            {
+                                Result = OrchestratorJobStatusJobResult.Failure,
+                                JobHistoryId = config.JobHistoryId,
+                                FailureMessage = certDataErrorMsg
+                            };
+                        }
+                        catch (Exception e)
+                        {
+                            logger.LogError(e.Message);
+                            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+                            logger.LogError(certDataErrorMsg);
+                            return new JobResult()
+                            {
+                                Result = OrchestratorJobStatusJobResult.Failure,
+                                JobHistoryId = config.JobHistoryId,
+                                FailureMessage = certDataErrorMsg
+                            };
+                        }
                     case "certificate":
                         logger.LogError("Certificate type not implemented yet...");
                         return new JobResult()
