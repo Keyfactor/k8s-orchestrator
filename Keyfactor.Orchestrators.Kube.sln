@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keyfactor.Orchestrators.Kube", "sample-orchestrator-extension\Keyfactor.Orchestrators.Kube.csproj", "{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keyfactor.Orchestrators.Kube", "kubernetes-orchestrator-extension\Keyfactor.Orchestrators.Kube.csproj", "{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
