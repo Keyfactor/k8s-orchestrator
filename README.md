@@ -1,52 +1,10 @@
-# Kubernetes Orchestrator
+# Kubernetes Orchestrator Extension
 
 The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported:
 - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
 - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
-#### Integration status: Pilot - Ready for use in test environments.
-
-- [Kubernetes Orchestrator](#kubernetes-orchestrator)
-  - [Integration status: Pilot - Ready for use in test environments.](#integration-status--pilot---ready-for-use-in-test-environments)
-    * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
-    * [Keyfactor Version Supported](#keyfactor-version-supported)
-    * [Platform Specific Notes](#platform-specific-notes)
-    * [PAM Integration](#pam-integration)
-    * [Overview](#overview)
-    * [Versioning](#versioning)
-    * [Security Considerations](#security-considerations)
-        + [Service Account Setup](#service-account-setup)
-    * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
-    * [Configuration File Setup](#configuration-file-setup)
-    * [Certificate Store Types](#certificate-store-types)
-        + [Configuration Information](#configuration-information)
-            - [Common Values](#common-values)
-                * [UI Basic Tab](#ui-basic-tab)
-                * [UI Advanced Tab](#ui-advanced-tab)
-                * [Custom Fields Tab](#custom-fields-tab)
-                * [Entry Parameters Tab:](#entry-parameters-tab-)
-        + [K8SSecret Store Type](#k8ssecret-store-type)
-            - [kfutil Create K8SSecret Store Type](#kfutil-create-k8ssecret-store-type)
-            - [UI Configuration](#ui-configuration)
-                * [UI Basic Tab](#ui-basic-tab-1)
-                * [UI Advanced Tab](#ui-advanced-tab-1)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab-)
-        + [K8STLSSecr Store Type](#k8stlssecr-store-type)
-            - [kfutil Create K8STLSSecr Store Type](#kfutil-create-k8stlssecr-store-type)
-            - [UI Configuration](#ui-configuration-1)
-                * [UI Basic Tab](#ui-basic-tab-2)
-                * [UI Advanced Tab](#ui-advanced-tab-2)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab-1)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--1)
-        + [K8SCert Store Type](#k8scert-store-type)
-            - [UI Configuration](#ui-configuration-2)
-                * [UI Basic Tab](#ui-basic-tab-3)
-                * [UI Advanced Tab](#ui-advanced-tab-3)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
-    * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
-    * [License](#license)
+#### Integration status: Pilot - Ready for use in test environments. Not for use in production.
 
 ## About the Keyfactor Universal Orchestrator Capability
 
@@ -55,7 +13,68 @@ This repository contains a Universal Orchestrator Capability which is a plugin t
 The Universal Orchestrator is part of the Keyfactor software distribution and is available via the Keyfactor customer portal. For general instructions on installing Capabilities, see the “Keyfactor Command Orchestrator Installation and Configuration Guide” section of the Keyfactor documentation. For configuration details of this specific Capability, see below in this readme.
 
 The Universal Orchestrator is the successor to the Windows Orchestrator. This Capability plugin only works with the Universal Orchestrator and does not work with the Windows Orchestrator.
+
+
+
+## Support for Kubernetes Orchestrator Extension
+
+Kubernetes Orchestrator Extension is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
+
+###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
+___
+
+
+
 ---
+
+
+
+
+---
+
+
+## Table of Contents
+- [Kubernetes Orchestrator](#kubernetes-orchestrator)
+    - [Integration status: Pilot - Ready for use in test environments.](#integration-status--pilot---ready-for-use-in-test-environments)
+        * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
+        * [Keyfactor Version Supported](#keyfactor-version-supported)
+        * [Platform Specific Notes](#platform-specific-notes)
+        * [PAM Integration](#pam-integration)
+        * [Overview](#overview)
+        * [Versioning](#versioning)
+        * [Security Considerations](#security-considerations)
+            + [Service Account Setup](#service-account-setup)
+        * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
+        * [Configuration File Setup](#configuration-file-setup)
+        * [Certificate Store Types](#certificate-store-types)
+            + [Configuration Information](#configuration-information)
+                - [Common Values](#common-values)
+                    * [UI Basic Tab](#ui-basic-tab)
+                    * [UI Advanced Tab](#ui-advanced-tab)
+                    * [Custom Fields Tab](#custom-fields-tab)
+                    * [Entry Parameters Tab:](#entry-parameters-tab-)
+            + [K8SSecret Store Type](#k8ssecret-store-type)
+                - [kfutil Create K8SSecret Store Type](#kfutil-create-k8ssecret-store-type)
+                - [UI Configuration](#ui-configuration)
+                    * [UI Basic Tab](#ui-basic-tab-1)
+                    * [UI Advanced Tab](#ui-advanced-tab-1)
+                    * [UI Custom Fields Tab](#ui-custom-fields-tab)
+                    * [UI Entry Parameters Tab:](#ui-entry-parameters-tab-)
+            + [K8STLSSecr Store Type](#k8stlssecr-store-type)
+                - [kfutil Create K8STLSSecr Store Type](#kfutil-create-k8stlssecr-store-type)
+                - [UI Configuration](#ui-configuration-1)
+                    * [UI Basic Tab](#ui-basic-tab-2)
+                    * [UI Advanced Tab](#ui-advanced-tab-2)
+                    * [UI Custom Fields Tab](#ui-custom-fields-tab-1)
+                    * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--1)
+            + [K8SCert Store Type](#k8scert-store-type)
+                - [UI Configuration](#ui-configuration-2)
+                    * [UI Basic Tab](#ui-basic-tab-3)
+                    * [UI Advanced Tab](#ui-advanced-tab-3)
+                    * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
+                    * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
+        * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
+        * [License](#license)
 
 ## Keyfactor Version Supported
 
@@ -70,15 +89,15 @@ The minimum version of the Keyfactor Universal Orchestrator Framework needed to 
 
 ## Platform Specific Notes
 
-The Keyfactor Universal Orchestrator may be installed on either Windows or Linux based platforms. 
-The certificate operations supported by a capability may vary based what platform the capability is installed on. 
+The Keyfactor Universal Orchestrator may be installed on either Windows or Linux based platforms.
+The certificate operations supported by a capability may vary based what platform the capability is installed on.
 See the store type specific sections below for more details on specific cababilities based on Kubernetes resource type.
 
 ## PAM Integration
 
-This orchestrator extension has the ability to connect to a variety of supported PAM providers to 
-allow for the retrieval of various client hosted secrets right from the orchestrator server itself. 
-This eliminates the need to set up the PAM integration on Keyfactor Command which may be in an 
+This orchestrator extension has the ability to connect to a variety of supported PAM providers to
+allow for the retrieval of various client hosted secrets right from the orchestrator server itself.
+This eliminates the need to set up the PAM integration on Keyfactor Command which may be in an
 environment that the client does not want to have access to their PAM provider.
 
 The secrets that this orchestrator extension supports for use with a PAM Provider are:
@@ -90,22 +109,22 @@ The secrets that this orchestrator extension supports for use with a PAM Provide
 
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  
-For each value that you want managed by a PAM provider, simply enter the key value inside your 
-specific PAM provider that will hold this value into the corresponding field when setting up 
+For each value that you want managed by a PAM provider, simply enter the key value inside your
+specific PAM provider that will hold this value into the corresponding field when setting up
 the certificate store, discovery job, or API call.
 
-Setting up a PAM provider for use involves adding an additional section to the manifest.json 
-file for this extension as well as setting up the PAM provider you will be using.  Each of 
-these steps is specific to the PAM provider you will use and are documented in the specific 
-GitHub repo for that provider.  For a list of Keyfactor supported PAM providers, please 
+Setting up a PAM provider for use involves adding an additional section to the manifest.json
+file for this extension as well as setting up the PAM provider you will be using.  Each of
+these steps is specific to the PAM provider you will use and are documented in the specific
+GitHub repo for that provider.  For a list of Keyfactor supported PAM providers, please
 reference the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam).
 
 ---
 
 <!-- add integration specific information below -->
 ## Overview
-The Kubernetes Orchestrator Extension is an integration that can remotely manage certificate 
-resources in a Kubernetes cluster.  The certificate store types that can be managed in the 
+The Kubernetes Orchestrator Extension is an integration that can remotely manage certificate
+resources in a Kubernetes cluster.  The certificate store types that can be managed in the
 current version are:
 - K8SCert - Kubernetes certificates of type `certificates.k8s.io/v1`
 - K8SSecret - Kubernetes secrets of type `Opaque`
@@ -115,14 +134,14 @@ This orchestrator extension makes use of the Kubernetes API to communicate remot
 
 ## Versioning
 
-The version number of a the Kubernetes Orchestrator Extension can be verified by right clicking on the 
-`Kube.dll` file in the `<path>/<to>/<orchstrator install>/Extensions/Kubernetes` installation folder, 
+The version number of a the Kubernetes Orchestrator Extension can be verified by right clicking on the
+`Kube.dll` file in the `<path>/<to>/<orchstrator install>/Extensions/Kubernetes` installation folder,
 selecting Properties, and then clicking on the Details tab.
 
 ## Security Considerations
-For the Kubernetes Orchestrator Extension to be able to communicate with a Kubernetes cluster, it must 
-be able to authenticate with the cluster.  This is done by providing the extension with a service account 
-token that has the appropriate permissions to perform the desired operations. The service account token 
+For the Kubernetes Orchestrator Extension to be able to communicate with a Kubernetes cluster, it must
+be able to authenticate with the cluster.  This is done by providing the extension with a service account
+token that has the appropriate permissions to perform the desired operations. The service account token
 can be provided to the extension in one of two ways:
 - As a raw JSON file that contains the service account credentials
 - As a base64 encoded string that contains the service account credentials
@@ -164,26 +183,26 @@ subjects:
 ```
 
 ## Kubernetes Orchestrator Extension Installation
-1. Create the certificate store types you wish to manage.  Please refer to the individual sections 
-devoted to each supported store type under "Certificate Store Types" later in this README.
+1. Create the certificate store types you wish to manage.  Please refer to the individual sections
+   devoted to each supported store type under "Certificate Store Types" later in this README.
 2. Stop the Keyfactor Universal Orchestrator Service for the orchestrator you plan to install this
-extension to run on.
-3. In the Keyfactor Orchestrator installation folder (by convention usually 
-C:\Program Files\Keyfactor\Keyfactor Orchestrator), find the "Extensions" folder. Underneath that, 
-create a new folder named "Kubernetes". You may choose to use a different name if you wish.
-4. Download the latest version of the Kubernetes orchestrator extension from 
-[GitHub](https://github.com/Keyfactor/remote-file-orchestrator).  Click on the "Latest" release 
-link on the right hand side of the main page and download the first zip file.
+   extension to run on.
+3. In the Keyfactor Orchestrator installation folder (by convention usually
+   C:\Program Files\Keyfactor\Keyfactor Orchestrator), find the "Extensions" folder. Underneath that,
+   create a new folder named "Kubernetes". You may choose to use a different name if you wish.
+4. Download the latest version of the Kubernetes orchestrator extension from
+   [GitHub](https://github.com/Keyfactor/remote-file-orchestrator).  Click on the "Latest" release
+   link on the right hand side of the main page and download the first zip file.
 5. Copy the contents of the download installation zip file to the folder created in Step 3.
 6. (Optional) If you decide to create one or more certificate store types with short names different
-than the suggested values (please see the individual certificate store type sections in "Certificate
-Store Types" later in this README for more information regarding certificate store types), edit the 
-manifest.json file in the folder you created in step 3, and modify each "ShortName" in each 
-"Certstores.{ShortName}.{Operation}" line with the ShortName you used to create the respective 
-certificate store type.  If you created it with the suggested values, this step can be skipped.
+   than the suggested values (please see the individual certificate store type sections in "Certificate
+   Store Types" later in this README for more information regarding certificate store types), edit the
+   manifest.json file in the folder you created in step 3, and modify each "ShortName" in each
+   "Certstores.{ShortName}.{Operation}" line with the ShortName you used to create the respective
+   certificate store type.  If you created it with the suggested values, this step can be skipped.
 7. Modify the config.json file (See the "Configuration File Setup" section later in this README)
 8. Start the Keyfactor Universal Orchestrator Service.
-  
+
 ## Configuration File Setup
 
 The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is located in the {Keyfactor Orchestrator Installation Folder}\Extensions\Kubernetes.  None of the values are required, and a description of each follows below:
@@ -192,22 +211,22 @@ The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is loc
   "CreateStoreIfMissing": "N"
 }
 ```
-**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - N**.   
+**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - N**.
 
 ## Certificate Store Types
 
-When setting up the certificate store types you wish the Kubernetes Orchestrator Extension to 
-manage, there are some common settings that will be the same for all supported types. 
-To create a new Certificate Store Type in Keyfactor Command, first click on settings 
-`(the gear icon on the top right) => Certificate Store Types => Add`.  Alternatively, 
-there are cURL scripts for all of the currently implemented certificate store types 
-in the Certificate Store Type cURL Scripts folder in this repo if you wish to automate 
+When setting up the certificate store types you wish the Kubernetes Orchestrator Extension to
+manage, there are some common settings that will be the same for all supported types.
+To create a new Certificate Store Type in Keyfactor Command, first click on settings
+`(the gear icon on the top right) => Certificate Store Types => Add`.  Alternatively,
+there are cURL scripts for all of the currently implemented certificate store types
+in the Certificate Store Type cURL Scripts folder in this repo if you wish to automate
 the creation of the desired store types.
 
 ### Configuration Information
-Below is a table of the common values that should be used for all certificate store types.  
+Below is a table of the common values that should be used for all certificate store types.
 
-#### Common Values  
+#### Common Values
 ##### UI Basic Tab
 | Field Name | Required | Description                                                                                                                                | Value                  |
 |------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
@@ -378,9 +397,10 @@ Empty
 
 ## Creating Certificate Stores and Scheduling Discovery Jobs
 
-Please refer to the Keyfactor Command Reference Guide for information on creating 
-certificate stores and scheduling Discovery jobs in Keyfactor Command. 
+Please refer to the Keyfactor Command Reference Guide for information on creating
+certificate stores and scheduling Discovery jobs in Keyfactor Command.
 
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
+
 
