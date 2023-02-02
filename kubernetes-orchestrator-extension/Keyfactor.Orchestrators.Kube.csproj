@@ -1,16 +1,22 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <RootNamespace>Keyfactor.Extensions.Orchestrator.SOS</RootNamespace>
+    <RootNamespace>Keyfactor.Extensions.Orchestrator.Kube</RootNamespace>
     <LangVersion>latest</LangVersion>
+	 <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+	 <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+	 <PackageId>Keyfactor.Orchestrators.Kube</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Keyfactor.Logging" Version="1.1.0" />
     <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.1.2" />
-    <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.6.0" />
+    <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
     <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorRegistrationUpdater" Version="1.0.3" />
+    <PackageReference Include="Keyfactor.PKI" Version="5.0.0" />
+    <PackageReference Include="KubernetesClient.Classic" Version="10.0.16" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
   </ItemGroup>
 
