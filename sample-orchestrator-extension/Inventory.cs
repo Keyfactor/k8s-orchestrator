@@ -153,6 +153,11 @@ public class Inventory : IInventoryJobExtension
                                 logger.LogInformation(cert);
                                 // load as x509
                                 string alias;
+                                if (string.IsNullOrEmpty(cert))
+                                {
+                                    logger.LogInformation($"Kubernetes returned an empty inventory for store {localCertStore.KubeSecretName}");
+                                    continue;
+                                }
                                 try
                                 {
                                     var certFormatted = cert.Contains("BEGIN CERTIFICATE")

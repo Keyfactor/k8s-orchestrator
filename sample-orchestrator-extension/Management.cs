@@ -13,7 +13,6 @@ using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
 
@@ -57,6 +56,15 @@ public class Management : IManagementJobExtension
         // var certAlias = config.JobCertificate.Alias;
         try
         {
+            var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(config.CertificateStoreDetails.Properties);
+            logger.LogDebug($"KubernetesCertStore: {localCertStore}");
+            logger.LogDebug($"KubeNamespace: {localCertStore.KubeNamespace}");
+            logger.LogDebug($"KubeSecretName: {localCertStore.KubeSecretName}");
+            logger.LogDebug($"KubeSecretType: {localCertStore.KubeSecretType}");
+            logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}");
+            logger.LogTrace($"Certs: {localCertStore.Certs}");
+
+            var c = new KubeCertificateManagerClient("", "default");
             //Management jobs, unlike Discovery, Inventory, and Reenrollment jobs can have 3 different purposes:
             switch (config.OperationType)
             {
@@ -68,19 +76,12 @@ public class Management : IManagementJobExtension
                     //     to determine if job should overwrite an existing certificate in the store, for example a renewal.
                     // KubernetesCertStore localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storepath));
                     // Read KubernetesCertStore depending on type
-                    var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(config.CertificateStoreDetails.Properties);
 
-                    logger.LogDebug($"KubernetesCertStore: {localCertStore}");
-                    logger.LogDebug($"KubeNamespace: {localCertStore.KubeNamespace}");
-                    logger.LogDebug($"KubeSecretName: {localCertStore.KubeSecretName}");
-                    logger.LogDebug($"KubeSecretType: {localCertStore.KubeSecretType}");
-                    logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}");
-                    logger.LogTrace($"Certs: {localCertStore.Certs}");
                     logger.LogInformation($"Adding certificate to Kubernetes cert store {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}...");
 
                     // Load credentials file from localCertStore.KubeSvcCreds // TODO: Implement config passed from store params or password input
                     // var kubeCreds = JsonConvert.DeserializeObject<KubeCreds>(File.ReadAllText(localCertStore.KubeSvcCreds));
-                    var c = new KubeCertificateManagerClient("", "default");
+
 
                     var newCert = new Cert();
                     var certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
@@ -105,13 +106,18 @@ public class Management : IManagementJobExtension
                             string[] keyPems;
                             if (localCertStore.KubeSecretType == "tls_secret")
                             {
-                                var keyBytes = cert.GetRSAPrivateKey().ExportRSAPrivateKey();
-                                var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
-                                keyPems = new string[] { kemPem };
+                                var keyBytes = cert.GetRSAPrivateKey()?.ExportRSAPrivateKey() ?? null;
+                                if (keyBytes != null)
+                                {
+                                    var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+                                    keyPems = new string[] { kemPem };
+                                } else {
+                                    keyPems = new string[] { "" }; //TODO: Handle unbalanced private key stacks?
+                                }
                             }
                             else
                             {
-                                keyPems = cert.GetRSAPrivateKey()?.ToString().Split(";") ?? string.Empty.Split(";");
+                                keyPems = cert.GetRSAPrivateKey()?.ToString()?.Split(";") ?? string.Empty.Split(";");
                             }
 
                             var certPems = pemString.Split(";"); // TODO: Implement multiple certs
@@ -198,14 +204,18 @@ public class Management : IManagementJobExtension
                     //Code logic to:
                     // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
                     // 2) Custom logic to remove the certificate in a certificate store (config.CertificateStoreDetails.StorePath), possibly using alias (config.JobCertificate.Alias) or certificate thumbprint to identify the certificate (implementation dependent)
-                    var removeLocalCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storePath));
-                    var removealias = config.JobCertificate.Alias;
-                    var converted = removeLocalCertStore.Certs.ToList();
-                    converted.RemoveAll(x => x.Alias == removealias);
-                    var rmarray = converted.ToArray<Cert>();
-                    removeLocalCertStore.Certs = rmarray;
-                    var remconvertedcertstore = JsonConvert.SerializeObject(removeLocalCertStore);
-                    File.WriteAllText(storePath, remconvertedcertstore);
+                    var cBytes = Convert.FromBase64String(config.JobCertificate.Contents);
+                   
+                   
+                    logger.LogInformation(
+                        $"Removing certificate '{config.JobCertificate.Alias}' from Kubernetes cert store {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}...");
+                    
+                    c.DeleteCertificateStoreSecret(
+                        localCertStore.KubeSecretName,
+                        localCertStore.KubeNamespace,
+                        localCertStore.KubeSecretType,
+                        config.JobCertificate.Alias
+                    );
                     break;
                 case CertStoreOperationType.Create:
                     //OperationType == Create - Create an empty certificate store in the provided location

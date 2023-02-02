@@ -15,6 +15,8 @@ using System.Text;
 using System;
 using k8s;
 using k8s.Models;
+using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.PKI.PEM;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
@@ -41,7 +43,7 @@ public class KubeCertificateManagerClient
             : KubernetesClientConfiguration.BuildConfigFromConfigFile();
 
         IKubernetes client = new Kubernetes(config);
-        
+
         _ = client.CoreV1.ListNamespace();
         Client = client;
         return client;
@@ -60,7 +62,7 @@ public class KubeCertificateManagerClient
         var caCertPem = string.Join("\n", caCertPems);
         var chainPem = string.Join("\n\n", chainPems);
         V1Secret k8sSecretData;
-        if (secretType != "tls_secret")
+        if (secretType == "secret")
         {
             k8sSecretData = new V1Secret
             {
@@ -177,6 +179,86 @@ public class KubeCertificateManagerClient
         return secretResponse.Data.ToString();
     }
 
+
+    public V1Status DeleteCertificateStoreSecret(string secretName, string namespaceName, string storeType, string alias)
+    {
+        switch (storeType)
+        {
+            case "secret":
+                // check the current inventory and only remove the cert if it is found else throw not found exception
+                var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
+                if (existingSecret == null)
+                {
+                    throw new Exception(
+                        $"Delete secret {secretName} in Kubernetes namespace {namespaceName} failed. Also unable to read secret, please verify credentials have correct access.");
+                }
+
+                // handle cert removal
+                var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
+                var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]);
+                var certs = existingCerts.Split(",");
+                var keys = existingKeys.Split(",");
+                var index = 0;
+                foreach (var cer in certs)
+                {
+                    var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
+                    if (sCert.Thumbprint == alias)
+                    {
+                        existingCerts = existingCerts.Replace(cer, "").Replace(",,", ",");
+                        if (existingCerts.StartsWith(","))
+                        {
+                            existingCerts = existingCerts.Substring(1);
+                        }
+                        if (existingCerts.EndsWith(","))
+                        {
+                            existingCerts = existingCerts.Substring(0, existingCerts.Length - 1);
+                        }
+
+                        try {
+                            existingKeys = existingKeys.Replace(keys[index], "").Replace(",,", ",");
+                        }
+                        catch (Exception) {
+                            // Didn't find existing key for whatever reason so no need to delete.
+                            existingKeys = existingKeys;
+                        }
+                        
+                        if (existingKeys.StartsWith(","))
+                        {
+                            existingKeys = existingKeys.Substring(1);
+                        }
+                        if (existingKeys.EndsWith(","))
+                        {
+                            existingKeys = existingKeys.Substring(0, existingKeys.Length - 1);
+                        }
+                    }
+                    index++;
+                }
+                existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(existingCerts);
+                existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
+
+                // Update Kubernetes secret
+                _ = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
+
+                return new V1Status("v1", 0, status: "Success");
+
+            case "tls_secret":
+                return Client.CoreV1.DeleteNamespacedSecret(
+                    secretName,
+                    namespaceName,
+                    new V1DeleteOptions()
+                );
+            case "certificate":
+                // TODO: See if this is possible
+                Client.CertificatesV1.DeleteCertificateSigningRequest(
+                    secretName,
+                    new V1DeleteOptions()
+                );
+                throw new NotImplementedException("DeleteCertificateStoreSecret not implemented for 'certificate' type.");
+            default:
+                throw new NotImplementedException($"DeleteCertificateStoreSecret not implemented for type '{storeType}'.");
+        }
+        return null;
+    }
     public List<string> GetKubeCertInventory()
     {
         var output = new List<string>();
