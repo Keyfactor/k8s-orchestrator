@@ -273,17 +273,17 @@ kfutil store-types create --name K8SSecret
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name | Required | Value                     |
-|------------|----------|---------------------------|
-| Name       | &check;  | `K8SSecret`               |
-| ShortName  | &check;  | `K8SSecret`               |
-| Custom Capability | &check;  | Checked [x] + `K8SSecret` |
-| Supported Job Types | &check;  | Depends on store type.    |
-| Needs Server |          | Unchecked [ ]             |
-| Blueprint Allowed |          | Unchecked [ ]             |
-| Uses PowerShell |          | Unchecked [ ]             |
-| Requires Store Password |          | Unchecked [ ]             |
-| Supports Entry Password |          | Unchecked [ ]             |
+| Field Name | Required | Value                                     |
+|------------|----------|-------------------------------------------|
+| Name       | &check;  | `K8SSecret`                               |
+| ShortName  | &check;  | `K8SSecret`                               |
+| Custom Capability | &check;  | Checked [x] + `K8SSecret`                 |
+| Supported Job Types | &check;  | Inventory, Add, Remove, Create, Discovery |
+| Needs Server |          | Unchecked [ ]                             |
+| Blueprint Allowed |          | Unchecked [ ]                             |
+| Uses PowerShell |          | Unchecked [ ]                             |
+| Requires Store Password |          | Unchecked [ ]                             |
+| Supports Entry Password |          | Unchecked [ ]                             |
 
 ![k8ssecret_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_basic.png)
 
@@ -329,7 +329,7 @@ kfutil store-types create --name K8STLSSecr
 | Name       | &check;  | `K8STLSSecr`               |
 | ShortName  | &check;  | `K8STLSSecr`               |
 | Custom Capability | &check;  | Checked [x] + `K8STLSSecr` |
-| Supported Job Types | &check;  | Depends on store type.    |
+| Supported Job Types | &check;  | Inventory, Add, Remove, Create, Discovery    |
 | Needs Server |          | Unchecked [ ]             |
 | Blueprint Allowed |          | Unchecked [ ]             |
 | Uses PowerShell |          | Unchecked [ ]             |
@@ -378,7 +378,7 @@ kfutil store-types create --name K8SCert
 | Name       | &check;  | `K8SCert`               |
 | ShortName  | &check;  | `K8SCert`               |
 | Custom Capability | &check;  | Checked [x] + `K8SCert` |
-| Supported Job Types | &check;  | Depends on store type.    |
+| Supported Job Types | &check;  | Inventory, Discovery    |
 | Needs Server |          | Unchecked [ ]             |
 | Blueprint Allowed |          | Unchecked [ ]             |
 | Uses PowerShell |          | Unchecked [ ]             |
