@@ -250,6 +250,8 @@ kfutil store-types create --name K8SSecret
 | Requires Store Password |          | Unchecked [ ]             |
 | Supports Entry Password |          | Unchecked [ ]             |
 
+![k8ssecret_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_basic.png)
+
 ##### UI Advanced Tab
 | Field Name | Required | Value     |
 |------------|----------|-----------|
@@ -257,6 +259,8 @@ kfutil store-types create --name K8SSecret
 | Supports Custom Alias |          | Forbidden |
 | Private Key Handling |          | Optional  |
 | PFX Password Style |          | Default   |
+
+![k8ssecret_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_advanced.png)
 
 ##### UI Custom Fields Tab
 | Name           | Display Name         | Type   | Required | Default Value |
@@ -266,6 +270,7 @@ kfutil store-types create --name K8SSecret
 | KubeSecretType | Kube Secret Type     | String | &check;  | `secret`      |
 | KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
+![k8ssecret_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
@@ -296,6 +301,8 @@ kfutil store-types create --name K8STLSSecr
 | Requires Store Password |          | Unchecked [ ]             |
 | Supports Entry Password |          | Unchecked [ ]             |
 
+![k8sstlssecr_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_basic.png)
+
 ##### UI Advanced Tab
 | Field Name | Required | Value     |
 |------------|----------|-----------|
@@ -303,6 +310,8 @@ kfutil store-types create --name K8STLSSecr
 | Supports Custom Alias |          | Forbidden |
 | Private Key Handling |          | Optional  |
 | PFX Password Style |          | Default   |
+
+![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
 ##### UI Custom Fields Tab
 | Name           | Display Name         | Type   | Required | Default Value |
@@ -312,6 +321,7 @@ kfutil store-types create --name K8STLSSecr
 | KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`  |
 | KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
+![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
@@ -340,6 +350,8 @@ kfutil store-types create --name K8SCert
 | Requires Store Password |          | Unchecked [ ]             |
 | Supports Entry Password |          | Unchecked [ ]             |
 
+![k8scert_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_basic.png)
+
 ##### UI Advanced Tab
 | Field Name | Required | Value     |
 |------------|----------|-----------|
@@ -347,6 +359,8 @@ kfutil store-types create --name K8SCert
 | Supports Custom Alias |          | Forbidden |
 | Private Key Handling |          | Forbidden  |
 | PFX Password Style |          | Default   |
+
+![k8scert_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_advanced.png)
 
 ##### UI Custom Fields Tab
 | Name           | Display Name         | Type   | Required | Default Value |
@@ -356,6 +370,7 @@ kfutil store-types create --name K8SCert
 | KubeSecretType | Kube Secret Type     | String | &check;  | `cert`        |
 | KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
+![k8scert_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
