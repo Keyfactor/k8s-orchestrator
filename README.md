@@ -147,40 +147,8 @@ can be provided to the extension in one of two ways:
 - As a base64 encoded string that contains the service account credentials
 
 ### Service Account Setup
-To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension, use the following example as a guide:
-//TODO: Try and scope down the permissions to only what is needed for the extension to work
-```yaml
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: keyfactor
-  namespace: keyfactor
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: keyfactor
-rules:
-- apiGroups: ["certificates.k8s.io"]
-  resources: ["certificatesigningrequests"]
-  verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
-- apiGroups: [""]
-  resources: ["secrets"]
-  verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: keyfactor
-roleRef:
-    apiGroup: rbac.authorization.k8s.io
-    kind: ClusterRole
-    name: keyfactor
-subjects:
-- kind: ServiceAccount
-  name: keyfactor
-  namespace: keyfactor
-```
+For more information on how to create a Kubernetes service account and generate and format credentials for use by
+the Kubernetes Orchestrator Extension, please refer to the [Kubernetes Service Account Setup Guide](scripts/kubernetes/README.md).
 
 ## Kubernetes Orchestrator Extension Installation
 1. Create the certificate store types you wish to manage.  Please refer to the individual sections
