@@ -102,9 +102,11 @@ environment that the client does not want to have access to their PAM provider.
 
 The secrets that this orchestrator extension supports for use with a PAM Provider are:
 
-| Name           | Description                                                                                                                                                                                                                                       |
-|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeSvcCreds   | This is raw JSON that in `kubeconfig` format that contains service account credentials to interact with the Kubernetes APIs. See the [service account setup guide](scripts/kubernetes/README.md#create_service_accountsh) for permission details. |
+| Name           | Description                                                                                                                                                         |
+|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeSvcCreds   | This is a raw JSON file that contains service account credentials to interact with the Kubernetes APIs. See the service account setup guide for permission details. |
+| StorePassword  | The optional password used to secure the certificate store being managed #TODO: Is this relevant?                                                                   |
+
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  
 For each value that you want managed by a PAM provider, simply enter the key value inside your
@@ -145,9 +147,8 @@ can be provided to the extension in one of two ways:
 - As a base64 encoded string that contains the service account credentials
 
 ### Service Account Setup
-For a more complete example of this see the [Kubernetes Service Account Setup Guide](scripts/kubernetes/README.md).     
-
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension, use the following example as a guide:
+//TODO: Try and scope down the permissions to only what is needed for the extension to work
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -182,24 +183,24 @@ subjects:
 ```
 
 ## Kubernetes Orchestrator Extension Installation
-1. Create the certificate store types you wish to manage.  Please refer to 
-   [Certificate Store Types](#certificate-store-types) for complete information on store types.
+1. Create the certificate store types you wish to manage.  Please refer to the individual sections
+   devoted to each supported store type under "Certificate Store Types" later in this README.
 2. Stop the Keyfactor Universal Orchestrator Service for the orchestrator you plan to install this
    extension to run on.
-3. In the Keyfactor Orchestrator installation folder (default is
-   `C:\Program Files\Keyfactor\Keyfactor Orchestrator`), find the `Extensions` folder. Underneath that,
-   create a new folder named `Kubernetes`. You may choose to use a different name if you wish.
+3. In the Keyfactor Orchestrator installation folder (by convention usually
+   C:\Program Files\Keyfactor\Keyfactor Orchestrator), find the "Extensions" folder. Underneath that,
+   create a new folder named "Kubernetes". You may choose to use a different name if you wish.
 4. Download the latest version of the Kubernetes orchestrator extension from
-   [GitHub](https://github.com/Keyfactor/kubernetes-orchestrator).  Click on the "Latest" release
+   [GitHub](https://github.com/Keyfactor/remote-file-orchestrator).  Click on the "Latest" release
    link on the right hand side of the main page and download the first zip file.
 5. Copy the contents of the download installation zip file to the folder created in Step 3.
 6. (Optional) If you decide to create one or more certificate store types with short names different
-   than the suggested values (please see the individual certificate store type sections in the 
-   [Certificate Store Types](#certificate-store-types) section for more information regarding 
-   certificate store types), edit the `manifest.json` file in the folder you created in step 3, and 
-   modify each `ShortName` in each `Certstores.{ShortName}.{Operation}` line with the ShortName you 
-   used to create the respective certificate store type.  
-7. Modify the `config.json` file (See the [Configuration File Setup](#configuration-file-setup) section.)
+   than the suggested values (please see the individual certificate store type sections in "Certificate
+   Store Types" later in this README for more information regarding certificate store types), edit the
+   manifest.json file in the folder you created in step 3, and modify each "ShortName" in each
+   "Certstores.{ShortName}.{Operation}" line with the ShortName you used to create the respective
+   certificate store type.  If you created it with the suggested values, this step can be skipped.
+7. Modify the config.json file (See the "Configuration File Setup" section later in this README)
 8. Start the Keyfactor Universal Orchestrator Service.
 
 ## Configuration File Setup
@@ -207,10 +208,10 @@ subjects:
 The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is located in the {Keyfactor Orchestrator Installation Folder}\Extensions\Kubernetes.  None of the values are required, and a description of each follows below:
 ```json
 {   
-  "CreateStoreIfMissing": "Y"
+  "CreateStoreIfMissing": "N"
 }
 ```
-**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - Y**.
+**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - N**.
 
 ## Certificate Store Types
 
