@@ -5,66 +5,190 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Reflection;
-using System.Security.Cryptography.X509Certificates;
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using System;
 using k8s;
+using k8s.Autorest;
+using k8s.KubeConfigModels;
 using k8s.Models;
-using Keyfactor.Orchestrators.Extensions;
-using Keyfactor.PKI.PEM;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
 public class KubeCertificateManagerClient
 {
-    public KubeCertificateManagerClient(string credentialsFile, string context)
+    public KubeCertificateManagerClient(string kubeconfig)
     {
-        Client = GetKubeClient(credentialsFile);
+        Client = GetKubeClient(kubeconfig);
     }
 
-    public IKubernetes Client { get; set; }
+    private IKubernetes Client { get; set; }
 
-    public IKubernetes GetKubeClient(string credentialFileName)
+    public string GetHost()
+    {
+        return Client.BaseUri.ToString();
+    }
+
+    private K8SConfiguration ParseKubeConfig(string kubeconfig)
+    {
+        var k8SConfiguration = new K8SConfiguration();
+        // test if kubeconfig is base64 encoded
+        try
+        {
+            var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
+            kubeconfig = decodedKubeconfig;
+        }
+        catch
+        {
+            // not base64 encoded so do nothing
+        }
+
+        // check if json is escaped
+        if (kubeconfig.StartsWith("\\"))
+        {
+            kubeconfig = kubeconfig.Replace("\\", "");
+            kubeconfig = kubeconfig.Replace("\\n", "\n");
+        }
+
+
+        // parse kubeconfig as a dictionary of string, string
+
+        if (kubeconfig.StartsWith("{"))
+        {
+            //load json into dictionary of string, string
+            var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(kubeconfig);
+            k8SConfiguration = new K8SConfiguration
+            {
+                ApiVersion = configDict["apiVersion"].ToString(),
+                Kind = configDict["kind"].ToString(),
+                CurrentContext = configDict["current-context"].ToString(),
+                Clusters = new List<Cluster>(),
+                Users = new List<User>(),
+                Contexts = new List<Context>()
+            };
+
+            // parse clusters
+            var cl = configDict["clusters"];
+
+            foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString()))
+            {
+                var clusterObj = new Cluster
+                {
+                    Name = clusterMetadata["name"].ToString(),
+                    ClusterEndpoint = new ClusterEndpoint
+                    {
+                        Server = clusterMetadata["cluster"]["server"].ToString(),
+                        CertificateAuthorityData = clusterMetadata["cluster"]["certificate-authority-data"].ToString(),
+                        SkipTlsVerify = false
+                    }
+                };
+                k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
+            }
+
+
+            // parse users
+            foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString()))
+            {
+                var userObj = new User
+                {
+                    Name = user["name"].ToString(),
+                    UserCredentials = new UserCredentials
+                    {
+                        UserName = user["name"].ToString(),
+                        Token = user["user"]["token"].ToString()
+                    }
+                };
+                k8SConfiguration.Users = new List<User> { userObj };
+            }
+            // parse contexts
+            foreach (var ctx in JsonConvert.DeserializeObject<JArray>(configDict["contexts"].ToString()))
+            {
+                var contextObj = new Context
+                {
+                    Name = ctx["name"].ToString(),
+                    ContextDetails = new ContextDetails
+                    {
+                        Cluster = ctx["context"]["cluster"].ToString(),
+                        Namespace = ctx["context"]["namespace"].ToString(),
+                        User = ctx["context"]["user"].ToString()
+                    }
+                };
+                k8SConfiguration.Contexts = new List<Context> { contextObj };
+            }
+        }
+
+        return k8SConfiguration;
+    }
+
+    private IKubernetes GetKubeClient(string kubeconfig)
     {
         //Credentials file needs to be in the same location of the executing assembly
         var strExeFilePath = Assembly.GetExecutingAssembly().Location;
         var strWorkPath = Path.GetDirectoryName(strExeFilePath);
-        //var strSettingsJsonFilePath = Path.Combine(strWorkPath ?? string.Empty, credentialFileName); //TODO: so this is just where a config must live? /RiderProjects/gcp-certmanager-orchestrator/GcpCertManagerTestConsole/bin/Debug/netcoreapp3.1/  
-        //var stream = new FileStream(strSettingsJsonFilePath,
-        //   FileMode.Open
-        //);
-        var config = credentialFileName == ""
-            ? KubernetesClientConfiguration.BuildDefaultConfig()
-            : KubernetesClientConfiguration.BuildConfigFromConfigFile();
+
+        var credentialFileName = kubeconfig;
+        var k8SConfiguration = ParseKubeConfig(kubeconfig);
+
+        // use k8sConfiguration over credentialFileName
+        KubernetesClientConfiguration config;
+        if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
+        {
+            config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
+        }
+        else if (credentialFileName == "") // If no config defined in store parameters, use default config. This should never happen though.
+        {
+            config = KubernetesClientConfiguration.BuildDefaultConfig();
+        }
+        else
+        {
+            config = KubernetesClientConfiguration.BuildConfigFromConfigFile(!credentialFileName.Contains(strWorkPath)
+                ? Path.Join(strWorkPath, credentialFileName)
+                : // Else attempt to load config from file
+                credentialFileName); // Else attempt to load config from file
+
+        }
 
         IKubernetes client = new Kubernetes(config);
-
-        _ = client.CoreV1.ListNamespace();
         Client = client;
         return client;
     }
-
-    public V1Secret GetCertificateSecret(string secretName, string namespaceName)
-    {
-        return Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
-    }
-
-    public V1Secret CreateCertificateStoreSecret(string[] keyPems, string[] certPems, string[] caCertPems, string[] chainPems, int kfid, string secretName,
+    
+    public V1Secret CreateOrUpdateCertificateStoreSecret(string[] keyPems, string[] certPems, string[] caCertPems, string[] chainPems, string secretName,
         string namespaceName, string secretType, bool append = false, bool overwrite = false)
     {
         var certPem = string.Join("\n", certPems);
         var keyPem = string.Join("\n", keyPems);
         var caCertPem = string.Join("\n", caCertPems);
         var chainPem = string.Join("\n\n", chainPems);
-        V1Secret k8sSecretData;
-        if (secretType == "secret")
+        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, caCertPem, chainPem, secretType);
+
+        try
         {
-            k8sSecretData = new V1Secret
+            var secretResponse = Client.CoreV1.CreateNamespacedSecret(k8SSecretData, namespaceName);
+            return secretResponse;
+        }
+        catch (HttpOperationException e)
+        {
+            if (e.Message.Contains("Conflict"))
+            {
+                return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append, overwrite);
+            }
+        }
+        return null;
+    }
+
+    private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem, string caCertPem, string chainPem, string secretType)
+    {
+        var k8SSecretData = secretType switch
+        {
+            "secret" => new V1Secret
             {
                 Metadata = new V1ObjectMeta
                 {
@@ -77,14 +201,10 @@ public class KubeCertificateManagerClient
                     { "private_keys", Encoding.UTF8.GetBytes(keyPem) },
                     { "certificates", Encoding.UTF8.GetBytes(certPem) },
                     { "ca_certificates", Encoding.UTF8.GetBytes(caCertPem) },
-                    { "chain", Encoding.UTF8.GetBytes(chainPem) },
-                    { "kfid", Encoding.UTF8.GetBytes(kfid.ToString()) }
+                    { "chain", Encoding.UTF8.GetBytes(chainPem) }
                 }
-            };
-        }
-        else
-        {
-            k8sSecretData = new V1Secret
+            },
+            "tls_secret" => new V1Secret
             {
                 Metadata = new V1ObjectMeta
                 {
@@ -100,85 +220,148 @@ public class KubeCertificateManagerClient
                     { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
                     { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
                 }
-            };
+            },
+            _ => throw new NotImplementedException(
+                $"Secret type {secretType} not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.")
+        };
+        return k8SSecretData;
+    }
+    
+    private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
+    {
+        var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
+        var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]);
+        if (existingCerts.Contains(certPem) && existingKeys.Contains(keyPem))
+        {
+            // certificate already exists, return existing secret
+            return existingSecret;
         }
 
-
-        try
+        if (!existingCerts.Contains(certPem))
         {
-            var secretResponse = Client.CoreV1.CreateNamespacedSecret(k8sSecretData, namespaceName);
-            return secretResponse;
-        }
-        catch (k8s.Autorest.HttpOperationException e)
-        {
-            if (e.Message.Contains("Conflict"))
+            var newCerts = existingCerts;
+            if (existingCerts.Length > 0)
             {
-                if (append)
-                {
-                    var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
-                    if (existingSecret == null)
-                    {
-                        throw new Exception(
-                            $"Create secret {secretName} in Kubernetes namespace {namespaceName} failed. Also unable to read secret, please verify credentials have correct access.");
-                    }
-                    switch (secretType)
-                    {
-                        // check if certificate already exists in "certificates" field
-                        case "secret":
-                        {
-                            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
-                            if (existingCerts.Contains(certPem))
-                            {
-                                return existingSecret;
-                            }
-                            var newCerts = existingCerts;
-                            if (existingCerts.Length > 0)
-                            {
-                                newCerts = newCerts + ",";
-                            }
-                            newCerts = newCerts + certPem;
-
-                            existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(newCerts);
-                            var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
-                            return secretResponse;
-                        }
-                        // TODO: Check if overwrite is specified if not then fail.
-                        // TODO: Check if multiple certs are trying to be added which is not supported.
-                        case "tls_secret" when !overwrite:
-                            throw new Exception("Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.");
-                        case "tls_secret":
-                        {
-                            var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(k8sSecretData, secretName, namespaceName);
-                            return secretResponse;
-                        }
-                    }
-
-                }
-                else
-                {
-                    var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(k8sSecretData, secretName, namespaceName);
-                    return secretResponse;
-                }
+                newCerts += ",";
             }
+            newCerts += certPem;
+
+            existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(newCerts);
         }
-        return null;
+
+        if (!existingKeys.Contains(keyPem))
+        {
+            var newKeys = existingKeys;
+            if (existingKeys.Length > 0)
+            {
+                newKeys += ",";
+            }
+            newKeys += keyPem;
+
+            existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(newKeys);
+        }
+
+        var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
+        return secretResponse;
     }
 
+    private V1Secret UpdateSecretStore(string secretName, string namespaceName, string secretType, string certPem, string keyPem, V1Secret newData, bool append,
+        bool overwrite = false)
+    {
+        if (!append) return Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
+
+        var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
+        if (existingSecret == null)
+        {
+            throw new Exception(
+                $"Update {secretType} secret {secretName} in Kubernetes namespace {namespaceName} on {GetHost()} failed. Also unable to read secret, please verify credentials have correct access.");
+        }
+
+        switch (secretType)
+        {
+            // check if certificate already exists in "certificates" field
+            case "secret":
+            {
+                return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, certPem, keyPem);
+            }
+            case "tls_secret" when !overwrite:
+                throw new Exception("Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.");
+            case "tls_secret":
+            {
+                var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
+                return secretResponse;
+            }
+            default:
+                throw new NotImplementedException(
+                    $"Secret type {secretType} not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.");
+        }
+    }
     public V1Secret GetCertificateStoreSecret(string secretName, string namespaceName)
     {
         return Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
     }
-
-    public string GetRemoteStore(string secretName, string namespaceName)
+    
+    private static string CleanOpaqueStore(string existingEntries, string pemString)
     {
-        var secretResponse = Client.CoreV1.ReadNamespacedSecret(
-            secretName,
-            namespaceName,
-            true
-        );
-        return secretResponse.Data.ToString();
+        try
+        {
+            existingEntries = existingEntries.Replace(pemString, "").Replace(",,", ",");
+            if (existingEntries.StartsWith(","))
+            {
+                existingEntries = existingEntries.Substring(1);
+            }
+            if (existingEntries.EndsWith(","))
+            {
+                existingEntries = existingEntries.Substring(0, existingEntries.Length - 1);
+            }
+        }
+        catch (Exception)
+        {
+            // Didn't find existing key for whatever reason so no need to delete.
+        }
+        return existingEntries;
     }
 
+    private V1Secret DeleteCertificateStoreSecret(string secretName, string namespaceName, string alias)
+    {
+        var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
+        if (existingSecret == null)
+        {
+            throw new Exception(
+                $"Delete secret {secretName} in Kubernetes namespace {namespaceName} failed. Unable unable to read secret, please verify credentials have correct access.");
+        }
+
+        // handle cert removal
+        var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
+        var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]);
+        var certs = existingCerts.Split(",");
+        var keys = existingKeys.Split(",");
+        var index = 0; //TODO: Currently keys are assumed to be in the same order as certs.
+        foreach (var cer in certs)
+        {
+            var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
+            if (sCert.Thumbprint == alias)
+            {
+                existingCerts = CleanOpaqueStore(existingCerts, cer);
+                try
+                {
+                    existingKeys = CleanOpaqueStore(existingKeys, keys[index]);
+                }
+                catch (IndexOutOfRangeException)
+                {
+                    // Didn't find existing key for whatever reason so no need to delete.
+                    // TODO: Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
+                }
+
+            }
+            index++; //TODO: Currently keys are assumed to be in the same order as certs.
+        }
+        existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(existingCerts);
+        existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
+
+        // Update Kubernetes secret
+        return Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
+    }
 
     public V1Status DeleteCertificateStoreSecret(string secretName, string namespaceName, string storeType, string alias)
     {
@@ -186,61 +369,8 @@ public class KubeCertificateManagerClient
         {
             case "secret":
                 // check the current inventory and only remove the cert if it is found else throw not found exception
-                var existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName, true);
-                if (existingSecret == null)
-                {
-                    throw new Exception(
-                        $"Delete secret {secretName} in Kubernetes namespace {namespaceName} failed. Also unable to read secret, please verify credentials have correct access.");
-                }
-
-                // handle cert removal
-                var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
-                var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]);
-                var certs = existingCerts.Split(",");
-                var keys = existingKeys.Split(",");
-                var index = 0;
-                foreach (var cer in certs)
-                {
-                    var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
-                    if (sCert.Thumbprint == alias)
-                    {
-                        existingCerts = existingCerts.Replace(cer, "").Replace(",,", ",");
-                        if (existingCerts.StartsWith(","))
-                        {
-                            existingCerts = existingCerts.Substring(1);
-                        }
-                        if (existingCerts.EndsWith(","))
-                        {
-                            existingCerts = existingCerts.Substring(0, existingCerts.Length - 1);
-                        }
-
-                        try {
-                            existingKeys = existingKeys.Replace(keys[index], "").Replace(",,", ",");
-                        }
-                        catch (Exception) {
-                            // Didn't find existing key for whatever reason so no need to delete.
-                            existingKeys = existingKeys;
-                        }
-                        
-                        if (existingKeys.StartsWith(","))
-                        {
-                            existingKeys = existingKeys.Substring(1);
-                        }
-                        if (existingKeys.EndsWith(","))
-                        {
-                            existingKeys = existingKeys.Substring(0, existingKeys.Length - 1);
-                        }
-                    }
-                    index++;
-                }
-                existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(existingCerts);
-                existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
-
-                // Update Kubernetes secret
-                _ = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
-
+                _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
                 return new V1Status("v1", 0, status: "Success");
-
             case "tls_secret":
                 return Client.CoreV1.DeleteNamespacedSecret(
                     secretName,
@@ -257,7 +387,6 @@ public class KubeCertificateManagerClient
             default:
                 throw new NotImplementedException($"DeleteCertificateStoreSecret not implemented for type '{storeType}'.");
         }
-        return null;
     }
     public List<string> GetKubeCertInventory()
     {
@@ -266,8 +395,7 @@ public class KubeCertificateManagerClient
         foreach (var cr in csr)
         {
             var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
-            string utfCsr;
-            utfCsr = cr.Spec.Request != null
+            var utfCsr = cr.Spec.Request != null
                 ? Encoding.UTF8.GetString(cr.Spec.Request, 0, cr.Spec.Request.Length)
                 : "";
 
@@ -350,43 +478,6 @@ public class KubeCertificateManagerClient
             PublicKey = pubKeyPem
         };
     }
-
-    // public string SignCSR(string csr)
-    // {
-    //     var kfClient = new Client("https://sbailey-lab.kfdelivery.com/KeyfactorAPI",
-    //         "a2ZhZG1pbkBjb21tYW5kOldoNUcyVGM2VkJZalNNcEM=");
-    //     var now = DateTime.Now.ToUniversalTime();
-    //     var csrReq = new CSREnrollmentRequest
-    //     {
-    //         CSR = csr,
-    //         CertificateAuthority = "CommandCA1",
-    //         IncludeChain = true,
-    //         Timestamp = now,
-    //         Template = "2YearTestWebServer",
-    //
-    //     };
-    //     var enrollResp = kfClient.PostCSREnrollAsync("PEM", csrReq).Result;
-    //     return 
-    // }
-
-    // private static void Main(string[] args)
-    // {
-    //     var c = new KubeCertificateManagerClient("", "default");
-    //     // var certRequest = c.GenerateCertificateRequest("CN=MEOW",new string[]{"meow.com", "MEOW"}, Array.Empty<IPAddress>(), "RSA", 4096);
-    //     // var kubeSigningRequest = c.CreateCertificateSigningRequest("meow", "default", certRequest.CSR);
-    //     // Console.WriteLine(certRequest.CSR);
-    //     // Console.WriteLine(certRequest.PrivateKey);
-    //     // Console.WriteLine(certRequest.PublicKey);
-    //     var csrs = c.GetKubeCertInventory();
-    //     foreach (var csr in csrs)
-    //     {
-    //         var signedCert = c.SignCSR(csr);
-    //         Console.WriteLine(signedCert);
-    //     }
-    //     // To prevents the screen from 
-    //     // running and closing quickly
-    //     // Console.ReadKey();
-    // }
 
     public struct CsrObject
     {

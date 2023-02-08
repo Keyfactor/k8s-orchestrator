@@ -54,7 +54,7 @@ users:
     token: $SA_TOKEN" > kubeconfig
 
 # Save only the service account context to a JSON file
-kubectl config view --raw -o json --kubeconfig=kubeconfig | jq '.contexts |= [.[] | select(.name == "$SA_NAME-context")]' > $SA_NAME-context.json
+kubectl config view --raw -o json --kubeconfig=kubeconfig > "${SA_NAME}-context.json"
 
 # Set the KUBECONFIG environment variable to point to the new kubeconfig file
 export KUBECONFIG=$PWD/kubeconfig
