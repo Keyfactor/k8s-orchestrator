@@ -13,7 +13,12 @@ Please note that this is only an example and you may need to modify the script a
         
 ## Pre-requisites
 - Kubernetes cluster with RBAC enabled
-- Permissions to create a service account, role and role binding
+- Kubernetes permissions to create a service account, read its' token, cluster role and a cluster role binding:
+  - `rbac.authorization.k8s.io/v1/ClusterRole`
+  - `ServiceAccount`
+  - `ConfigMap`
+  - `rbac.authorization.k8s.io/v1/ClusterRoleBinding`
+  - `secret/$SA_TOKEN`
 - `kubectl` installed and configured to connect to the Kubernetes cluster
 - `jq` installed
 
