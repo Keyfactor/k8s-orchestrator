@@ -55,7 +55,7 @@ The secrets that this orchestrator extension supports for use with a PAM Provide
 
 | Name           | Description                                                                                                                                                                                                                                                     |
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ServerUsername | Must be set to `kubeconfig` if used.                                                                                                                                                                                                                            |
+| ServerUsername | Must be set to `kubeconfig` if used. If you do not set it to `kubeconfig` the `ServerPassword` will be ignored.                                                                                                                                                 |
 | ServerPassword | Must be set if `ServerUsername` is provided. The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](../scripts/kubernetes/README.md) docs and scripts. |
 | KubeSvcCreds   | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                                                                    |
   
@@ -183,7 +183,6 @@ can be provided to the extension in one of two ways:
 
 ### Service Account Setup
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension, use the following example as a guide:
-//TODO: Try and scope down the permissions to only what is needed for the extension to work
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
