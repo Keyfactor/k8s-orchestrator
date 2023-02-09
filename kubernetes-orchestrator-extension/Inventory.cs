@@ -147,10 +147,19 @@ public class Inventory : IInventoryJobExtension
             switch (KubeSecretType)
             {
                 case "secret":
+                case "secrets":
                     return HandleOpaqueSecret(config.JobHistoryId, submitInventory);
                 case "tls_secret":
+                case "tls":
+                case "tlssecret":
+                case "tls_secrets":
                     return HandleTlsSecret(config.JobHistoryId, submitInventory);
                 case "certificate":
+                case "cert":
+                case "csr":
+                case "csrs":
+                case "certs":
+                case "certificates":
                     return HandleCertificate(config.JobHistoryId, submitInventory);
                 default:
                     var errorMsg = $"{KubeSecretType} not supported.";
@@ -181,7 +190,7 @@ public class Inventory : IInventoryJobExtension
         try
         {
             var certificates = _kubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
-            return PushInventory(certificates, jobId, submitInventory, hasPrivateKey);
+            return PushInventory(certificates, jobId, submitInventory);
         }
         catch (HttpOperationException e)
         {

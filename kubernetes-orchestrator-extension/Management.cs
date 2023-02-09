@@ -268,14 +268,21 @@ public class Management : IManagementJobExtension
         {
             // Process request based on secret type
             case "tls_secret":
+            case "tls":
+            case "tlssecret":
+            case "tls_secrets":
                 _ = HandleTlsSecret(certAlias, certObj, certPassword, overwrite);
                 break;
             case "secret":
+            case "secrets":
                 _ = HandleOpaqueSecret(certAlias, certObj, overwrite);
                 break;
             case "certificate":
             case "cert":
             case "csr":
+            case "csrs":
+            case "certs":
+            case "certificates":
                 const string csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
                 _logger.LogError(csrErrorMsg);
                 return FailJob(csrErrorMsg, config.JobHistoryId);
