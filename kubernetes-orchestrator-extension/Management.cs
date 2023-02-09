@@ -117,6 +117,13 @@ public class Management : IManagementJobExtension
             KubeSecretName = storeProperties["KubeSecretName"];
             KubeSecretType = storeProperties["KubeSecretType"];
             KubeSvcCreds = storeProperties["KubeSvcCreds"];
+            
+            // If KubeSecretName is not provided, use the storePath as the secret name
+            if (string.IsNullOrEmpty(KubeSecretName))
+            {
+                KubeSecretName = storePath;
+            }
+            
             _logger.LogDebug($"KubeNamespace: {KubeNamespace}");
             _logger.LogDebug($"KubeSecretName: {KubeSecretName}");
             _logger.LogDebug($"KubeSecretType: {KubeSecretType}");

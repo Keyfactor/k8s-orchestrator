@@ -24,8 +24,7 @@ namespace Keyfactor.Extensions.Orchestrator.Kube;
 public class Inventory : IInventoryJobExtension
 {
     private static readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
-
-    // private static readonly string[] RequiredProperties = { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
+    
     private static readonly string[] RequiredProperties = { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
 
     private static readonly string CertChainSeparator = ",";
@@ -75,9 +74,9 @@ public class Inventory : IInventoryJobExtension
         _logger = LogHandler.GetClassLogger(GetType());
         _logger.LogDebug("Begin Inventory...");
 
-        var storepath = config.CertificateStoreDetails.StorePath;
+        var storePath = config.CertificateStoreDetails.StorePath;
         var properties = config.CertificateStoreDetails.Properties;
-        _logger.LogInformation($"Inventory for store path: {storepath}");
+        _logger.LogInformation($"Inventory for store path: {storePath}");
 
         ServerUsername = ResolvePamField("Server User Name", config.ServerUsername);
         ServerPassword = ResolvePamField("Server Password", config.ServerPassword);
@@ -110,6 +109,12 @@ public class Inventory : IInventoryJobExtension
         KubeSecretName = storeProperties["KubeSecretName"];
         KubeSecretType = storeProperties["KubeSecretType"];
         KubeSvcCreds = storeProperties["KubeSvcCreds"];
+        
+        //Check if KubeSecretName is empty or null and default to storepath
+        if (string.IsNullOrEmpty(KubeSecretName))
+        {
+            KubeSecretName = storePath;
+        }
 
         if (ServerUsername == "kubeconfig")
         {

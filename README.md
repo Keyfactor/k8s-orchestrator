@@ -105,7 +105,6 @@ The secrets that this orchestrator extension supports for use with a PAM Provide
 | Name           | Description                                                                                                                                                         |
 |----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | KubeSvcCreds   | This is a raw JSON file that contains service account credentials to interact with the Kubernetes APIs. See the service account setup guide for permission details. |
-| StorePassword  | The optional password used to secure the certificate store being managed #TODO: Is this relevant?                                                                   |
 
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  
@@ -208,7 +207,7 @@ subjects:
 The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is located in the {Keyfactor Orchestrator Installation Folder}\Extensions\Kubernetes.  None of the values are required, and a description of each follows below:
 ```json
 {   
-  "CreateStoreIfMissing": "N"
+  "CreateStoreIfMissing": "Y"
 }
 ```
 **CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - N**.
@@ -249,12 +248,17 @@ Below is a table of the common values that should be used for all certificate st
 | PFX Password Style |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value | Description                                                                  |
-|----------------|----------------------|--------|----------|---------------|------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String | X        | `default`     | The Kubernetes namespace the store will reside.                              |
-| KubeSecretName | Kube Secret Name     | String | &check;  | none          | The Kubernetes secret or certificate resource name.                          |
-| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`                |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON file containing the service account credentials to the Kubernetes API. |
+| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                 |
+|----------------|----------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------|
+| KubeNamespace  | Kube Namespace       | String | X        | `default`     | The Kubernetes namespace the store will reside.                                                             |
+| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                            |
+| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
+| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON file containing the service account credentials to the Kubernetes API.                               |
+
+##### Kube Secret Types
+- `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
+- `tls_secret` - A secret of type `kubernetes.io/tls`. Must contain the following keys: [ `tls.crt`, `tls.key` ] to be inventoried.
+- `cert` - A certificate `certificates.k8s.io/v1` resource. Must contain the following keys: [ `csr`, `cert` ] to be inventoried.
 
 ##### Entry Parameters Tab:
 - See specific certificate store type instructions below
@@ -349,12 +353,12 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value |
-|----------------|----------------------|--------|----------|---------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     |
-| KubeSecretName | Kube Secret Name     | String | &check;  |               |
-| KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`  |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
+| Name           | Display Name         | Type   | Required | Default Value                   |
+|----------------|----------------------|--------|----------|---------------------------------|
+| KubeNamespace  | Kube Namespace       | String |          | `default`                       |
+| KubeSecretName | Kube Secret Name     | String |          | Will override `storepath` value |
+| KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`                    |
+| KubeSvcCreds   | Kube Service Account | Secret | &check;  |                                 |
 
 ![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
 
