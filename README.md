@@ -210,7 +210,7 @@ The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is loc
   "CreateStoreIfMissing": "Y"
 }
 ```
-**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - N**.
+**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - Y**.
 
 ## Certificate Store Types
 
@@ -251,7 +251,7 @@ Below is a table of the common values that should be used for all certificate st
 | Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                 |
 |----------------|----------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------|
 | KubeNamespace  | Kube Namespace       | String | X        | `default`     | The Kubernetes namespace the store will reside.                                                             |
-| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                            |
+| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                         |
 | KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
 | KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON file containing the service account credentials to the Kubernetes API.                               |
 
@@ -353,12 +353,12 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value                   |
-|----------------|----------------------|--------|----------|---------------------------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`                       |
-| KubeSecretName | Kube Secret Name     | String |          | Will override `storepath` value |
-| KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`                    |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  |                                 |
+| Name           | Display Name         | Type   | Required | Default Value |
+|----------------|----------------------|--------|----------|---------------|
+| KubeNamespace  | Kube Namespace       | String |          | `default`     |
+| KubeSecretName | Kube Secret Name     | String | &check;  |               |
+| KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`  |
+| KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
 ![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
 
