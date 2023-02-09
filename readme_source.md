@@ -112,7 +112,6 @@ can be provided to the extension in one of two ways:
 
 ### Service Account Setup
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension, use the following example as a guide:
-//TODO: Try and scope down the permissions to only what is needed for the extension to work
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
