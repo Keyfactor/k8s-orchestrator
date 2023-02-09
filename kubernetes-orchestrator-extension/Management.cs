@@ -6,20 +6,52 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
+using System.Security.Cryptography.X509Certificates;
+using k8s.Models;
 using Keyfactor.Logging;
-using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Common.Enums;
+using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using System.IO;
-using System.Security.Cryptography.X509Certificates;
 using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
 public class Management : IManagementJobExtension
 {
+    private static readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
+
+    // private static readonly string[] RequiredProperties = { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
+    private static readonly string[] RequiredProperties = { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
+
+    public static string CertChainSeparator = ",";
+
+    private readonly IPAMSecretResolver _resolver;
+
+    private KubeCertificateManagerClient _kubeClient;
+
+    private ILogger _logger;
+
+    public Management(IPAMSecretResolver resolver)
+    {
+        _resolver = resolver;
+    }
+
+    private string KubeNamespace { get; set; }
+
+    private string KubeSecretName { get; set; }
+
+    private string KubeSecretType { get; set; }
+
+    private string KubeSvcCreds { get; set; }
+
+    private string ServerUsername { get; set; }
+
+    private string ServerPassword { get; set; }
+
     //Necessary to implement IManagementJobExtension but not used.  Leave as empty string.
     public string ExtensionName => "Kube";
 
@@ -39,222 +71,298 @@ public class Management : IManagementJobExtension
         //
         // config.JobCertificate.EntryContents - Base64 encoded string representation (PKCS12 if private key is included, DER if not) of the certificate to add for Management-Add jobs.
         // config.JobCertificate.Alias - optional string value of certificate alias (used in java keystores and some other store types)
-        // config.OpeerationType - enumeration representing function with job type.  Used only with Management jobs where this value determines whether the Management job is a CREATE/ADD/REMOVE job.
+        // config.OperationType - enumeration representing function with job type.  Used only with Management jobs where this value determines whether the Management job is a CREATE/ADD/REMOVE job.
         // config.Overwrite - Boolean value telling the Orchestrator Extension whether to overwrite an existing certificate in a store.  How you determine whether a certificate is "the same" as the one provided is AnyAgent implementation dependent
         // config.JobCertificate.PrivateKeyPassword - For a Management Add job, if the certificate being added includes the private key (therefore, a pfx is passed in config.JobCertificate.EntryContents), this will be the password for the pfx.
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
-        var logger = LogHandler.GetClassLogger(GetType());
-        logger.LogDebug($"Begin Management...");
-        logger.LogDebug($"Following info received from command:");
-        logger.LogDebug(JsonConvert.SerializeObject(config));
-        logger.LogDebug(config.ToString());
+        _logger = LogHandler.GetClassLogger(GetType());
+        _logger.LogDebug("Begin Management...");
+
+        ServerUsername = ResolvePamField("Server User Name", config.ServerUsername);
+        ServerPassword = ResolvePamField("Server Password", config.ServerPassword);
+        var storePassword = ResolvePamField("Store Password", config.CertificateStoreDetails.StorePassword);
+
+        if (storePassword != null)
+        {
+            _logger.LogWarning($"Store password provided but is not supported by store type {config.Capability}).");
+        }
+
         var storeTypeName = "kubernetes";
-        var storePath = config.CertificateStoreDetails.StorePath + @"\" + storeTypeName;
+        _logger.LogTrace("StoreTypeName: " + storeTypeName);
+        var storePath = config.CertificateStoreDetails.StorePath;
+        _logger.LogTrace("StorePath: " + storePath);
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
-        // var certAlias = config.JobCertificate.Alias;
+
+        var properties = config.CertificateStoreDetails.Properties;
+        var overwrite = config.Overwrite;
+
+        //Convert properties string to dictionary
+        var storeProperties = JsonConvert.DeserializeObject<Dictionary<string, string>>(properties);
+
+        //Check for required properties
+        foreach (var prop in RequiredProperties)
+        {
+            if (storeProperties.ContainsKey(prop)) continue;
+
+            var propError = $"Required property {prop} not found in store properties.";
+            _logger.LogError(propError);
+            return FailJob(propError, config.JobHistoryId);
+        }
+
         try
         {
-            var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(config.CertificateStoreDetails.Properties);
-            logger.LogDebug($"KubernetesCertStore: {localCertStore}");
-            logger.LogDebug($"KubeNamespace: {localCertStore.KubeNamespace}");
-            logger.LogDebug($"KubeSecretName: {localCertStore.KubeSecretName}");
-            logger.LogDebug($"KubeSecretType: {localCertStore.KubeSecretType}");
-            logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}");
-            logger.LogTrace($"Certs: {localCertStore.Certs}");
+            KubeNamespace = storeProperties["KubeNamespace"];
+            KubeSecretName = storeProperties["KubeSecretName"];
+            KubeSecretType = storeProperties["KubeSecretType"];
+            KubeSvcCreds = storeProperties["KubeSvcCreds"];
+            _logger.LogDebug($"KubeNamespace: {KubeNamespace}");
+            _logger.LogDebug($"KubeSecretName: {KubeSecretName}");
+            _logger.LogDebug($"KubeSecretType: {KubeSecretType}");
 
-            var c = new KubeCertificateManagerClient("", "default");
-            //Management jobs, unlike Discovery, Inventory, and Reenrollment jobs can have 3 different purposes:
+
+            var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(config.CertificateStoreDetails.Properties);
+            _logger.LogDebug($"KubernetesCertStore: {localCertStore}");
+            // _logger.LogTrace($"KubeSvcCreds: {KubeSvcCreds}");
+            _logger.LogTrace($"Certs: {localCertStore.Certs}");
+
+            if (ServerUsername == "kubeconfig")
+            {
+                _logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
+                storeProperties["KubeSvcCreds"] = ServerPassword;
+                KubeSvcCreds = ServerPassword;
+                // _logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
+            }
+
+            _kubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+
             switch (config.OperationType)
             {
                 case CertStoreOperationType.Add:
-                    //OperationType == Add - Add a certificate to the certificate store passed in the config object
-                    //Code logic to:
-                    // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
-                    // 2) Custom logic to add certificate to certificate store (config.CertificateStoreDetails.StorePath) possibly using alias as an identifier if applicable (config.JobCertificate.Alias).  Use alias and overwrite flag (config.Overwrite)
-                    //     to determine if job should overwrite an existing certificate in the store, for example a renewal.
-                    // KubernetesCertStore localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>(File.ReadAllText(storepath));
-                    // Read KubernetesCertStore depending on type
-
-                    logger.LogInformation($"Adding certificate to Kubernetes cert store {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}...");
-
-                    // Load credentials file from localCertStore.KubeSvcCreds // TODO: Implement config passed from store params or password input
-                    // var kubeCreds = JsonConvert.DeserializeObject<KubeCreds>(File.ReadAllText(localCertStore.KubeSvcCreds));
-
-
-                    var newCert = new Cert();
-                    var certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-                    var cert = new X509Certificate2(certBytes, certPassword);
-
-                    newCert.Alias = cert.Thumbprint;
-                    newCert.CertData = config.JobCertificate.Contents;
-                    newCert.PrivateKey = config.JobCertificate.PrivateKeyPassword;
-
-                    // Process entryparameters if applicable
-                    // newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
-                    // newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
-
-                    // Process request based on secret type
-                    if (localCertStore.KubeSecretType == "secret" || localCertStore.KubeSecretType == "tls_secret")
-                    {
-                        logger.LogInformation("Creating Kubernetes secret...");
-                        try
-                        {
-                            var pemString = PemUtilities.DERToPEM(cert.RawData, PemUtilities.PemObjectType.Certificate);
-
-                            string[] keyPems;
-                            if (localCertStore.KubeSecretType == "tls_secret")
-                            {
-                                var keyBytes = cert.GetRSAPrivateKey()?.ExportRSAPrivateKey() ?? null;
-                                if (keyBytes != null)
-                                {
-                                    var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
-                                    keyPems = new string[] { kemPem };
-                                } else {
-                                    keyPems = new string[] { "" }; //TODO: Handle unbalanced private key stacks?
-                                }
-                            }
-                            else
-                            {
-                                keyPems = cert.GetRSAPrivateKey()?.ToString()?.Split(";") ?? string.Empty.Split(";");
-                            }
-
-                            var certPems = pemString.Split(";"); // TODO: Implement multiple certs
-                            var caPems = "".Split(";"); // TODO: Implement CA certs
-                            var chainPems = "".Split(";"); // TODO: Implement chain certs
-                            var kfid = 0; // TODO: Implement KFID
-                            // var secretName = localCertStore.KubeSecretName;
-                            // var namespaceName = localCertStore.KubeNamespace;
-                            var secretType = localCertStore.KubeSecretType;
-
-                            if (secretType == "secret" || secretType == "tls_secret")
-                            {
-                                var createResponse = c.CreateCertificateStoreSecret(
-                                    keyPems,
-                                    certPems,
-                                    caPems,
-                                    chainPems,
-                                    kfid,
-                                    localCertStore.KubeSecretName,
-                                    localCertStore.KubeNamespace,
-                                    localCertStore.KubeSecretType,
-                                    true,
-                                    config.Overwrite
-                                );
-                                logger.LogTrace(createResponse.ToString());
-                            }
-                            else
-                            {
-                                return new JobResult()
-                                {
-                                    Result = OrchestratorJobStatusJobResult.Failure,
-                                    JobHistoryId = config.JobHistoryId,
-                                    FailureMessage = $"Secret type {secretType} not supported."
-                                };
-                            }
-
-
-                            // throw new Exception("Force break");
-
-                            return new JobResult()
-                            {
-                                Result = OrchestratorJobStatusJobResult.Success,
-                                JobHistoryId = config.JobHistoryId
-                            };
-                        }
-                        catch (Exception e)
-                        {
-                            logger.LogError(e,
-                                $"Unknown error creating Kubernetes secret {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}.");
-                            return new JobResult()
-                            {
-                                Result = OrchestratorJobStatusJobResult.Failure,
-                                JobHistoryId = config.JobHistoryId,
-                                FailureMessage = e.Message
-                            };
-                        }
-
-                    }
-                    if (localCertStore.KubeSecretType == "csr")
-                    {
-                        var csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
-                        logger.LogError(csrErrorMsg);
-                        return new JobResult()
-                        {
-                            Result = OrchestratorJobStatusJobResult.Failure,
-                            JobHistoryId = config.JobHistoryId,
-                            FailureMessage = csrErrorMsg
-                        };
-                    }
-                    else
-                    {
-                        var unknownTypeErrorMsg = $"Unknown Kubernetes secret type {localCertStore.KubeSecretType}. Operation not supported.";
-                        logger.LogError(unknownTypeErrorMsg);
-                        return new JobResult()
-                        {
-                            Result = OrchestratorJobStatusJobResult.Failure,
-                            JobHistoryId = config.JobHistoryId,
-                            FailureMessage = unknownTypeErrorMsg
-                        };
-                    }
-
-                case CertStoreOperationType.Remove:
-                    //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
-                    //Code logic to:
-                    // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) containing the certificate store
-                    // 2) Custom logic to remove the certificate in a certificate store (config.CertificateStoreDetails.StorePath), possibly using alias (config.JobCertificate.Alias) or certificate thumbprint to identify the certificate (implementation dependent)
-                    var cBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-                   
-                   
-                    logger.LogInformation(
-                        $"Removing certificate '{config.JobCertificate.Alias}' from Kubernetes cert store {localCertStore.KubeSecretName} in namespace {localCertStore.KubeNamespace}...");
-                    
-                    c.DeleteCertificateStoreSecret(
-                        localCertStore.KubeSecretName,
-                        localCertStore.KubeNamespace,
-                        localCertStore.KubeSecretType,
-                        config.JobCertificate.Alias
-                    );
-                    break;
                 case CertStoreOperationType.Create:
-                    //OperationType == Create - Create an empty certificate store in the provided location
-                    //Code logic to:
-                    // 1) Connect to the orchestrated server (config.CertificateStoreDetails.ClientMachine) where the certificate store (config.CertificateStoreDetails.StorePath) will be located
-                    // 2) Custom logic to first check if the store already exists and add it if not.  If it already exists, implementation dependent as to how to handle - error, warning, success
-                    if (!File.Exists(storePath))
-                    {
-                        var newstore = new KubernetesCertStore();
-                        var newstoreconv = JsonConvert.SerializeObject(newstore);
-                        File.WriteAllText(storePath, newstoreconv);
-                    }
-                    break;
+                    //OperationType == Add - Add a certificate to the certificate store passed in the config object
+                    _logger.LogDebug($"Processing Management-{config.OperationType.GetType()} job...");
+                    return HandleCreateOrUpdate(KubeSecretType, config, certPassword, overwrite);
+                case CertStoreOperationType.Remove:
+                    _logger.LogDebug("Processing Management-Remove job...");
+                    return HandleRemove(config);
+                case CertStoreOperationType.Unknown:
+                case CertStoreOperationType.Inventory:
+                case CertStoreOperationType.CreateAdd:
+                case CertStoreOperationType.Reenrollment:
+                case CertStoreOperationType.Discovery:
+                case CertStoreOperationType.SetPassword:
+                case CertStoreOperationType.FetchLogs:
+                    return FailJob($"OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job.", config.JobHistoryId);
                 default:
                     //Invalid OperationType.  Return error.  Should never happen though
-                    return new JobResult()
-                    {
-                        Result = OrchestratorJobStatusJobResult.Failure, JobHistoryId = config.JobHistoryId,
-                        FailureMessage =
-                            $"Site {config.CertificateStoreDetails.StorePath} on server {config.CertificateStoreDetails.ClientMachine}: Unsupported operation: {config.OperationType.ToString()}"
-                    };
+                    var impError = $"Invalid OperationType '{config.OperationType.GetType()}' passed to Kubernetes certificate store job.  This should never happen.";
+                    _logger.LogError(impError);
+                    return FailJob(impError, config.JobHistoryId);
             }
         }
         catch (Exception ex)
         {
+            _logger.LogError(ex, "Error processing job");
             //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
+            return FailJob(ex.Message, config.JobHistoryId);
+        }
+        return SuccessJob(config.JobHistoryId);
+    }
+
+    private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, bool overwrite = false, bool append = false)
+    {
+        try
+        {
+            _logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
+            var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+            var certPems = pemString.Split(";");
+            var caPems = "".Split(";");
+            var chainPems = "".Split(";");
+
+            string[] keyPems = { "" };
+
+            _logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
+            var pkey = certObj.GetRSAPrivateKey();
+            var keyBytes = pkey?.ExportRSAPrivateKey();
+            if (keyBytes != null)
             {
-                Result = OrchestratorJobStatusJobResult.Failure,
-                JobHistoryId = config.JobHistoryId,
-                FailureMessage = ex.Message
-            };
+                var pem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+                keyPems = new[] { pem };
+            }
+
+            var createResponse = _kubeClient.CreateOrUpdateCertificateStoreSecret(
+                keyPems,
+                certPems,
+                caPems,
+                chainPems,
+                KubeSecretName,
+                KubeNamespace,
+                "secret",
+                append,
+                overwrite
+            );
+            _logger.LogTrace(createResponse.ToString());
+            return createResponse;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, $"Error converting certificate '{certAlias}' to PEM format.");
+            throw;
+        }
+    }
+
+    private V1Secret HandleTlsSecret(string certAlias, X509Certificate2 certObj, string certPassword, bool overwrite = false, bool append = true)
+    {
+        _logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
+        var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+        var certPems = pemString.Split(";");
+        var caPems = "".Split(";");
+        var chainPems = "".Split(";");
+
+        string[] keyPems = { "" };
+
+        _logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
+
+        _logger.LogDebug("Attempting to extract private key from certificate as ");
+
+        var keyBytes = GetKeyBytes(certObj, certPassword);
+        if (keyBytes != null)
+        {
+            _logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
+            var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+            keyPems = new[] { kemPem };
+            _logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
         }
 
-        //Status: 2=Success, 3=Warning, 4=Error
-        return new JobResult()
+        var createResponse = _kubeClient.CreateOrUpdateCertificateStoreSecret(
+            keyPems,
+            certPems,
+            caPems,
+            chainPems,
+            KubeSecretName,
+            KubeNamespace,
+            "tls_secret",
+            append,
+            overwrite
+        );
+        _logger.LogTrace(createResponse.ToString());
+        return createResponse;
+    }
+
+    private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config, string certPassword = "", bool overwrite = false)
+    {
+        var jobCert = config.JobCertificate;
+        var certAlias = jobCert.Alias;
+
+        _logger.LogDebug($"Converting job certificate '{jobCert.Alias}' to Cert object...");
+        var certBytes = Convert.FromBase64String(jobCert.Contents);
+
+        _logger.LogDebug($"Creating X509Certificate2 object from job certificate '{jobCert.Alias}'.");
+        var certObj = new X509Certificate2(certBytes, certPassword);
+
+        _logger.LogDebug("Setting Keyfactor cert object properties...");
+
+        switch (secretType)
+        {
+            // Process request based on secret type
+            case "tls_secret":
+                _ = HandleTlsSecret(certAlias, certObj, certPassword, overwrite);
+                break;
+            case "secret":
+                _ = HandleOpaqueSecret(certAlias, certObj, overwrite);
+                break;
+            case "certificate":
+            case "cert":
+            case "csr":
+                const string csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
+                _logger.LogError(csrErrorMsg);
+                return FailJob(csrErrorMsg, config.JobHistoryId);
+            default:
+                var errMsg = $"Unsupported secret type {secretType}.";
+                _logger.LogError(errMsg);
+                return FailJob(errMsg, config.JobHistoryId);
+        }
+        return SuccessJob(config.JobHistoryId);
+    }
+
+    private JobResult HandleRemove(ManagementJobConfiguration config)
+    {
+        //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
+        var kubeHost = _kubeClient.GetHost();
+        var jobCert = config.JobCertificate;
+        var certAlias = jobCert.Alias;
+
+
+        _logger.LogInformation(
+            $"Removing certificate '{certAlias}' from Kubernetes client '{kubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}...");
+        try
+        {
+            var response = _kubeClient.DeleteCertificateStoreSecret(
+                KubeSecretName,
+                KubeNamespace,
+                KubeSecretType,
+                jobCert.Alias
+            );
+            _logger.LogTrace($"REMOVE '{kubeHost}/{KubeNamespace}/{KubeSecretType}/{KubeSecretName}' response from Kubernetes:\n\t{response}");
+        }
+        catch (Exception e)
+        {
+            _logger.LogError(e, $"Error removing certificate '{certAlias}' from Kubernetes client '{kubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}.");
+            return FailJob(e.Message, config.JobHistoryId);
+        }
+
+        return SuccessJob(config.JobHistoryId);
+    }
+
+    private byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
+    {
+        byte[] keyBytes;
+
+        switch (certObj.GetKeyAlgorithm())
+        {
+            case "RSA":
+                _logger.LogDebug("Key algorithm is RSA, so attempting to extract private key as RSA...");
+                keyBytes = certObj.GetRSAPrivateKey()?.ExportRSAPrivateKey();
+                break;
+            case "ECDSA":
+                _logger.LogDebug("Key algorithm is ECDSA, so attempting to extract private key as ECDSA...");
+                keyBytes = certObj.GetECDsaPrivateKey()?.ExportECPrivateKey();
+                break;
+            case "DSA":
+                _logger.LogDebug("Key algorithm is DSA, so attempting to extract private key as DSA...");
+                keyBytes = certObj.GetDSAPrivateKey()?.ExportPkcs8PrivateKey();
+                break;
+            default:
+                _logger.LogDebug("Key algorithm is not RSA, ECDSA, or DSA, so attempting to extract private key as PKCS#12...");
+                keyBytes = certObj.Export(X509ContentType.Pkcs12, certPassword);
+                break;
+        }
+        return keyBytes;
+    }
+    private string ResolvePamField(string name, string value)
+    {
+        _logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
+        return _resolver.Resolve(value);
+    }
+
+    private static JobResult FailJob(string message, long jobHistoryId)
+    {
+        return new JobResult
+        {
+            Result = OrchestratorJobStatusJobResult.Failure,
+            JobHistoryId = jobHistoryId,
+            FailureMessage = message
+        };
+    }
+
+    private static JobResult SuccessJob(long jobHistoryId)
+    {
+        return new JobResult
         {
             Result = OrchestratorJobStatusJobResult.Success,
-            JobHistoryId = config.JobHistoryId
+            JobHistoryId = jobHistoryId
         };
     }
 }
