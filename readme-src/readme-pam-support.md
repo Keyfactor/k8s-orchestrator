@@ -1,0 +1,6 @@
+|Name| Description                                                                                                                                                                                                        |
+|----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|ServerUsername| Must be set to `kubeconfig`                                                                                                                                                                                        |
+|ServerPassword| The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](../scripts/kubernetes/README.md) docs and scripts. |
+|KubeSvcCreds | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                        |
+  

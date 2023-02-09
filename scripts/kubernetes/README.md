@@ -45,3 +45,11 @@ This file contains the service account definition. You can modify the service ac
 ### create_service_account.sh
 This script will create the service account, role and role binding. You can modify the service account name and namespace to suit your environment.  
 **NOTE**: The script, by default will run using the `kubernetes-service-account.yml` from GitHub. If you've modified the file, you can run the script with the `-f` option to use the local file.
+
+### get_service_account_creds.sh
+To use an existing service account, you can run `get_service_account_creds.sh`. This script will get the service account token and CA certificate and 
+create a `kubeconfig` file. 
+
+**NOTE**: You must have `kubectl` installed and configured to connect to the Kubernetes cluster with permissions to read the service account token and 
+CA certificate.
+
