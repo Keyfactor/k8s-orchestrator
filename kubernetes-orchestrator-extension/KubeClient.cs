@@ -389,9 +389,9 @@ public class KubeCertificateManagerClient
                 throw new NotImplementedException($"DeleteCertificateStoreSecret not implemented for type '{storeType}'.");
         }
     }
-    public string[] GetCertificateInventory()
+    public List<string> DiscoverCertificates()
     {
-        var output = new string[]{};
+        List<string> locations = new List<string>();
         var csr = Client.CertificatesV1.ListCertificateSigningRequest();
         foreach (var cr in csr)
         {
@@ -408,11 +408,11 @@ public class KubeCertificateManagerClient
             }
             else
             {
-                output.Append(utfCsr);
+                locations.Append(utfCsr);
             }
         }
 
-        return output;
+        return locations;
     }
 
     public string[] GetCertificateSigningRequestStatus(string name)
@@ -421,6 +421,75 @@ public class KubeCertificateManagerClient
         var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
         var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
         return new[] { utfCert };
+    }
+    
+    public List<string> DiscoverSecrets(string ns = "default")
+    {
+        // Get a list of all namespaces
+        V1NamespaceList namespaces;
+        namespaces = ns == "all" ? Client.CoreV1.ListNamespace() : Client.CoreV1.ListNamespace(labelSelector: $"name={ns}");
+
+        var secretsList = new string[] { };
+        List<string> locations = new List<string>();
+
+        foreach (var nsObj in namespaces.Items)
+        {
+            // Get a list of all secrets in the namespace
+            var secrets = Client.CoreV1.ListNamespacedSecret(nsObj.Metadata.Name);
+            foreach (var secret in secrets.Items)
+            {
+                if (secret.Type is "kubernetes.io/tls" or "Opaque")
+                {
+                    var secretData = Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, nsObj.Metadata.Name);
+                    switch (secret.Type)
+                    {
+                        case "kubernetes.io/tls":
+                            var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
+                            var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
+                            
+                            _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
+                            locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                            secretsList.Append(certData);
+                            break;
+                        case "Opaque":
+                            // Check if a 'certificates' key exists
+                            if (secretData.Data.ContainsKey("certificates"))
+                            {
+                                var certs = Encoding.UTF8.GetString(secretData.Data["certificates"]);
+                                // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
+                                var certsArray = certs.Split(",");
+                                // var keysArray = keys.Split(",");
+                                var index = 0; 
+                                foreach (var cer in certsArray)
+                                {
+                                    _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
+                                    secretsList.Append(cer);
+                                    index++; 
+                                }
+                                locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                            } else if (secretData.Data.ContainsKey("certs"))
+                            {
+                                var certs = Encoding.UTF8.GetString(secretData.Data["certs"]);
+                                // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
+                                var certsArray = certs.Split(",");
+                                // var keysArray = keys.Split(",");
+                                var index = 0; 
+                                foreach (var cer in certsArray)
+                                {
+                                    var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
+                                    secretsList.Append(cer);
+                                    index++; 
+                                }
+                                locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                            }
+                            break;
+                    }
+                    
+                }
+            }
+        }
+        
+        return locations;
     }
     
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)

@@ -7,20 +7,36 @@
 
 using System;
 using System.Collections.Generic;
-using System.DirectoryServices;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
 using Keyfactor.Logging;
+using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
 
 // The Discovery class implements IAgentJobExtension and is meant to find all certificate stores based on the information passed when creating the job in KF Command 
 public class Discovery : IDiscoveryJobExtension
 {
+    private static readonly string CertChainSeparator = ",";
+
+    private readonly IPAMSecretResolver _resolver;
+
+    private KubeCertificateManagerClient _kubeClient;
+
+    private ILogger _logger;
+
+    public Discovery(IPAMSecretResolver resolver)
+    {
+        _resolver = resolver;
+    }
+
+    private string KubeSvcCreds { get; set; }
+
+    private string ServerUsername { get; set; }
+
+    private string ServerPassword { get; set; }
+
     //Necessary to implement IDiscoveryJobExtension but not used.  Leave as empty string.
     public string ExtensionName => "Kube";
 
@@ -40,18 +56,37 @@ public class Discovery : IDiscoveryJobExtension
 
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-        var logger = LogHandler.GetClassLogger(GetType());
-        logger.LogDebug($"Begin Discovery...");
-        logger.LogDebug($"Following info received from command:");
-        logger.LogDebug(JsonConvert.SerializeObject(config));
+        _logger.LogDebug("Begin Discovery...");
 
-        //Instantiate collection of certificate store locations to pass back
+        _logger.LogInformation($"Discovery for store type: {config.Capability}");
+
+        ServerUsername = ResolvePamField("Server User Name", config.ServerUsername);
+        ServerPassword = ResolvePamField("Server Password", config.ServerPassword);
+
+        _logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
+        // logger.LogTrace($"Store password: {storePassword}"); //Do not log passwords
+        _logger.LogTrace($"Server: {config.ClientMachine}");
+
         var locations = new List<string>();
 
-        var dirs = config.JobProperties["Dirs"].ToString().Split(',').ToList();
-        var ignoreddirs = config.JobProperties["IgnoredDirs"].ToString().Split(',').ToList();
-        var patterns = config.JobProperties["Patterns"].ToString().Split(',').ToList();
+        KubeSvcCreds = ServerPassword;
 
+        if (ServerUsername == "kubeconfig")
+        {
+            _logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
+            KubeSvcCreds = ServerPassword;
+            // logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
+        }
+
+        // logger.LogTrace($"KubeSvcCreds: {kubeSvcCreds}"); //Do not log passwords
+
+        if (string.IsNullOrEmpty(KubeSvcCreds))
+        {
+            const string credsErr =
+                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
+            _logger.LogError(credsErr);
+            return FailJob(credsErr, config.JobHistoryId);
+        }
 
         try
         {
@@ -63,34 +98,20 @@ public class Discovery : IDiscoveryJobExtension
             //      c) Directories to ignore
             //      d) File name patterns to match
             // 3) Place found and validated store locations (path and file name) in "locations" collection instantiated above
-            foreach (var dir in dirs)
-            {
-                if (Directory.Exists(dir))
-                {
-                    if (!ignoreddirs.Contains(dir))
-                    {
-                        var filelist = Directory.GetFiles(dir).ToList<string>();
-                        foreach (var file in filelist)
-                        {
-                            foreach (var pattern in patterns)
-                            {
-                                if (Regex.Match(file, pattern).Success)
-                                {
-                                    var location = dir + file;
-                                    locations.Add(location);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            _kubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+
+            var discoveredSecrets = _kubeClient.DiscoverSecrets(); // This gets all secrets in the namespace but will filter by opaque and tls types below
+            var discoveredCerts = _kubeClient.DiscoverCertificates(); // This gets all certs in the namespace but will filter by tls type below
+            locations.AddRange(discoveredSecrets);
+            locations.AddRange(discoveredCerts);
+
         }
         catch (Exception ex)
         {
             //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
+            return new JobResult
             {
-                Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure,
+                Result = OrchestratorJobStatusJobResult.Failure,
                 JobHistoryId = config.JobHistoryId,
                 FailureMessage = ex.Message
             };
@@ -101,9 +122,9 @@ public class Discovery : IDiscoveryJobExtension
             //Sends store locations back to KF command where they can be approved or rejected
             submitDiscovery.Invoke(locations);
             //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
+            return new JobResult
             {
-                Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Success,
+                Result = OrchestratorJobStatusJobResult.Success,
                 JobHistoryId = config.JobHistoryId
             };
         }
@@ -111,12 +132,29 @@ public class Discovery : IDiscoveryJobExtension
         {
             // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
             //  may not be reflected in Keyfactor Command.
-            return new JobResult()
+            return new JobResult
             {
-                Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure,
+                Result = OrchestratorJobStatusJobResult.Failure,
                 JobHistoryId = config.JobHistoryId,
                 FailureMessage = ex.Message
             };
         }
+    }
+
+    private string ResolvePamField(string name, string value)
+    {
+        var logger = LogHandler.GetClassLogger(GetType());
+        logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
+        return _resolver.Resolve(value);
+    }
+
+    private static JobResult FailJob(string message, long jobHistoryId)
+    {
+        return new JobResult
+        {
+            Result = OrchestratorJobStatusJobResult.Failure,
+            JobHistoryId = jobHistoryId,
+            FailureMessage = message
+        };
     }
 }
