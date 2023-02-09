@@ -212,12 +212,12 @@ Below is a table of the common values that should be used for all certificate st
 | PFX Password Style |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                 |
-|----------------|----------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String | X        | `default`     | The Kubernetes namespace the store will reside.                                                             |
-| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                         |
-| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON file containing the service account credentials to the Kubernetes API.                               |
+| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                                                                                                                                                                           |
+|----------------|----------------------|--------|--------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace  | Kube Namespace       | String |        | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
+| KubeSecretName | Kube Secret Name     | String |        | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                                      |
+| KubeSecretType | Kube Secret Type     | String | &check; | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
+| KubeSvcCreds   | Kube Service Account | Secret | &check; | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -241,17 +241,17 @@ kfutil store-types create --name K8SSecret
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name | Required | Value                                     |
-|------------|----------|-------------------------------------------|
-| Name       | &check;  | `K8SSecret`                               |
-| ShortName  | &check;  | `K8SSecret`                               |
-| Custom Capability | &check;  | Checked [x] + `K8SSecret`                 |
-| Supported Job Types | &check;  | Inventory, Add, Remove, Create, Discovery |
-| Needs Server |          | Unchecked [ ]                             |
-| Blueprint Allowed |          | Unchecked [ ]                             |
-| Uses PowerShell |          | Unchecked [ ]                             |
-| Requires Store Password |          | Unchecked [ ]                             |
-| Supports Entry Password |          | Unchecked [ ]                             |
+| Field Name | Required | Value                                         |
+|------------|----------|-----------------------------------------------|
+| Name       | &check;  | `K8SSecret`                                   |
+| ShortName  | &check;  | `K8SSecret`                                   |
+| Custom Capability | &check;  | Checked [x] + `K8SSecret`                     |
+| Supported Job Types | &check;  | Inventory, Add, Remove, Create, Discovery     |
+| Needs Server |          | Unchecked [ ] **Note: Check this to use PAM** |
+| Blueprint Allowed |          | Unchecked [ ]                                 |
+| Uses PowerShell |          | Unchecked [ ]                                 |
+| Requires Store Password |          | Unchecked [ ]                                 |
+| Supports Entry Password |          | Unchecked [ ]                                 |
 
 ![k8ssecret_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_basic.png)
 

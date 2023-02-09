@@ -10,6 +10,7 @@ Please note that this is only an example and you may need to modify the script a
     * [Manual Steps](#manual-steps)
         + [kubernetes-service-account.yml](#kubernetes-service-accountyml)
         + [create_service_account.sh](#create-service-accountsh)
+        + [get_service_account_creds.sh](#get-service-account-credssh)
         
 ## Pre-requisites
 - Kubernetes cluster with RBAC enabled
