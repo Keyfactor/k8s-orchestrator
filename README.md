@@ -53,11 +53,11 @@ This orchestrator extension has the ability to connect to a variety of supported
 
 The secrets that this orchestrator extension supports for use with a PAM Provider are:
 
-|Name| Description                                                                                                                                                                                                        |
-|----|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-|ServerUsername| Must be set to `kubeconfig`                                                                                                                                                                                        |
-|ServerPassword| The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](../scripts/kubernetes/README.md) docs and scripts. |
-|KubeSvcCreds | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                        |
+| Name           | Description                                                                                                                                                                                                                                                     |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ServerUsername | Must be set to `kubeconfig` if used.                                                                                                                                                                                                                            |
+| ServerPassword | Must be set if `ServerUsername` is provided. The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](../scripts/kubernetes/README.md) docs and scripts. |
+| KubeSvcCreds   | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                                                                    |
   
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  For each value that you want managed by a PAM provider, simply enter the key value inside your specific PAM provider that will hold this value into the corresponding field when setting up the certificate store, discovery job, or API call.
