@@ -72,6 +72,7 @@ public class Inventory : IInventoryJobExtension
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+        _logger = LogHandler.GetClassLogger(GetType());
         _logger.LogDebug("Begin Inventory...");
 
         var storepath = config.CertificateStoreDetails.StorePath;

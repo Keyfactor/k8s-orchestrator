@@ -18,6 +18,8 @@ using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.IO;
 using System.Security.Cryptography;
+using Keyfactor.Orchestrators.Common.Enums;
+using Keyfactor.Orchestrators.Extensions.Interfaces;
 using static Keyfactor.Extensions.Orchestrator.Kube.Inventory;
 
 namespace Keyfactor.Extensions.Orchestrator.Kube;
@@ -30,8 +32,36 @@ namespace Keyfactor.Extensions.Orchestrator.Kube;
 public class Reenrollment : IReenrollmentJobExtension
 {
 
+    private static readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
+
+    // private static readonly string[] RequiredProperties = { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
+    private static readonly string[] RequiredProperties = { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
+    
+    private readonly IPAMSecretResolver _resolver;
+
+    private KubeCertificateManagerClient _kubeClient;
+
+    private ILogger _logger;
+
+    public Reenrollment(IPAMSecretResolver resolver)
+    {
+        _resolver = resolver;
+    }
+
+    private string KubeNamespace { get; set; }
+
+    private string KubeSecretName { get; set; }
+
+    private string KubeSecretType { get; set; }
+
+    private string KubeSvcCreds { get; set; }
+
+    private string ServerUsername { get; set; }
+
+    private string ServerPassword { get; set; }
+    
     //Necessary to implement IReenrollmentJobExtension but not used.  Leave as empty string.
-    public string ExtensionName => "";
+    public string ExtensionName => "Kube";
 
     //Job Entry Point
     public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
@@ -50,129 +80,84 @@ public class Reenrollment : IReenrollmentJobExtension
         // config.JobProperties = Dictionary of custom parameters to use in building CSR and placing enrolled certificate in a the proper certificate store
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-        var logger = LogHandler.GetClassLogger(GetType());
-        logger.LogDebug($"Begin Reenrollment... test");
-        logger.LogDebug($"Following info received from command:");
-        logger.LogDebug(JsonConvert.SerializeObject(config));
+        _logger = LogHandler.GetClassLogger(GetType());
+        _logger.LogDebug($"Begin Reenrollment...");
+        _logger.LogDebug($"Following info received from command:");
+        _logger.LogDebug(JsonConvert.SerializeObject(config));
         //this is passed as a string
-        var storeTypeName = JsonConvert.DeserializeObject<Dictionary<string, string>>
-            (config.CertificateStoreDetails.Properties)["storeparameter1"];
-        var storePath = config.CertificateStoreDetails.StorePath + @"\" + storeTypeName;
-        try
+        // var storeTypeName = JsonConvert.DeserializeObject<Dictionary<string, string>>
+        //     (config.CertificateStoreDetails.Properties)["storeparameter1"];
+        // var storePath = config.CertificateStoreDetails.StorePath + @"\" + storeTypeName;
+        ServerUsername = ResolvePamField("Server User Name", config.ServerUsername);
+        ServerPassword = ResolvePamField("Server Password", config.ServerPassword);
+        var storePassword = ResolvePamField("Store Password", config.CertificateStoreDetails.StorePassword);
+
+        if (storePassword != null)
         {
-            //Code logic to:
-            //  1) Generate a new public/private keypair locally from any config.JobProperties passed
-            //  2) Generate a CSR from the keypair (PKCS10),
-            //  3) Submit the CSR to KF Command to enroll the certificate using:
-            //      string resp = (string)submitEnrollmentRequest.Invoke(Convert.ToBase64String(PKCS10_bytes);
-            //      X509Certificate2 cert = new X509Certificate2(Convert.FromBase64String(resp));
-            //  4) Deploy the newly re-enrolled certificate (cert in #3) to a certificate store
-            // RSAKeyPairGenerator generates the RSA Key pair based on the random number
-
-
-            var infoFromCommand = new X500DistinguishedName
-                (config.JobProperties["subjectText"].ToString());
-
-            var rsa = RSA.Create(2048);
-            var certificateRequest
-                = new CertificateRequest(infoFromCommand.Name, rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-            certificateRequest.CertificateExtensions.Add(
-                new X509BasicConstraintsExtension(false, false, 0, false));
-            certificateRequest.CertificateExtensions.Add(
-                new X509KeyUsageExtension(
-                    X509KeyUsageFlags.DigitalSignature | X509KeyUsageFlags.NonRepudiation,
-                    false));
-
-            // Add the SubjectAlternativeName extension
-            var sanBuilder = new SubjectAlternativeNameBuilder();
-            var sanList = new List<string>("test.com,*.test.com".Split(','));
-            foreach (var sanItem in sanList)
-            {
-                sanBuilder.AddDnsName(sanItem.Trim());
-            }
-
-            certificateRequest.CertificateExtensions.Add(sanBuilder.Build());
-
-            //Timestamp oid
-            certificateRequest.CertificateExtensions.Add(
-                new X509EnhancedKeyUsageExtension(
-                    new OidCollection
-                    {
-                        new("1.3.6.1.5.5.7.3.8")
-                    },
-                    true));
-
-            certificateRequest.CertificateExtensions.Add(
-                new X509SubjectKeyIdentifierExtension(certificateRequest.PublicKey, false));
-
-            var byteCsr = certificateRequest.CreateSigningRequest();
-
-
-            var csr64 = Convert.ToBase64String(byteCsr);
-            logger.LogDebug("Submitting csr.");
-            logger.LogDebug(csr64);
-            /** START Option 2 --- */
-            // Get the enrollment data from config.Job.Properties
-
-            var returnCert = submitReenrollment.Invoke(csr64);
-
-
-            var localCertStore = JsonConvert.DeserializeObject<KubernetesCertStore>
-                (File.ReadAllText(storePath));
-            var newcert = new Cert();
-
-            newcert.Alias = returnCert.Thumbprint;
-            newcert.CertData = returnCert.GetRawCertDataString();
-            newcert.PrivateKey = Convert.ToBase64String(rsa.ExportRSAPrivateKey());
-
-            // if (config.JobProperties["sampleentryparameter1"].ToString() != null || config.JobProperties["sampleentryparameter1"].ToString() != "")
-            // {
-            //     newcert.sampleentryparameter1 = config.JobProperties["sampleentryparameter1"].ToString();
-            // }
-            // else
-            // {
-            //     newcert.sampleentryparameter1 = "";
-            // }
-            // try
-            // {
-            //     if (config.JobProperties["sampleentryparameter2"] != null || config.JobProperties["sampleentryparameter2"].ToString() != "")
-            //     {
-            //         newcert.sampleentryparameter2 = config.JobProperties["sampleentryparameter2"].ToString();
-            //     }
-            //     else
-            //     {
-            //         newcert.sampleentryparameter2 = "";
-            //     }
-            // }
-            // catch (Exception)
-            // {
-            //     newcert.sampleentryparameter2 = "";
-            // }
-            Cert[] newCertArray = { newcert };
-            newCertArray = newCertArray.Concat(localCertStore.Certs).ToArray();
-            localCertStore.Certs = newCertArray;
-
-            var convertedCertStore = JsonConvert.SerializeObject(localCertStore);
-            File.WriteAllText(storePath, convertedCertStore);
-
-
+            _logger.LogWarning($"Store password provided but is not supported by store type {config.Capability}).");
         }
-        catch (Exception ex)
+
+        _logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
+        // logger.LogTrace($"Store password: {storePassword}"); //Do not log passwords
+        _logger.LogTrace($"Server: {config.CertificateStoreDetails.ClientMachine}");
+        _logger.LogTrace($"Store Path: {config.CertificateStoreDetails.StorePath}");
+        var storeProperties = JsonConvert.DeserializeObject<Dictionary<string, string>>(config.CertificateStoreDetails.Properties);
+
+        //Check for required properties
+        foreach (var prop in RequiredProperties)
         {
-            //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult()
-            {
-                Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Failure,
-                JobHistoryId = config.JobHistoryId,
-                FailureMessage = ex.Message
-            };
+            if (storeProperties.ContainsKey(prop)) continue;
+
+            var propErr = $"Required property {prop} not found in store properties.";
+            _logger.LogError(propErr);
+            return FailJob(propErr, config.JobHistoryId);
         }
+
+        KubeNamespace = storeProperties["KubeNamespace"];
+        KubeSecretName = storeProperties["KubeSecretName"];
+        KubeSecretType = storeProperties["KubeSecretType"];
+        KubeSvcCreds = storeProperties["KubeSvcCreds"];
+
+        if (ServerUsername == "kubeconfig")
+        {
+            _logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
+            storeProperties["KubeSvcCreds"] = ServerPassword;
+            KubeSvcCreds = ServerPassword;
+            // logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
+        }
+
+        _logger.LogDebug($"KubeNamespace: {KubeNamespace}");
+        _logger.LogDebug($"KubeSecretName: {KubeSecretName}");
+        _logger.LogDebug($"KubeSecretType: {KubeSecretType}");
+        // logger.LogTrace($"KubeSvcCreds: {kubeSvcCreds}"); //Do not log passwords
+
+        if (string.IsNullOrEmpty(KubeSvcCreds))
+        {
+            const string credsErr =
+                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
+            _logger.LogError(credsErr);
+            return FailJob(credsErr, config.JobHistoryId);
+        }
+        
 
         //Status: 2=Success, 3=Warning, 4=Error
-        return new JobResult()
+        return FailJob($"Re-enrollment not implemented for {config.Capability}", config.JobHistoryId);
+    }
+    
+    private string ResolvePamField(string name, string value)
+    {
+        var logger = LogHandler.GetClassLogger(GetType());
+        logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
+        return _resolver.Resolve(value);
+    }
+
+    private static JobResult FailJob(string message, long jobHistoryId)
+    {
+        return new JobResult
         {
-            Result = Orchestrators.Common.Enums.OrchestratorJobStatusJobResult.Success,
-            JobHistoryId = config.JobHistoryId
+            Result = OrchestratorJobStatusJobResult.Failure,
+            JobHistoryId = jobHistoryId,
+            FailureMessage = message
         };
     }
 }
