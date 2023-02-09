@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -388,9 +389,9 @@ public class KubeCertificateManagerClient
                 throw new NotImplementedException($"DeleteCertificateStoreSecret not implemented for type '{storeType}'.");
         }
     }
-    public List<string> GetKubeCertInventory()
+    public string[] GetCertificateInventory()
     {
-        var output = new List<string>();
+        var output = new string[]{};
         var csr = Client.CertificatesV1.ListCertificateSigningRequest();
         foreach (var cr in csr)
         {
@@ -404,19 +405,24 @@ public class KubeCertificateManagerClient
             {
                 var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
                 var certName = cert.GetNameInfo(X509NameType.SimpleName, false);
-                Console.WriteLine(certName);
             }
             else
             {
-                output.Add(utfCsr);
+                output.Append(utfCsr);
             }
-
-            Console.WriteLine("Cert:" + utfCert);
         }
 
         return output;
     }
 
+    public string[] GetCertificateSigningRequestStatus(string name)
+    {
+        var cr = Client.CertificatesV1.ReadCertificateSigningRequest(name);
+        var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
+        var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
+        return new[] { utfCert };
+    }
+    
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
     {
         var request = new V1CertificateSigningRequest
@@ -485,4 +491,5 @@ public class KubeCertificateManagerClient
         public string PrivateKey;
         public string PublicKey;
     }
+    
 }
