@@ -154,7 +154,7 @@ subjects:
    C:\Program Files\Keyfactor\Keyfactor Orchestrator), find the "Extensions" folder. Underneath that,
    create a new folder named "Kubernetes". You may choose to use a different name if you wish.
 4. Download the latest version of the Kubernetes orchestrator extension from
-   [GitHub](https://github.com/Keyfactor/remote-file-orchestrator).  Click on the "Latest" release
+   [GitHub](https://github.com/Keyfactor/kubernetes-orchestrator).  Click on the "Latest" release
    link on the right hand side of the main page and download the first zip file.
 5. Copy the contents of the download installation zip file to the folder created in Step 3.
 6. (Optional) If you decide to create one or more certificate store types with short names different
@@ -191,33 +191,33 @@ Below is a table of the common values that should be used for all certificate st
 
 #### Common Values
 ##### UI Basic Tab
-| Field Name | Required | Description                                                                                                                                | Value                  |
-|------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| Name       | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                       | Depends on store type. |
-| ShortName  | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                         | Depends on store type. |
-| Custom Capability | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                    | Checked [x]            |
-| Supported Job Types | &check;  | The job types supported by the certificate store type.                                                                                     | Depends on store type. |
-| Needs Server |          | Must be set to false or unchecked                                                                                                          | Unchecked [ ]          |
-| Blueprint Allowed |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature.  | Unchecked [ ]          |
-| Uses PowerShell |          | Whether or not the certificate store type uses PowerShell.                                                                                 | Unchecked [ ]          |
-| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                             | Unchecked [ ]          |
-| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                        | Unchecked [ ]          |
+| Field Name              | Required | Description                                                                                                                               | Value                  |
+|-------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| Name                    | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                      | Depends on store type. |
+| ShortName               | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                        | Depends on store type. |
+| Custom Capability       | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                   | Checked [x]            |
+| Supported Job Types     | &check;  | The job types supported by the certificate store type.                                                                                    | Depends on store type. |
+| Needs Server            |          | Must be set to true or checked to use PAM, otherwise can be left uncehcked.                                                               | Unchecked [ ]          |
+| Blueprint Allowed       |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature. | Unchecked [ ]          |
+| Uses PowerShell         |          | Whether or not the certificate store type uses PowerShell.                                                                                | Unchecked [ ]          |
+| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                            | Unchecked [ ]          |
+| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                       | Unchecked [ ]          |
 
 ##### UI Advanced Tab
-| Field Name | Required | Description                                                                                                                                | Value                  |
-|------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| Store Path Type |          | The type of path the certificate store type uses.                                                                                          | Freeform               |
+| Field Name            | Required | Description                                                                                                                                | Value                  |
+|-----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| Store Path Type       |          | The type of path the certificate store type uses.                                                                                          | Freeform               |
 | Supports Custom Alias |          | Whether or not the certificate store type supports custom aliases.                                                                         | Depends on store type. |
-| Private Key Handling |          | Whether or not the certificate store type supports private key handling.                                                                   | Depends on store type. |
-| PFX Password Style |          | The password style used by the certificate store type.                                                                                     | Default                |
+| Private Key Handling  |          | Whether or not the certificate store type supports private key handling.                                                                   | Depends on store type. |
+| PFX Password Style    |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
 | Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                                                                                                                                                                           |
-|----------------|----------------------|--------|--------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String |        | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
-| KubeSecretName | Kube Secret Name     | String |        | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                                      |
-| KubeSecretType | Kube Secret Type     | String | &check; | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
-| KubeSvcCreds   | Kube Service Account | Secret | &check; | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
+|----------------|----------------------|--------|----------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
+| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                                      |
+| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
+| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
