@@ -370,7 +370,6 @@
           "ClientMachine": "my.test.orchestrator.com",
           "StorePath": "kube/test/cert-01",
           "StorePassword": null,
-          "Properties": "",
           "Type": 5109,
           "Properties": "{  \"KubeNamespace\": \"default\",  \"KubeSecretName\": \"cert-01\",  \"KubeSecretType\": \"cert\"}"
         },
@@ -509,7 +508,8 @@
         "JobId": "d9e6e40b-f9cf-4974-a8c3-822d2c4f394f",
         "Capability": "CertStores.Kube.Jobs.Management"
       }
-    },{
+    },
+    {
       "TestName": "Remove - Opaque Secret - opaque-secret-01 - SUCCESS",
       "Description": "This test attempts to remove a tls_secret and should fail as the secret does not exist",
       "Fail": false,
@@ -548,4 +548,3 @@
     }
   ]
 }
-   

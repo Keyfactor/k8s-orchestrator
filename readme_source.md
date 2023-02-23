@@ -383,6 +383,10 @@ Empty
 Please refer to the Keyfactor Command Reference Guide for information on creating
 certificate stores and scheduling Discovery jobs in Keyfactor Command.
 
+## Development
+
+[See the development guide](docs/development.md)
+
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
 

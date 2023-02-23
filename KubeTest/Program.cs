@@ -281,7 +281,7 @@ namespace KubeTestConsole
                                 if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
                                     (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
                                 {
-                                    testOutputDict[testCase.TestName] = "Success";
+                                    testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
                                     Console.ForegroundColor = ConsoleColor.Green;
                                 }
                                 else
@@ -397,7 +397,7 @@ namespace KubeTestConsole
                                         if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
                                             (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
                                         {
-                                            testOutputDict[testCase.TestName] = "Success";
+                                            testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
                                             Console.ForegroundColor = ConsoleColor.Green;
                                         }
                                         else
