@@ -30,6 +30,23 @@ function createVars(){
     -f name='KEYFACTOR_HOSTNAME' \
     -f value="$KEYFACTOR_HOSTNAME" 
    
+  echo "Creating or updating variable KEYFACTOR_DOMAIN with value $KEYFACTOR_HOSTNAME for repo $GH_REPO_NAME" 
+  gh api \
+    --method POST \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$GH_VARIABLES_API" \
+    -f name='KEYFACTOR_DOMAIN' \
+    -f value="$KEYFACTOR_DOMAIN" || true
+     
+  gh api \
+    --method PATCH \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$GH_VARIABLES_API/KEYFACTOR_DOMAIN" \
+    -f name='KEYFACTOR_DOMAIN' \
+    -f value="$KEYFACTOR_DOMAIN" 
+   
   echo "Creating or updating variable KEYFACTOR_USERNAME with value $KEYFACTOR_USERNAME for repo $GH_REPO_NAME"
   gh api \
     --method POST \
@@ -90,5 +107,5 @@ function createOrUpdateSecrets(){
     "$GH_SECRETS_API"  
 }
 
-
-  
+createVars
+listVars
