@@ -1,10 +1,14 @@
 ## Table of Contents
-- [Kubernetes Orchestrator](#kubernetes-orchestrator)
-    * [Integration status: Pilot - Ready for use in test environments.](#integration-status--pilot---ready-for-use-in-test-environments)
+- [Kubernetes Orchestrator Extension](#kubernetes-orchestrator-extension)
     * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
+    * [Support for Kubernetes Orchestrator Extension](#support-for-kubernetes-orchestrator-extension)
     * [Keyfactor Version Supported](#keyfactor-version-supported)
     * [Platform Specific Notes](#platform-specific-notes)
     * [PAM Integration](#pam-integration)
+        + [Register the PAM Provider](#register-the-pam-provider)
+    * [Keyfactor Version Supported](#keyfactor-version-supported-1)
+    * [Platform Specific Notes](#platform-specific-notes-1)
+    * [PAM Integration](#pam-integration-1)
     * [Overview](#overview)
     * [Versioning](#versioning)
     * [Security Considerations](#security-considerations)
@@ -17,6 +21,7 @@
                 * [UI Basic Tab](#ui-basic-tab)
                 * [UI Advanced Tab](#ui-advanced-tab)
                 * [Custom Fields Tab](#custom-fields-tab)
+                * [Kube Secret Types](#kube-secret-types)
                 * [Entry Parameters Tab:](#entry-parameters-tab-)
         + [K8SSecret Store Type](#k8ssecret-store-type)
             - [kfutil Create K8SSecret Store Type](#kfutil-create-k8ssecret-store-type)
@@ -39,6 +44,7 @@
                 * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
                 * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
     * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
+    * [Development](#development)
     * [License](#license)
 
 ## Keyfactor Version Supported
@@ -385,7 +391,7 @@ certificate stores and scheduling Discovery jobs in Keyfactor Command.
 
 ## Development
 
-[See the development guide](docs/development.md)
+[See the development guide](Development.md)
 
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
