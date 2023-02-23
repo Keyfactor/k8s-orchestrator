@@ -53,16 +53,42 @@ This orchestrator extension has the ability to connect to a variety of supported
 
 The secrets that this orchestrator extension supports for use with a PAM Provider are:
 
-| Name           | Description                                                                                                                                                                                                                                                     |
-|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ServerUsername | Must be set to `kubeconfig` if used. If you do not set it to `kubeconfig` the `ServerPassword` will be ignored.                                                                                                                                                 |
-| ServerPassword | Must be set if `ServerUsername` is provided. The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](../scripts/kubernetes/README.md) docs and scripts. |
-| KubeSvcCreds   | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                                                                    |
+| Name           | Description                                                                                                                                                                                                                                                                                                                 |
+|----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| ServerUsername | Must be set to `kubeconfig` if used. If you do not set it to `kubeconfig` the `ServerPassword` will be ignored.                                                                                                                                                                                                             |
+| ServerPassword | Must be set if `ServerUsername` is provided. The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/README.md) docs and scripts. |
+| KubeSvcCreds   | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                                                                                                                                |
   
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  For each value that you want managed by a PAM provider, simply enter the key value inside your specific PAM provider that will hold this value into the corresponding field when setting up the certificate store, discovery job, or API call.
 
 Setting up a PAM provider for use involves adding an additional section to the manifest.json file for this extension as well as setting up the PAM provider you will be using.  Each of these steps is specific to the PAM provider you will use and are documented in the specific GitHub repo for that provider.  For a list of Keyfactor supported PAM providers, please reference the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam).
+
+
+### Register the PAM Provider
+
+A PAM Provider needs to be registered on the Universal Orchestrator in the same way other extensions are. Create a folder for the specific PAM Provider to be added, and place the contents of the PAM Provider into the folder. There needs to be a manifest.json with the PAM Provider.
+
+After a manifest.json is added, the final step for configuration is setting the "provider-level" parameters for the PAM Provider. These are also known as the "initialization-level" parameters. These need to be placed in a json file that gets loaded by the Orchestrator by default. 
+
+example manifest.json for MY-PROVIDER-NAME
+```
+{
+    "extensions": {
+        "Keyfactor.Platform.Extensions.IPAMProvider": {
+            "PAMProviders.MY-PROVIDER-NAME.PAMProvider": {
+                "assemblyPath": "my-pam-provider.dll",
+                "TypeFullName": "Keyfactor.Extensions.Pam.MyPamProviderClass"
+            }
+        }
+    },
+    "Keyfactor:PAMProviders:MY-PROVIDER-NAME:InitializationInfo": {
+        "InitParam1": "InitValue1",
+        "InitParam2": "InitValue2"
+    }
+}
+```
+
 
 
 
@@ -225,7 +251,7 @@ subjects:
    C:\Program Files\Keyfactor\Keyfactor Orchestrator), find the "Extensions" folder. Underneath that,
    create a new folder named "Kubernetes". You may choose to use a different name if you wish.
 4. Download the latest version of the Kubernetes orchestrator extension from
-   [GitHub](https://github.com/Keyfactor/remote-file-orchestrator).  Click on the "Latest" release
+   [GitHub](https://github.com/Keyfactor/kubernetes-orchestrator).  Click on the "Latest" release
    link on the right hand side of the main page and download the first zip file.
 5. Copy the contents of the download installation zip file to the folder created in Step 3.
 6. (Optional) If you decide to create one or more certificate store types with short names different
@@ -262,33 +288,33 @@ Below is a table of the common values that should be used for all certificate st
 
 #### Common Values
 ##### UI Basic Tab
-| Field Name | Required | Description                                                                                                                                | Value                  |
-|------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| Name       | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                       | Depends on store type. |
-| ShortName  | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                         | Depends on store type. |
-| Custom Capability | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                    | Checked [x]            |
-| Supported Job Types | &check;  | The job types supported by the certificate store type.                                                                                     | Depends on store type. |
-| Needs Server |          | Must be set to false or unchecked                                                                                                          | Unchecked [ ]          |
-| Blueprint Allowed |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature.  | Unchecked [ ]          |
-| Uses PowerShell |          | Whether or not the certificate store type uses PowerShell.                                                                                 | Unchecked [ ]          |
-| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                             | Unchecked [ ]          |
-| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                        | Unchecked [ ]          |
+| Field Name              | Required | Description                                                                                                                               | Value                  |
+|-------------------------|----------|-------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| Name                    | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                      | Depends on store type. |
+| ShortName               | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                        | Depends on store type. |
+| Custom Capability       | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                   | Checked [x]            |
+| Supported Job Types     | &check;  | The job types supported by the certificate store type.                                                                                    | Depends on store type. |
+| Needs Server            |          | Must be set to true or checked to use PAM, otherwise can be left uncehcked.                                                               | Unchecked [ ]          |
+| Blueprint Allowed       |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature. | Unchecked [ ]          |
+| Uses PowerShell         |          | Whether or not the certificate store type uses PowerShell.                                                                                | Unchecked [ ]          |
+| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                            | Unchecked [ ]          |
+| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                       | Unchecked [ ]          |
 
 ##### UI Advanced Tab
-| Field Name | Required | Description                                                                                                                                | Value                  |
-|------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| Store Path Type |          | The type of path the certificate store type uses.                                                                                          | Freeform               |
+| Field Name            | Required | Description                                                                                                                                | Value                  |
+|-----------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| Store Path Type       |          | The type of path the certificate store type uses.                                                                                          | Freeform               |
 | Supports Custom Alias |          | Whether or not the certificate store type supports custom aliases.                                                                         | Depends on store type. |
-| Private Key Handling |          | Whether or not the certificate store type supports private key handling.                                                                   | Depends on store type. |
-| PFX Password Style |          | The password style used by the certificate store type.                                                                                     | Default                |
+| Private Key Handling  |          | Whether or not the certificate store type supports private key handling.                                                                   | Depends on store type. |
+| PFX Password Style    |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
 | Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                                                                                                                                                                           |
-|----------------|----------------------|--------|--------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String |        | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
-| KubeSecretName | Kube Secret Name     | String |        | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                                      |
-| KubeSecretType | Kube Secret Type     | String | &check; | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
-| KubeSvcCreds   | Kube Service Account | Secret | &check; | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
+|----------------|----------------------|--------|----------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
+| KubeSecretName | Kube Secret Name     | String |          | none          | Overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                                      |
+| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
+| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -453,6 +479,10 @@ Empty
 
 Please refer to the Keyfactor Command Reference Guide for information on creating
 certificate stores and scheduling Discovery jobs in Keyfactor Command.
+
+## Development
+
+[See the development guide](docs/development.md)
 
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
