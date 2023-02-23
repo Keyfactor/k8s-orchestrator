@@ -5,6 +5,8 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keyfactor.Orchestrators.Kube", "kubernetes-orchestrator-extension\Keyfactor.Orchestrators.Kube.csproj", "{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubeTest", "KubeTest\KubeTest.csproj", "{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -15,6 +17,10 @@ Global
 		{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}.Release|Any CPU.Build.0 = Release|Any CPU
+		{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

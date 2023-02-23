@@ -11,19 +11,18 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Keyfactor.Logging" Version="1.1.0" />
-    <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.1.2" />
-    <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
-    <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorRegistrationUpdater" Version="1.0.3" />
-    <PackageReference Include="Keyfactor.PKI" Version="5.0.0" />
-    <PackageReference Include="KubernetesClient.Classic" Version="10.0.16" />
-    <PackageReference Include="Newtonsoft.Json" Version="13.0.2" />
-  </ItemGroup>
-
-  <ItemGroup>
     <None Update="manifest.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="keyfactor.extensions.pam.utilities" Version="1.0.2" />
+    <PackageReference Include="Keyfactor.Logging" Version="1.1.1" />
+    <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.2.0" />
+    <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
+    <PackageReference Include="Keyfactor.PKI" Version="4.0.1" />
+    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />
   </ItemGroup>
 
 </Project>

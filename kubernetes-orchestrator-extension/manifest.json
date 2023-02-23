@@ -3,43 +3,43 @@
 		"Keyfactor.Orchestrators.Extensions.IOrchestratorJobExtension": {
 			"CertStores.K8SSECRET.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Inventory"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Inventory"
 			},
 			"CertStores.K8SSECRET.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Discovery"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Discovery"
 			},
 			"CertStores.K8SSECRET.Management": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Management"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Management"
 			},
 			"CertStores.K8SSECRET.Reenrollment": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Reenrollment"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Reenrollment"
 			},
 			"CertStores.K8STLSSECR.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Inventory"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Inventory"
 			},
 			"CertStores.K8STLSSECR.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Discovery"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Discovery"
 			},
 			"CertStores.K8STLSSECR.Management": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Management"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Management"
 			},
 			"CertStores.K8STLSSECR.Reenrollment": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Reenrollment"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Reenrollment"
 			},
 			"CertStores.K8SCERT.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Inventory"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Inventory"
 			},
 			"CertStores.K8SCERT.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.Kube.dll",
-				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Discovery"
+				"TypeFullName": "Keyfactor.Extensions.Orchestrator.Kube.Jobs.Discovery"
 			}
 		}
 	}

@@ -18,6 +18,7 @@ using k8s;
 using k8s.Autorest;
 using k8s.KubeConfigModels;
 using k8s.Models;
+using Keyfactor.Orchestrators.Extensions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
@@ -560,5 +561,23 @@ public class KubeCertificateManagerClient
         public string PrivateKey;
         public string PublicKey;
     }
+
+
+    public IEnumerable<CurrentInventoryItem> GetOpaqueSecretCertificateInventory()
+    {
+        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        return inventoryItems;
+    }
     
+    public IEnumerable<CurrentInventoryItem> GetTlsSecretCertificateInventory()
+    {
+        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        return inventoryItems;
+    }
+
+    public IEnumerable<CurrentInventoryItem> GetCertificateInventory()
+    {
+        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        return inventoryItems;
+    }
 }

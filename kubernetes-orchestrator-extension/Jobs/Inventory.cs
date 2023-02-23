@@ -15,47 +15,17 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube;
+namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
 
 // The Inventory class implements IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
 //  and return those certificates back to Keyfactor for storing in its database.  Private keys will NOT be passed back to Keyfactor Command 
-public class Inventory : IInventoryJobExtension
+public class Inventory : JobBase, IInventoryJobExtension
 {
-    private static readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
-    
-    private static readonly string[] RequiredProperties = { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
-
-    private static readonly string CertChainSeparator = ",";
-
-    private readonly IPAMSecretResolver _resolver;
-
-    private KubeCertificateManagerClient _kubeClient;
-
-    private ILogger _logger;
-
     public Inventory(IPAMSecretResolver resolver)
     {
-        _resolver = resolver;
+        Resolver = resolver;
     }
-
-    private string KubeNamespace { get; set; }
-
-    private string KubeSecretName { get; set; }
-
-    private string KubeSecretType { get; set; }
-
-    private string KubeSvcCreds { get; set; }
-
-    private string ServerUsername { get; set; }
-
-    private string ServerPassword { get; set; }
-
-    //Necessary to implement IInventoryJobExtension but not used.  Leave as empty string.
-    // public string ExtensionName => "Kubernetes";
-    public string ExtensionName => "Kube";
-
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
     {
@@ -71,81 +41,15 @@ public class Inventory : IInventoryJobExtension
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-        _logger = LogHandler.GetClassLogger(GetType());
-        _logger.LogDebug("Begin Inventory...");
+        InitializeStore(config);
+        Logger.LogDebug("Begin Inventory...");
 
-        var storePath = config.CertificateStoreDetails.StorePath;
-        var properties = config.CertificateStoreDetails.Properties;
-        _logger.LogInformation($"Inventory for store path: {storePath}");
-
-        ServerUsername = ResolvePamField("Server User Name", config.ServerUsername);
-        ServerPassword = ResolvePamField("Server Password", config.ServerPassword);
-        var storePassword = ResolvePamField("Store Password", config.CertificateStoreDetails.StorePassword);
-
-        if (storePassword != null)
-        {
-            _logger.LogWarning($"Store password provided but is not supported by store type {config.Capability}).");
-        }
-
-        _logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
-        // logger.LogTrace($"Store password: {storePassword}"); //Do not log passwords
-        _logger.LogTrace($"Server: {config.CertificateStoreDetails.ClientMachine}");
-        _logger.LogTrace($"Store Path: {config.CertificateStoreDetails.StorePath}");
-
-        //Convert properties string to dictionary
-        var storeProperties = JsonConvert.DeserializeObject<Dictionary<string, string>>(properties);
-
-        //Check for required properties
-        foreach (var prop in RequiredProperties)
-        {
-            if (storeProperties.ContainsKey(prop)) continue;
-
-            var propErr = $"Required property {prop} not found in store properties.";
-            _logger.LogError(propErr);
-            return FailJob(propErr, config.JobHistoryId);
-        }
-
-        KubeNamespace = storeProperties["KubeNamespace"];
-        KubeSecretName = storeProperties["KubeSecretName"];
-        KubeSecretType = storeProperties["KubeSecretType"];
-        KubeSvcCreds = storeProperties["KubeSvcCreds"];
-        
-        //Check if KubeSecretName is empty or null and default to storepath
-        if (string.IsNullOrEmpty(KubeSecretName))
-        {
-            KubeSecretName = storePath;
-        }
-
-        if (ServerUsername == "kubeconfig")
-        {
-            _logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
-            storeProperties["KubeSvcCreds"] = ServerPassword;
-            KubeSvcCreds = ServerPassword;
-            // logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
-        }
-
-        _logger.LogDebug($"KubeNamespace: {KubeNamespace}");
-        _logger.LogDebug($"KubeSecretName: {KubeSecretName}");
-        _logger.LogDebug($"KubeSecretType: {KubeSecretType}");
-        // logger.LogTrace($"KubeSvcCreds: {kubeSvcCreds}"); //Do not log passwords
-
-        if (string.IsNullOrEmpty(KubeSvcCreds))
-        {
-            const string credsErr =
-                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
-            _logger.LogError(credsErr);
-            return FailJob(credsErr, config.JobHistoryId);
-        }
-
+        Logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
+        Logger.LogTrace($"Server: {KubeClient.GetHost()}");
+        Logger.LogTrace($"Store Path: {StorePath}");
 
         try
         {
-            _kubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
-
-            if (config.CertificateStoreDetails.Properties == "")
-                return FailJob(
-                    $"Invalid configuration. A KubernetesCertStore type must have addition properties: {string.Join(", ", RequiredProperties)}, {string.Join(", ", SupportedKubeStoreTypes)}",
-                    config.JobHistoryId);
 
             var hasPrivateKey = false;
 
@@ -168,7 +72,7 @@ public class Inventory : IInventoryJobExtension
                     return HandleCertificate(config.JobHistoryId, submitInventory);
                 default:
                     var errorMsg = $"{KubeSecretType} not supported.";
-                    _logger.LogError(errorMsg);
+                    Logger.LogError(errorMsg);
                     return new JobResult
                     {
                         Result = OrchestratorJobStatusJobResult.Failure,
@@ -194,36 +98,36 @@ public class Inventory : IInventoryJobExtension
         const bool hasPrivateKey = false;
         try
         {
-            var certificates = _kubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
+            var certificates = KubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
             return PushInventory(certificates, jobId, submitInventory);
         }
         catch (HttpOperationException e)
         {
-            _logger.LogError(e.Message);
+            Logger.LogError(e.Message);
             var certDataErrorMsg =
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return FailJob(certDataErrorMsg, jobId);
         }
         catch (Exception e)
         {
             var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return FailJob(certDataErrorMsg, jobId);
         }
     }
 
-    private JobResult PushInventory(string[] certsList, long jobId, SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
+    private JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
         var inventoryItems = new List<CurrentInventoryItem>();
         foreach (var cert in certsList)
         {
-            _logger.LogTrace($"Cert:\n{cert}");
+            Logger.LogTrace($"Cert:\n{cert}");
             // load as x509
             string alias;
             if (string.IsNullOrEmpty(cert))
             {
-                _logger.LogInformation($"Kubernetes returned an empty inventory for store {KubeSecretName}");
+                Logger.LogInformation($"Kubernetes returned an empty inventory for store {KubeSecretName}");
                 continue;
             }
             try
@@ -235,7 +139,7 @@ public class Inventory : IInventoryJobExtension
             }
             catch (Exception e)
             {
-                _logger.LogError(e.Message);
+                Logger.LogError(e.Message);
                 return FailJob(e.Message, jobId);
             }
 
@@ -258,8 +162,7 @@ public class Inventory : IInventoryJobExtension
             //Sends inventoried certificates back to KF Command
             submitInventory.Invoke(inventoryItems);
             //Status: 2=Success, 3=Warning, 4=Error
-            return new JobResult
-                { Result = OrchestratorJobStatusJobResult.Success, JobHistoryId = jobId };
+            return SuccessJob(jobId);
         }
         catch (Exception ex)
         {
@@ -273,11 +176,11 @@ public class Inventory : IInventoryJobExtension
     {
         const bool hasPrivateKey = true;
 
-        _logger.LogDebug(
+        Logger.LogDebug(
             $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace}");
         try
         {
-            var certData = _kubeClient.GetCertificateStoreSecret(
+            var certData = KubeClient.GetCertificateStoreSecret(
                 KubeSecretName,
                 KubeNamespace
             );
@@ -288,16 +191,16 @@ public class Inventory : IInventoryJobExtension
         }
         catch (HttpOperationException e)
         {
-            _logger.LogError(e.Message);
+            Logger.LogError(e.Message);
             var certDataErrorMsg =
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return FailJob(certDataErrorMsg, jobId);
         }
         catch (Exception e)
         {
             var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return FailJob(certDataErrorMsg, jobId);
         }
     }
@@ -305,12 +208,12 @@ public class Inventory : IInventoryJobExtension
     private JobResult HandleTlsSecret(long jobId, SubmitInventoryUpdate submitInventory)
     {
 
-        _logger.LogDebug(
+        Logger.LogDebug(
             $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace}");
         var hasPrivateKey = true;
         try
         {
-            var certData = _kubeClient.GetCertificateStoreSecret(
+            var certData = KubeClient.GetCertificateStoreSecret(
                 KubeSecretName,
                 KubeNamespace
             );
@@ -326,10 +229,10 @@ public class Inventory : IInventoryJobExtension
         }
         catch (HttpOperationException e)
         {
-            _logger.LogError(e.Message);
+            Logger.LogError(e.Message);
             var certDataErrorMsg =
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return new JobResult
             {
                 Result = OrchestratorJobStatusJobResult.Failure,
@@ -339,9 +242,9 @@ public class Inventory : IInventoryJobExtension
         }
         catch (Exception e)
         {
-            _logger.LogError(e.Message);
+            Logger.LogError(e.Message);
             var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
-            _logger.LogError(certDataErrorMsg);
+            Logger.LogError(certDataErrorMsg);
             return new JobResult
             {
                 Result = OrchestratorJobStatusJobResult.Failure,
@@ -349,52 +252,5 @@ public class Inventory : IInventoryJobExtension
                 FailureMessage = certDataErrorMsg
             };
         }
-    }
-    private string ResolvePamField(string name, string value)
-    {
-        var logger = LogHandler.GetClassLogger(GetType());
-        logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
-        return _resolver.Resolve(value);
-    }
-
-    private static JobResult FailJob(string message, long jobHistoryId)
-    {
-        return new JobResult
-        {
-            Result = OrchestratorJobStatusJobResult.Failure,
-            JobHistoryId = jobHistoryId,
-            FailureMessage = message
-        };
-    }
-
-    public class KubernetesCertStore
-    {
-        public string KubeNamespace { get; set; } = "";
-
-        public string KubeSecretName { get; set; } = "";
-
-        public string KubeSecretType { get; set; } = "";
-
-        public string KubeSvcCreds { get; set; } = "";
-
-        public Cert[] Certs { get; set; }
-    }
-
-    public class KubeCreds
-    {
-        public string KubeServer { get; set; } = "";
-
-        public string KubeToken { get; set; } = "";
-
-        public string KubeCert { get; set; } = "";
-    }
-
-    public class Cert
-    {
-        public string Alias { get; set; } = "";
-
-        public string CertData { get; set; } = "";
-
-        public string PrivateKey { get; set; } = "";
     }
 }
