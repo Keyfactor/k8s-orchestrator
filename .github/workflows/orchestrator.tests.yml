@@ -19,8 +19,7 @@ jobs:
         run: dotnet build
 
       - name: Run inventory tests
-        run: 
-          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        run: dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
         env:
           KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
           KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
