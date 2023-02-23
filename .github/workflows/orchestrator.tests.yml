@@ -1,0 +1,59 @@
+name: Build and Run Console Application
+
+on: [push]
+
+env:
+  KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+  KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+  KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+  KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+  TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
+  TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+  TEST_MANUAL: false
+  
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Setup .NET Core
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '3.1' # replace with desired version
+
+      - name: Build solution
+        run: dotnet build
+
+      - name: Run inventory tests
+        run: 
+          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        env:
+          TEST_CERT_MGMT_TYPE: "inv"
+          TEST_ORCH_OPERATION: "inv"
+      - name: Run management add tests
+        run:
+          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        env:
+          TEST_CERT_MGMT_TYPE: "add"
+          TEST_ORCH_OPERATION: "management"
+      - name: Run inventory tests post add
+        run:
+          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        env:
+          TEST_CERT_MGMT_TYPE: "inv"
+          TEST_ORCH_OPERATION: "inv"
+      - name: Run remove tests
+        run:
+          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        env:
+          TEST_CERT_MGMT_TYPE: "rem"
+          TEST_ORCH_OPERATION: "management"
+      - name: Run inventory tests post remove
+        run:
+          - dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        env:
+          TEST_CERT_MGMT_TYPE: "inv"
+          TEST_ORCH_OPERATION: "inv"
