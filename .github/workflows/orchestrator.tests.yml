@@ -31,14 +31,15 @@ jobs:
             echo "CREATE_RELEASE=${creatingRelease}" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
             dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.BUILD_PACKAGE_ACCESS }} --store-password-in-clear-text
             nuget restore $slnPath
-        env:
-          nuget_token: ${{ secrets.nuget_token }}
-          
+         
+      - name: Restore dependencies
+        run: dotnet restore
+             
       - name: Build solution
-        run: dotnet build
+        run: dotnet build --no-restore --configuration Debug --verbosity normal
 
       - name: Run inventory tests
-        run: dotnet run --project ./src/ConsoleApp/ConsoleApp.csproj
+        run: dotnet run --project ./KubeTest/KubeTest.csproj
         env:
           KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
           KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
