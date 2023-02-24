@@ -107,8 +107,8 @@ jobs:
         
       - name: Run Add test console
         run: |
-          cd "${{ inputs.test_working_dir }}"
-          ls
+          cd TestConsole
+          ls bin/Debug/netcoreapp3.1
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
           ./bin/Debug/netcoreapp3.1/TestConsole.exe
           echo "Running *TestConsole.exe in Debug folder"
