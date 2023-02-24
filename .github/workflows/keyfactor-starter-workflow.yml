@@ -3,9 +3,6 @@ name: Starter Workflow
 on: [workflow_dispatch, push, pull_request]
 
 jobs:  
-  call-create-github-release-workflow:
-    uses: Keyfactor/actions/.github/workflows/github-release.yml@main
-
   get-manifest-properties:
     runs-on: windows-latest
     outputs:
@@ -31,12 +28,12 @@ jobs:
 #      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
   call-dotnet-build-and-test-workflow:
-    needs: [ call-create-github-release-workflow ]
+    needs: [ get-manifest-properties ]
     uses: spbsoluble/actions/.github/workflows/dotnet-build-and-test.yml@test_console
     with:
       release_dir: kubernetes-orchestrator-extension\bin\Release\
-      test_working_dir: kubernetes-orchestrator-extension\TestConsole
-      test_sln_path: kubernetes-orchestrator-extension\TestConsole\TestConsole.sln
+      test_working_dir: TestConsole
+      test_sln_path: TestConsole\TestConsole.sln
     secrets:
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
       
