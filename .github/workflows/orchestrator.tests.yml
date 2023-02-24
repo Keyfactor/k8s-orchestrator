@@ -1,6 +1,5 @@
-name: Tests
-
-on: [workflow_dispatch, push, pull_request]
+name: Run Kube Test Console Application
+  
 env:
   KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
   KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
@@ -11,6 +10,8 @@ env:
   TEST_MANUAL: false
   TEST_CERT_MGMT_TYPE: "inv"
   TEST_ORCH_OPERATION: "inv"
+
+on: [push]
   
 jobs:
   get-manifest-properties:
