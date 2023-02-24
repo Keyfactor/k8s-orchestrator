@@ -1,15 +1,4 @@
 name: Run Kube Test Console Application
-  
-env:
-  KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-  KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-  KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-  KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-  TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
-  TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
-  TEST_MANUAL: false
-  TEST_CERT_MGMT_TYPE: "inv"
-  TEST_ORCH_OPERATION: "inv"
 
 on: [push]
   
@@ -47,7 +36,14 @@ jobs:
       test_sln_path: TestConsole\TestConsole.sln
     secrets:
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
-
+      KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+      TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
+    env:
+      KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+      KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+      KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+      TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+      TEST_MANUAL: false
 
 #  call-generate-readme-workflow:
 #    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
