@@ -28,7 +28,7 @@ jobs:
 #      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
   call-dotnet-build-and-test-workflow:
-    needs: [ get-manifest-properties ]
+#    needs: [ get-manifest-properties ]
     uses: spbsoluble/actions/.github/workflows/dotnet-build-and-test.yml@test_console
     with:
       release_dir: kubernetes-orchestrator-extension\bin\Release\
