@@ -2,10 +2,6 @@ name: Run Kube Test Console Application
 
 on: [push]
 
-env:
-  KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-  TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
-
 jobs:
   get-manifest-properties:
     runs-on: windows-latest
