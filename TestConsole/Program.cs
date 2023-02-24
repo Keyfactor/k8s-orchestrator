@@ -17,12 +17,10 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
-
-using Keyfactor.Orchestrators.K8S.Jobs;
 using Moq;
 using Newtonsoft.Json;
 

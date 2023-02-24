@@ -1,4 +1,4 @@
-﻿// Copyright 2021 Keyfactor                                                   
+﻿// Copyright 2023 Keyfactor                                                   
 // Licensed under the Apache License, Version 2.0 (the "License"); you may    
 // not use this file except in compliance with the License.  You may obtain a 
 // copy of the License at http://www.apache.org/licenses/LICENSE-2.0.  Unless 
@@ -10,11 +10,11 @@
 
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using Keyfactor.Orchestrators.Extensions.Interfaces;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 // The Re-enrollment class implements IAgentJobExtension and is meant to:
 //  1) Generate a new public/private keypair locally
 //  2) Generate a CSR from the keypair,
@@ -45,8 +45,8 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
         Logger = LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug($"Begin Reenrollment...");
-        Logger.LogDebug($"Following info received from command:");
+        Logger.LogDebug("Begin Reenrollment...");
+        Logger.LogDebug("Following info received from command:");
         Logger.LogDebug(JsonConvert.SerializeObject(config));
 
         Logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
@@ -54,7 +54,7 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
         Logger.LogTrace($"Server: {config.CertificateStoreDetails.ClientMachine}");
         Logger.LogTrace($"Store Path: {config.CertificateStoreDetails.StorePath}");
         Logger.LogTrace($"Canonical Store Path: {GetStorePath()}");
-        
+
         //Status: 2=Success, 3=Warning, 4=Error
         return FailJob($"Re-enrollment not implemented for {config.Capability}", config.JobHistoryId);
     }
@@ -69,7 +69,6 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
 //Dictionary<DerObjectIdentifier, string> values = CreateSubjectValues("myname");
 
 //var subject = new X509Name(values.Keys.Reverse().ToList(), values);
-
 
 //GeneralName name = new GeneralName(GeneralName.DnsName, "a1.example.ca");
 //X509ExtensionsGenerator extGen = new X509ExtensionsGenerator();
@@ -88,9 +87,7 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
 //converted,
 //key.Private);
 
-
 //byte[] derEncoded = pkcs10Csr.GetDerEncoded();
-
 
 //RSA rsa = RSA.Create(2048);
 //var csr = new CertificateRequest(

@@ -10,13 +10,12 @@ using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
-using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
 // The Inventory class implements IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
 //  and return those certificates back to Keyfactor for storing in its database.  Private keys will NOT be passed back to Keyfactor Command 

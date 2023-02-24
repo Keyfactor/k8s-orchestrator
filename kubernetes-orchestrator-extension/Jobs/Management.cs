@@ -6,10 +6,7 @@
 // and limitations under the License.
 
 using System;
-using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using k8s.Models;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -17,10 +14,8 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using static Keyfactor.Extensions.Orchestrator.Kube.Jobs.Inventory;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
 public class Management : JobBase, IManagementJobExtension
 {
@@ -28,7 +23,7 @@ public class Management : JobBase, IManagementJobExtension
     {
         Resolver = resolver;
     }
-    
+
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)
     {
@@ -53,13 +48,13 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger = LogHandler.GetClassLogger(GetType());
         InitializeStore(config);
-        
+
         Logger.LogDebug("Begin Management...");
         var storePath = config.CertificateStoreDetails.StorePath;
         Logger.LogTrace("StorePath: " + storePath);
         Logger.LogDebug($"Canonical Store Path: {GetStorePath()}");
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
-        
+
 
         //Convert properties string to dictionary
         try
@@ -95,7 +90,6 @@ public class Management : JobBase, IManagementJobExtension
             //Status: 2=Success, 3=Warning, 4=Error
             return FailJob(ex.Message, config.JobHistoryId);
         }
-        return SuccessJob(config.JobHistoryId);
     }
 
     private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
@@ -114,7 +108,7 @@ public class Management : JobBase, IManagementJobExtension
             var pkey = certObj.GetRSAPrivateKey();
 
             var keyBytes = new byte[] { };
-            
+
             if (pkey != null)
             {
                 try
@@ -124,7 +118,7 @@ public class Management : JobBase, IManagementJobExtension
                     {
                         var pem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
                         keyPems = new[] { pem };
-                    }    
+                    }
                 }
                 catch (Exception ex)
                 {

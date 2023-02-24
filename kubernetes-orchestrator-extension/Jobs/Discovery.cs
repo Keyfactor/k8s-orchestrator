@@ -7,13 +7,11 @@
 
 using System;
 using System.Collections.Generic;
-using Keyfactor.Logging;
-using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
 // The Discovery class implements IAgentJobExtension and is meant to find all certificate stores based on the information passed when creating the job in KF Command 
 public class Discovery : JobBase, IDiscoveryJobExtension

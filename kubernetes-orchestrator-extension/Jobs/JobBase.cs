@@ -1,4 +1,4 @@
-// Copyright 2022 Keyfactor
+// Copyright 2023 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,7 +22,7 @@ using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Pkcs;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
 public class KubernetesCertStore
 {
@@ -95,15 +95,15 @@ public abstract class JobBase
     internal protected string StorePassword { get; set; }
 
     internal protected bool Overwrite { get; set; }
-    
-    protected internal virtual AsymmetricKeyEntry KeyEntry { get; set; }
-    
-    protected internal ManagementJobConfiguration ManagementConfig { get; set; }
-    
-    protected internal DiscoveryJobConfiguration DiscoveryConfig { get; set; }
-    
-    protected internal InventoryJobConfiguration InventoryConfig { get; set; }
-    
+
+    internal protected virtual AsymmetricKeyEntry KeyEntry { get; set; }
+
+    internal protected ManagementJobConfiguration ManagementConfig { get; set; }
+
+    internal protected DiscoveryJobConfiguration DiscoveryConfig { get; set; }
+
+    internal protected InventoryJobConfiguration InventoryConfig { get; set; }
+
 
     public string ExtensionName => "Kube";
 
