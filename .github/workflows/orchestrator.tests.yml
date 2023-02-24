@@ -21,10 +21,10 @@ jobs:
 #    steps:
 #      - uses: actions/checkout@v2
 #
-#      - name: Setup dotnet
-#        uses: actions/setup-dotnet@v1
-#        with:
-#          dotnet-version: '3.1.x'
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '3.1.x'
 #
 #      - name: Setup MSBuild
 #        uses: microsoft/setup-msbuild@v1
@@ -75,9 +75,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '3.1.x'
+
       - name: Run Inventory test console
         run: |
-          cd "${{ inputs.test_working_dir }}"
+          cd TestConsole
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
           bin\Debug\netcoreapp3.1\TestConsole.exe
           echo "Running *TestConsole.exe in Debug folder"
