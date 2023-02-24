@@ -47,14 +47,7 @@ jobs:
           
       - name: Run Add test console
         run: |
-          cd TestConsole
-          ls bin/Debug/netcoreapp3.1
-          echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          ./bin/Debug/netcoreapp3.1/TestConsole.exe
-          echo "Running *TestConsole.exe in Debug folder"
-          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
-          echo "Test Console Path: ${testConsolePath}"
-          $testConsolePath
+          dotnet run --project TestConsole/TestConsole.csproj
         env:
           TEST_MANUAL: false
           TEST_CERT_MGMT_TYPE: add
