@@ -65,7 +65,7 @@ $env:TEST_KUBE_NAMESPACE="default"
 $env:TEST_MANUAL="false"
 $env:TEST_CERT_MGMT_TYPE="inv"
 $env:TEST_ORCH_OPERATION="inv"
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
+./TestConsole/bin/Debug/netcoreapp3.1/TestConsole.exe
 ```
 
 #### Output

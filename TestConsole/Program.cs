@@ -15,15 +15,18 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
-using Keyfactor.Extensions.Orchestrator.Kube.Jobs;
+
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
+
+using Keyfactor.Orchestrators.K8S.Jobs;
 using Moq;
 using Newtonsoft.Json;
 
-namespace KubeTestConsole
+namespace TestConsole
 {
     public class OrchTestCase
     {
@@ -64,7 +67,7 @@ namespace KubeTestConsole
 
     public class JobConfig
     {
-        
+
         public List<object> LastInventory { get; set; }
 
         public CertificateStoreDetails CertificateStoreDetails { get; set; }
@@ -114,12 +117,12 @@ namespace KubeTestConsole
 
     class Program
     {
-
-        public static int tableWidth = 120;
         private const string EnvironmentVariablePrefix = "TEST_";
         private const string KubeConfigEnvVar = "TEST_KUBECONFIG";
         private const string KubeNamespaceEnvVar = "TEST_KUBE_NAMESPACE";
-        
+
+        public static int tableWidth = 120;
+
         private static readonly TestEnvironmentalVariable[] _envVariables;
 
         static Program()
@@ -218,12 +221,14 @@ namespace KubeTestConsole
             var hasFailure = false;
 
             var testOutputDict = new Dictionary<string, string>();
-            
+
             Console.WriteLine("====KubeTestConsole====");
             Console.WriteLine("Environment Variables:");
             Console.WriteLine(ShowEnvConfig());
             Console.WriteLine("====End Environmental Variables====");
-            
+
+            var pamUserNameField = Environment.GetEnvironmentVariable("TEST_PAM_USERNAME_FIELD") ?? "ServerUsername";
+            var pamPasswordField = Environment.GetEnvironmentVariable("TEST_PAM_PASSWORD_FIELD") ?? "ServerPassword";
 
             if (args.Length == 0)
             {
@@ -236,16 +241,19 @@ namespace KubeTestConsole
                     input = Console.ReadLine();
                 }
 
-                var testSecret = Environment.GetEnvironmentVariable("TEST_KUBECONFIG");
+                var testConfigPath = Environment.GetEnvironmentVariable("TEST_CONFIG_PATH") ?? "tests.json";
+
+                var pamMockUsername = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_USERNAME") ?? string.Empty;
+                var pamMockPassword = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_PASSWORD") ?? string.Empty;
 
                 var secretResolver = new Mock<IPAMSecretResolver>();
                 // Get from env var TEST_KUBECONFIG
                 // setup resolver for "Server Username" to return "kubeconfig"
                 secretResolver.Setup(m =>
-                    m.Resolve(It.Is<string>(s => s == "ServerUsername"))).Returns(() => "kubeconfig");
+                    m.Resolve(It.Is<string>(s => s == pamUserNameField))).Returns(() => pamMockUsername);
                 // setup resolver for "Server Password" to return the value of the env var TEST_KUBECONFIG
                 secretResolver.Setup(m =>
-                    m.Resolve(It.Is<string>(s => s == "ServerPassword"))).Returns(() => testSecret);
+                    m.Resolve(It.Is<string>(s => s == pamPasswordField))).Returns(() => pamMockPassword);
 
 
                 var tests = new OrchTestCase[] { };
@@ -256,9 +264,9 @@ namespace KubeTestConsole
                     case "inventory":
                     case "inv":
                     case "i":
-                        // Get test configurations from tests.json
+                        // Get test configurations from testConfigPath
 
-                        tests = GetTestConfig("tests.json", input);
+                        tests = GetTestConfig(testConfigPath, input);
                         var inv = new Inventory(secretResolver.Object);
 
                         Console.WriteLine("Running Inventory Job Test Cases");
@@ -319,7 +327,7 @@ namespace KubeTestConsole
                             testMgmtType = Console.ReadLine();
                         }
 
-                        tests = GetTestConfig("tests.json", testMgmtType);
+                        tests = GetTestConfig(testConfigPath, testMgmtType);
 
                         Console.WriteLine("Running Management Job Test Cases");
                         foreach (var testCase in tests)
@@ -344,7 +352,8 @@ namespace KubeTestConsole
                                     case "a":
                                     {
                                         // Get from env var TEST_PKEY_PASSWORD or prompt for it if not set
-                                        var testPrivateKeyPwd = Environment.GetEnvironmentVariable("TEST_PKEY_PASSWORD") ?? testCase.JobConfig.JobCertificate.PrivateKeyPassword;
+                                        var testPrivateKeyPwd = Environment.GetEnvironmentVariable("TEST_PKEY_PASSWORD") ??
+                                                                testCase.JobConfig.JobCertificate.PrivateKeyPassword;
                                         var privateKeyPwd = testPrivateKeyPwd;
                                         if (string.IsNullOrEmpty(testPrivateKeyPwd) &&
                                             isManualTest) //Only prompt on explicit set of TEST_USE_PKEY_PASS and that password has not been provided
@@ -408,7 +417,7 @@ namespace KubeTestConsole
                                         }
                                         Console.WriteLine(
                                             $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{jobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{jobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
-                                        
+
                                         Console.ResetColor();
                                         break;
                                     }
@@ -418,7 +427,8 @@ namespace KubeTestConsole
                                     case "r":
                                     {
                                         // Get alias from env TEST_CERT_REMOVE_ALIAS or prompt for it if not set
-                                        var alias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ?? testCase.JobConfig.JobCertificate.Thumbprint?.ToString() ?? testCase.JobConfig.JobCertificate.Alias;
+                                        var alias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ??
+                                                    testCase.JobConfig.JobCertificate.Thumbprint?.ToString() ?? testCase.JobConfig.JobCertificate.Alias;
                                         if (string.IsNullOrEmpty(alias) && isManualTest)
                                         {
                                             Console.WriteLine("Alias Enter Alias Name");
@@ -459,7 +469,7 @@ namespace KubeTestConsole
                                 Console.ResetColor();
                             }
                         }
-                        Console.WriteLine("Finished Running Inventory Job Test Cases");
+                        Console.WriteLine("Finished Running Management Job Test Cases");
                         break;
                 }
                 if (input == "SerializeTest")
@@ -472,20 +482,37 @@ namespace KubeTestConsole
                     // using var reader = new StringReader(xml);
                     // var test = (ErrorSuccessResponse)serializer.Deserialize(reader);
                     // Console.Write(test);
-                    Console.WriteLine("Dunno what this does...");
                 }
                 else
                 {
                     // output test results as a table to the console
+
+                    //write output to csv file
+                    var csv = new StringBuilder();
+                    csv.AppendLine("Test Name,Result");
                     PrintLine();
                     PrintRow("Test Name", "Result");
                     PrintLine();
                     foreach (var res in testOutputDict)
                     {
                         PrintRow(res.Key, res.Value);
+                        csv.AppendLine($"{res.Key},{res.Value}");
                     }
                     PrintLine();
-                    
+                    var resultFilePath = Environment.GetEnvironmentVariable("TEST_OUTPUT_FILE_PATH") ?? "testResults.csv";
+                    try
+                    {
+                        File.WriteAllText(resultFilePath, csv.ToString());
+                    }
+                    catch (Exception e)
+                    {
+                        var currentColor = Console.ForegroundColor;
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine($"Unable to write test results to file {resultFilePath}. Please check the file path and try again.");
+                        Console.WriteLine(e.Message);
+                        Console.ForegroundColor = currentColor;
+                    }
+
                 }
                 if (hasFailure)
                 {
@@ -503,17 +530,17 @@ namespace KubeTestConsole
         }
 
 
-        static void PrintLine()
+        private static void PrintLine()
         {
             Console.WriteLine(new string('-', tableWidth));
         }
-        
-        static void PrintRow(params string[] columns)
-        {
-            int width = (tableWidth - columns.Length) / columns.Length;
-            string row = "|";
 
-            foreach (string column in columns)
+        private static void PrintRow(params string[] columns)
+        {
+            var width = (tableWidth - columns.Length) / columns.Length;
+            var row = "|";
+
+            foreach (var column in columns)
             {
                 row += AlignLeft(column, width) + "|";
             }
@@ -521,7 +548,7 @@ namespace KubeTestConsole
             Console.WriteLine(row);
         }
 
-        static string AlignCentre(string text, int width)
+        private static string AlignCentre(string text, int width)
         {
             text = text.Length > width ? text.Substring(0, width - 3) + "..." : text;
 
@@ -529,19 +556,16 @@ namespace KubeTestConsole
             {
                 return new string(' ', width);
             }
-            else
-            {
-                return text.PadRight(width - (width - text.Length) / 2).PadLeft(width);
-            }
+            return text.PadRight(width - (width - text.Length) / 2).PadLeft(width);
         }
-        
-        static string AlignLeft(string text, int width)
+
+        private static string AlignLeft(string text, int width)
         {
             text = text.Length > width ? text.Substring(0, width - 3) + "..." : text;
 
             return text.PadRight(width);
         }
-        
+
         public static bool GetItems(IEnumerable<CurrentInventoryItem> items)
         {
             return true;
