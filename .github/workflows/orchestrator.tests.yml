@@ -1,19 +1,18 @@
-name: Console Tests
+name: Tests
 
 on: [workflow_dispatch, push, pull_request]
-
-jobs:
-  env:
-    KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-    KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-    KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-    KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-    TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
-    TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
-    TEST_MANUAL: false
-    TEST_CERT_MGMT_TYPE: "inv"
-    TEST_ORCH_OPERATION: "inv"
+env:
+  KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+  KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+  KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+  KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+  TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
+  TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+  TEST_MANUAL: false
+  TEST_CERT_MGMT_TYPE: "inv"
+  TEST_ORCH_OPERATION: "inv"
   
+jobs:
   get-manifest-properties:
     runs-on: windows-latest
     outputs:
