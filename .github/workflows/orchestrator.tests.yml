@@ -15,42 +15,120 @@ jobs:
         run: |
           $json = Get-Content integration-manifest.json | ConvertFrom-Json
           echo "::set-output name=prop::$(echo $json.update_catalog)"
-  
-  
-  #  call-dotnet-build-and-release-workflow:
-  #    needs: [call-create-github-release-workflow]
-  #    uses: Keyfactor/actions/.github/workflows/dotnet-build-and-release.yml@main
-  #    with:
-  #      release_version: ${{ needs.call-create-github-release-workflow.outputs.release_version }}
-  #      release_url: ${{ needs.call-create-github-release-workflow.outputs.release_url }}
-  #      release_dir: kubernetes-orchestrator-extension\bin\Release\ 
-  #    secrets: 
-  #      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
-  call-dotnet-build-and-test-workflow:
-    #    needs: [ get-manifest-properties ]
-    uses: spbsoluble/actions/.github/workflows/dotnet-build-and-test.yml@test_console
-    with:
-      release_dir: kubernetes-orchestrator-extension\bin\Release\
-      test_working_dir: TestConsole
-      test_sln_path: TestConsole\TestConsole.sln
-    secrets:
-      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
-      KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-      TEST_PAM_MOCK_USERNAME: "kubeconfig"
-      TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
-      
-      
+  dotnet-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v2
 
-#  call-generate-readme-workflow:
-#    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
-#    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@main
-#    secrets:
-#      token: ${{ secrets.APPROVE_README_PUSH }}
-#
-#  call-update-catalog-workflow:
-#    needs: get-manifest-properties
-#    if: needs.get-manifest-properties.outputs.update_catalog == 'True' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-#    uses: Keyfactor/actions/.github/workflows/update-catalog.yml@main
-#    secrets: 
-#      token: ${{ secrets.SDK_SYNC_PAT }}
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@v1
+        with:
+          dotnet-version: '3.1.x'
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Setup build environment
+        id: setup_env
+        run: |
+          $repoName = "${{ github.repository }}".Split("/")
+          echo "Repo Name: $($repoName[-1])"
+          echo "REPO_NAME=$($repoName[-1])" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $slnPath = (Get-ChildItem -Include *.sln -File -Recurse).fullname
+          echo "Solution File Path: ${slnPath}"
+          echo "SOLUTION_PATH=${slnPath}" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $creatingRelease = ("${{ inputs.release_url }}".Trim().Length -gt 0) -and ("${{ inputs.release_dir }}".Trim().Length -gt 0)
+          echo "Flagged to create release: ${creatingRelease}"
+          echo "CREATE_RELEASE=${creatingRelease}" | Out-File $env:GITHUB_ENV -Encoding utf8 -Append
+
+          dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.token }} --store-password-in-clear-text
+          nuget restore $slnPath
+
+      - name: Increment Assembly Version
+        run: |
+          $VersionRegex = "\d+\.\d+\.\d+"
+          $assemblyInfoFiles = (Get-ChildItem -Include AssemblyInfo.cs -File -Recurse).fullname
+          if ($assemblyInfoFiles -ne $null)
+          {
+            $newVer = "${{ inputs.release_version || '1.0.0' }}".TrimStart('v').Split('-')[0]
+            echo "Prepared to overwrite Assembly version to: ${newVer}"
+            foreach ($assemblyInfoFile in $assemblyInfoFiles)
+            {
+              $filecontent = Get-Content($assemblyInfoFile)
+              attrib $assemblyInfoFile -r
+              $filecontent -replace $VersionRegex, $newVer | Out-File $assemblyInfoFile
+            }
+          }
+
+      - name: Execute MSBuild Commands
+        run: |
+          $newVer = "${{ inputs.release_version || '1.0.0' }}".TrimStart('v').Split('-')[0]
+          MSBuild.exe $Env:SOLUTION_PATH -p:RestorePackagesConfig=false -p:Configuration=Debug -p:Version=$newVer
+  
+  test-inventory:
+    needs: [dotnet-build]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Run Add test console
+        run: |
+          cd "${{ inputs.test_working_dir }}"
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          bin\Debug\netcoreapp3.1\TestConsole.exe
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: add
+          TEST_ORCH_OPERATION: man
+          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+          TEST_PAM_MOCK_USERNAME: "kubeconfig"
+          TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
+
+      - name: Run Inventory test console
+        run: |
+          cd "${{ inputs.test_working_dir }}"
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          bin\Debug\netcoreapp3.1\TestConsole.exe
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: inv
+          TEST_ORCH_OPERATION: inv
+          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+
+
+      - name: Run Remove test console
+        run: |
+          cd "${{ inputs.test_working_dir }}"
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          bin\Debug\netcoreapp3.1\TestConsole.exe
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: rem
+          TEST_ORCH_OPERATION: man
+          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+     
