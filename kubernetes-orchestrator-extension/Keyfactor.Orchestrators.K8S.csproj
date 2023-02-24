@@ -3,11 +3,11 @@
   <PropertyGroup>
 	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-    <RootNamespace>Keyfactor.Extensions.Orchestrator.Kube</RootNamespace>
+    <RootNamespace>Keyfactor.Extensions.Orchestrator.K8S</RootNamespace>
     <LangVersion>latest</LangVersion>
 	 <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 	 <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-	 <PackageId>Keyfactor.Orchestrators.Kube</PackageId>
+	 <PackageId>Keyfactor.Orchestrators.K8S</PackageId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,6 +23,10 @@
     <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
     <PackageReference Include="Keyfactor.PKI" Version="4.0.1" />
     <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Clients" />
   </ItemGroup>
 
 </Project>

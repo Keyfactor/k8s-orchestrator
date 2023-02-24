@@ -24,16 +24,17 @@ This document describes how to build and test the KubeTest project.
 
 ## Testing Environment Variables
 
-| Name                  | Description                                                                                      | Default   | Example                                                                                                                                             |
-|-----------------------|--------------------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `KEYFACTOR_HOSTNAME`  | The hostname of the Keyfactor Command server.                                                    |           | `my.kfcommand.kfdelivery.com`                                                                                                                       |
-| `KEYFACTOR_USERNAME`  | The username of the Keyfactor user.                                                              |           | `k8s-orch-sa`                                                                                                                                       |
-| `KEYFACTOR_PASSWORD`  | The password of the Keyfactor user.                                                              |           | `<k8s-orch-sa's Command password>`                                                                                                                  |
-| `TEST_KUBECONFIG`     | A full unescaped `kubeconfig` in JSON format. Can also be base64 encoded. Must be a single line! |           | [See Docs](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#keyfactor-kubernetes-orchestrator-service-account-definition) |
-| `TEST_KUBE_NAMESPACE` | The namespace to use for testing.                                                                | `default` | `keyfactor`                                                                                                                                         |
-| `TEST_MANUAL`         | If set to `true`, the tests will not be run automatically and prompt for user input.             | `false`   | `true`                                                                                                                                              |
-| `TEST_CERT_MGMT_TYPE` | The orchestrator job type. Must be on of the following: `['inv','add','rem']`                    |           | `inv`                                                                                                                                               |
-| `TEST_ORCH_OPERATION` | The orchestrator operation. Can be either `inventory` or `management`                            |           | `inventory`                                                                                                                                         |
+| Name                     | Description                                                                                      | Default   | Example                                                                                                                                             |
+|--------------------------|--------------------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
+| `KEYFACTOR_HOSTNAME`     | The hostname of the Keyfactor Command server.                                                    |           | `my.kfcommand.kfdelivery.com`                                                                                                                       |
+| `KEYFACTOR_USERNAME`     | The username of the Keyfactor user.                                                              |           | `k8s-orch-sa`                                                                                                                                       |
+| `KEYFACTOR_PASSWORD`     | The password of the Keyfactor user.                                                              |           | `<k8s-orch-sa's Command password>`                                                                                                                  |
+| `TEST_PAM_MOCK_PASSWORD` | A full unescaped `kubeconfig` in JSON format. Can also be base64 encoded. Must be a single line! |           | [See Docs](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#keyfactor-kubernetes-orchestrator-service-account-definition) |
+| `TEST_PAM_MOCK_USERNAME` | Must be set to `kubeconfig` exactly.                                                             |           | [See Docs](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#keyfactor-kubernetes-orchestrator-service-account-definition) |
+| `TEST_KUBE_NAMESPACE`    | The namespace to use for testing.                                                                | `default` | `keyfactor`                                                                                                                                         |
+| `TEST_MANUAL`            | If set to `true`, the tests will not be run automatically and prompt for user input.             | `false`   | `true`                                                                                                                                              |
+| `TEST_CERT_MGMT_TYPE`    | The orchestrator job type. Must be on of the following: `['inv','add','rem']`                    |           | `inv`                                                                                                                                               |
+| `TEST_ORCH_OPERATION`    | The orchestrator operation. Can be either `inventory` or `management`                            |           | `inventory`                                                                                                                                         |
 
 ## Running tests
 
@@ -65,7 +66,7 @@ $env:TEST_KUBE_NAMESPACE="default"
 $env:TEST_MANUAL="false"
 $env:TEST_CERT_MGMT_TYPE="inv"
 $env:TEST_ORCH_OPERATION="inv"
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
+./TestConsole/bin/Debug/netcoreapp3.1/TestConsole.exe
 ```
 
 #### Output

@@ -8,7 +8,7 @@
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.Kube;
+namespace Keyfactor.Extensions.Orchestrator.K8S;
 
 class PamUtilities
 {
