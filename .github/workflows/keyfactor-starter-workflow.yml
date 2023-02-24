@@ -25,6 +25,8 @@ jobs:
       release_version: ${{ needs.call-create-github-release-workflow.outputs.release_version }}
       release_url: ${{ needs.call-create-github-release-workflow.outputs.release_url }}
       release_dir: kubernetes-orchestrator-extension\bin\Release\netcoreapp3.1 
+    env:
+      CREATE_RELEASE: True
     secrets: 
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
