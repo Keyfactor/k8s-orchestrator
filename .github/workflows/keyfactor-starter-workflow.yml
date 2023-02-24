@@ -2,6 +2,9 @@ name: Starter Workflow
 on: [workflow_dispatch, push, pull_request]
 
 jobs:
+  env:
+    CREATE_RELEASE: "True"
+    
   call-create-github-release-workflow:
     uses: Keyfactor/actions/.github/workflows/github-release.yml@main
 
@@ -25,8 +28,6 @@ jobs:
       release_version: ${{ needs.call-create-github-release-workflow.outputs.release_version }}
       release_url: ${{ needs.call-create-github-release-workflow.outputs.release_url }}
       release_dir: kubernetes-orchestrator-extension\bin\Release\netcoreapp3.1 
-    env:
-      CREATE_RELEASE: True
     secrets: 
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
