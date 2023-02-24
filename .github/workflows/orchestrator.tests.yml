@@ -53,6 +53,7 @@ jobs:
           
       - name: Run Add test console
         run: |
+          Get-ChildItem env: | sort-object name | format-list -force
           dotnet run --project TestConsole/TestConsole.csproj
         env:
           TEST_MANUAL: false
@@ -63,7 +64,6 @@ jobs:
 #          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
 #          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
           TEST_PAM_MOCK_USERNAME: "kubeconfig"
-        secrets:
           KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
 
