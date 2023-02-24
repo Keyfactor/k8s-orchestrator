@@ -45,6 +45,12 @@ jobs:
         with:
           dotnet-version: '3.1.x'
           
+      - name: Setup build environment
+        run: |
+          $slnPath = (Get-ChildItem -Include *.sln -File -Recurse).fullname
+          dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.token }} --store-password-in-clear-text
+          nuget restore $slnPath
+          
       - name: Run Add test console
         run: |
           dotnet run --project TestConsole/TestConsole.csproj
