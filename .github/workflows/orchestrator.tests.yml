@@ -103,8 +103,9 @@ jobs:
       - name: Run Add test console
         run: |
           cd "${{ inputs.test_working_dir }}"
+          ls
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          bin\Debug\netcoreapp3.1\TestConsole.exe
+          .\bin\Debug\netcoreapp3.1\TestConsole.exe
           echo "Running *TestConsole.exe in Debug folder"
           $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
           echo "Test Console Path: ${testConsolePath}"
