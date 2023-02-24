@@ -34,16 +34,15 @@ jobs:
       release_dir: kubernetes-orchestrator-extension\bin\Release\
       test_working_dir: TestConsole
       test_sln_path: TestConsole\TestConsole.sln
-    secrets:
-      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
-      KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-      TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
     env:
       KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
       KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
       KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
       TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
       TEST_MANUAL: false
+      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
+      KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+      TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
 
 #  call-generate-readme-workflow:
 #    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
