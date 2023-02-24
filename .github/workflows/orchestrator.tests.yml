@@ -51,18 +51,24 @@ jobs:
           dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.PRIVATE_PACKAGE_ACCESS }} --store-password-in-clear-text
           nuget restore $slnPath
           
+      - name: Execute MSBuild Commands
+        run: |
+          $newVer = "${{ inputs.release_version || '1.0.0' }}".TrimStart('v').Split('-')[0]
+          MSBuild.exe $Env:SOLUTION_PATH -p:RestorePackagesConfig=false -p:Configuration=Release -p:Version=$newVer
+      
       - name: Run Add test console
         run: |
           Get-ChildItem env: | sort-object name | format-list -force
+          dotnet build TestConsole/TestConsole.csproj -c Debug
           dotnet run --project TestConsole/TestConsole.csproj
         env:
           TEST_MANUAL: false
           TEST_CERT_MGMT_TYPE: add
           TEST_ORCH_OPERATION: man
-#          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-#          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-#          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-#          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
           TEST_PAM_MOCK_USERNAME: "kubeconfig"
           KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
