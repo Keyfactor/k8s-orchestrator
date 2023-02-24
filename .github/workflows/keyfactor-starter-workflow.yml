@@ -2,6 +2,7 @@ name: Starter Workflow
 env:
   CREATE_RELEASE: "True"
 
+
 on: [workflow_dispatch, push, pull_request]
 
 jobs:  
