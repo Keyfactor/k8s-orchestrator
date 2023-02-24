@@ -1,7 +1,11 @@
 name: Run Kube Test Console Application
 
 on: [push]
-  
+
+env:
+  KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+  TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
+
 jobs:
   get-manifest-properties:
     runs-on: windows-latest
@@ -34,10 +38,15 @@ jobs:
       release_dir: kubernetes-orchestrator-extension\bin\Release\
       test_working_dir: TestConsole
       test_sln_path: TestConsole\TestConsole.sln
+      KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+      KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
     secrets:
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
+      KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
       KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-      TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
+      TEST_PAM_MOCK_USERNAME: "kubeconfig"
+      TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
+      
       
 
 #  call-generate-readme-workflow:
