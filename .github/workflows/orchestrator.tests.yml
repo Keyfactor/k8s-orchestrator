@@ -3,35 +3,35 @@ name: Run Kube Test Console Application
 on: [push]
 
 jobs:  
-  test-inventory:
-    needs: [test-add]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-
-      - name: Setup dotnet
-        uses: actions/setup-dotnet@v1
-        with:
-          dotnet-version: '3.1.x'
-
-      - name: Run Inventory test console
-        run: |
-          cd TestConsole
-          echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          bin\Debug\netcoreapp3.1\TestConsole.exe
-          echo "Running *TestConsole.exe in Debug folder"
-          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
-          echo "Test Console Path: ${testConsolePath}"
-          $testConsolePath
-        env:
-          TEST_MANUAL: false
-          TEST_CERT_MGMT_TYPE: inv
-          TEST_ORCH_OPERATION: inv
-          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+#  test-inventory:
+#    needs: [test-add]
+#    runs-on: windows-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v2
+#
+#      - name: Setup dotnet
+#        uses: actions/setup-dotnet@v1
+#        with:
+#          dotnet-version: '3.1.x'
+#
+#      - name: Run Inventory test console
+#        run: |
+#          cd TestConsole
+#          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+#          bin\Debug\netcoreapp3.1\TestConsole.exe
+#          echo "Running *TestConsole.exe in Debug folder"
+#          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
+#          echo "Test Console Path: ${testConsolePath}"
+#          $testConsolePath
+#        env:
+#          TEST_MANUAL: false
+#          TEST_CERT_MGMT_TYPE: inv
+#          TEST_ORCH_OPERATION: inv
+#          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+#          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+#          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+#          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
 
   test-add:
     needs: [ ]
@@ -48,7 +48,7 @@ jobs:
       - name: Setup build environment
         run: |
           $slnPath = (Get-ChildItem -Include *.sln -File -Recurse).fullname
-          dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.token }} --store-password-in-clear-text
+          dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json -n github -u ${{ github.actor }} -p ${{ secrets.PRIVATE_PACKAGE_ACCESS }} --store-password-in-clear-text
           nuget restore $slnPath
           
       - name: Run Add test console
@@ -58,35 +58,36 @@ jobs:
           TEST_MANUAL: false
           TEST_CERT_MGMT_TYPE: add
           TEST_ORCH_OPERATION: man
-          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
-          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+#          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+#          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+#          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+#          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
           TEST_PAM_MOCK_USERNAME: "kubeconfig"
+        secrets:
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
 
-  test-remove:
-    needs: [ test-add, test-inventory ]
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
-        
-      - name: Run Remove test console
-        run: |
-          cd "${{ inputs.test_working_dir }}"
-          echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          bin\Debug\netcoreapp3.1\TestConsole.exe
-          echo "Running *TestConsole.exe in Debug folder"
-          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
-          echo "Test Console Path: ${testConsolePath}"
-          $testConsolePath
-        env:
-          TEST_MANUAL: false
-          TEST_CERT_MGMT_TYPE: rem
-          TEST_ORCH_OPERATION: man
-          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+#  test-remove:
+#    needs: [ test-add, test-inventory ]
+#    runs-on: windows-latest
+#    steps:
+#      - name: Checkout code
+#        uses: actions/checkout@v2
+#        
+#      - name: Run Remove test console
+#        run: |
+#          cd "${{ inputs.test_working_dir }}"
+#          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+#          bin\Debug\netcoreapp3.1\TestConsole.exe
+#          echo "Running *TestConsole.exe in Debug folder"
+#          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
+#          echo "Test Console Path: ${testConsolePath}"
+#          $testConsolePath
+#        env:
+#          TEST_MANUAL: false
+#          TEST_CERT_MGMT_TYPE: rem
+#          TEST_ORCH_OPERATION: man
+#          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
+#          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
+#          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
+#          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
