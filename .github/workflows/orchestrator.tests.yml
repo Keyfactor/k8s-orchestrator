@@ -66,6 +66,7 @@ jobs:
           Invoke-expression -command ".\bin\Debug\netcoreapp3.1\TestConsole.exe"
         env:
           TEST_MANUAL: false
+          TEST_SHOW_SECRETS: true
           TEST_CERT_MGMT_TYPE: add
           TEST_ORCH_OPERATION: man
           KEYFACTOR_HOSTNAME: ${{ vars.KEYFACTOR_HOSTNAME }}

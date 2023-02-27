@@ -243,6 +243,12 @@ namespace TestConsole
 
                 var pamMockUsername = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_USERNAME") ?? string.Empty;
                 var pamMockPassword = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_PASSWORD") ?? string.Empty;
+                
+                Console.WriteLine("TEST_PAM_USERNAME_FIELD: " + pamUserNameField);
+                Console.WriteLine("TEST_PAM_MOCK_USERNAME: " + pamMockUsername);
+                
+                Console.WriteLine("TEST_PAM_PASSWORD_FIELD: " + pamPasswordField);
+                Console.WriteLine("TEST_PAM_MOCK_PASSWORD: " + pamMockPassword);
 
                 var secretResolver = new Mock<IPAMSecretResolver>();
                 // Get from env var TEST_KUBECONFIG

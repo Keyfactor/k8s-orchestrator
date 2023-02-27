@@ -100,6 +100,15 @@ function createOrUpdateSecrets(){
     -f encrypted_value="$encrypted_value" \
    -f key_id="$GH_PUBKEY_ID"
    
+  
+  gh api \
+    --method PUT \
+    -H "Accept: application/vnd.github+json" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$GH_SECRETS_API/TEST_PAM_MOCK_PASSWORD" \
+    -f encrypted_value="$encrypted_value" \
+   -f key_id="$GH_PUBKEY_ID"
+   
   echo "Write nuget_token"
   encrypted_value="$nuget_token"
   gh api \
