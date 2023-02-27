@@ -33,7 +33,7 @@ jobs:
 #          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
 #          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
 
-  test-add:
+  TestConsoleTests:
     needs: [ ]
     runs-on: windows-latest
     steps:
@@ -63,12 +63,9 @@ jobs:
         run: |
           cd TestConsole
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          ls bin
-          ls bin/Release
-          ls bin/Release/netcoreapp3.1
-          Start-Process -FilePath "bin\Release\netcoreapp3.1\TestConsole.exe"
+          Start-Process -FilePath "bin\Release\netcoreapp3.1\TestConsole.exe" -Wait
           echo "Running *TestConsole.exe in Debug folder"
-          $testConsolePath = (Get-ChildItem -Include bin/Release/*TestConsole.exe -File -Recurse).fullname
+          $testConsolePath = (Get-ChildItem -Include bin\Release\netcoreapp3.1\*TestConsole.exe -File -Recurse).fullname
           echo "Test Console Path: ${testConsolePath}"
           $testConsolePath
         env:
@@ -82,28 +79,67 @@ jobs:
           TEST_PAM_MOCK_USERNAME: "kubeconfig"
           KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
           TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
+      
+      - name: Test Console - Run INV Operation - Check ADD
+        run: |
+          cd TestConsole
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          Start-Process -FilePath "bin\Release\netcoreapp3.1\TestConsole.exe" -Wait
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin\Release\netcoreapp3.1\*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: inv
+          TEST_ORCH_OPERATION: inv
+          KEYFACTOR_HOSTNAME: ${{ vars.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ vars.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ vars.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ vars.TEST_KUBE_NAMESPACE }}
+          TEST_PAM_MOCK_USERNAME: "kubeconfig"
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+          TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
+      
+      - name: Test Console - Run Management REM Operation
+        run: |
+          cd TestConsole
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          echo "Running TestConsole.exe in Debug folder"
+          Start-Process -FilePath "bin\Release\netcoreapp3.1\TestConsole.exe" -Wait
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin\Release\netcoreapp3.1\*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: rem
+          TEST_ORCH_OPERATION: man
+          KEYFACTOR_HOSTNAME: ${{ vars.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ vars.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ vars.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ vars.TEST_KUBE_NAMESPACE }}
+          TEST_PAM_MOCK_USERNAME: "kubeconfig"
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+          TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
 
-#  test-remove:
-#    needs: [ test-add, test-inventory ]
-#    runs-on: windows-latest
-#    steps:
-#      - name: Checkout code
-#        uses: actions/checkout@v2
-#
-#      - name: Run Remove test console
-#        run: |
-#          cd "${{ inputs.test_working_dir }}"
-#          echo "Running test console hard-coded to Debug/netcoreapp3.1"
-#          bin\Debug\netcoreapp3.1\TestConsole.exe
-#          echo "Running *TestConsole.exe in Debug folder"
-#          $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
-#          echo "Test Console Path: ${testConsolePath}"
-#          $testConsolePath
-#        env:
-#          TEST_MANUAL: false
-#          TEST_CERT_MGMT_TYPE: rem
-#          TEST_ORCH_OPERATION: man
-#          KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-#          KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-#          KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-#          TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
+      - name: Test Console - Run INV Operation - Check REM
+        run: |
+          cd TestConsole
+          echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          Start-Process -FilePath "bin\Release\netcoreapp3.1\TestConsole.exe" -Wait
+          echo "Running *TestConsole.exe in Debug folder"
+          $testConsolePath = (Get-ChildItem -Include bin\Release\netcoreapp3.1\*TestConsole.exe -File -Recurse).fullname
+          echo "Test Console Path: ${testConsolePath}"
+          $testConsolePath
+        env:
+          TEST_MANUAL: false
+          TEST_CERT_MGMT_TYPE: inv
+          TEST_ORCH_OPERATION: inv
+          KEYFACTOR_HOSTNAME: ${{ vars.KEYFACTOR_HOSTNAME }}
+          KEYFACTOR_DOMAIN: ${{ vars.KEYFACTOR_DOMAIN }}
+          KEYFACTOR_USERNAME: ${{ vars.KEYFACTOR_USERNAME }}
+          TEST_KUBE_NAMESPACE: ${{ vars.TEST_KUBE_NAMESPACE }}
+          TEST_PAM_MOCK_USERNAME: "kubeconfig"
+          KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
+          TEST_PAM_MOCK_PASSWORD: ${{ secrets.TEST_KUBECONFIG }}
