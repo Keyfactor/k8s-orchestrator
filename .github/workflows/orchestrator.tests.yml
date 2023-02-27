@@ -61,9 +61,13 @@ jobs:
       
       - name: Test Console - Run Management ADD Operation
         run: |
-          Get-ChildItem env: | sort-object name | format-list -force
           cd TestConsole
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
+          ls bin
+          ls bin/Debug
+          ls bin/Debug/netcoreapp3.1
+          ls bin/Release
+          ls bin/Release/netcoreapp3.1
           Start-Process -FilePath "bin\Debug\netcoreapp3.1\TestConsole.exe"
           echo "Running *TestConsole.exe in Debug folder"
           $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
