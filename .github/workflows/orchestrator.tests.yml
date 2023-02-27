@@ -59,12 +59,12 @@ jobs:
           $newVer = "${{ inputs.release_version || '1.0.0' }}".TrimStart('v').Split('-')[0]
           MSBuild.exe $Env:SOLUTION_PATH -p:RestorePackagesConfig=false -p:Configuration=Release -p:Version=$newVer
       
-      - name: Run Add test console
+      - name: Test Console - Run Management ADD Operation
         run: |
           Get-ChildItem env: | sort-object name | format-list -force
           cd TestConsole
           echo "Running test console hard-coded to Debug/netcoreapp3.1"
-          bin\Debug\netcoreapp3.1\TestConsole.exe
+          Start-Process -FilePath "bin\Debug\netcoreapp3.1\TestConsole.exe"
           echo "Running *TestConsole.exe in Debug folder"
           $testConsolePath = (Get-ChildItem -Include bin/Debug/*TestConsole.exe -File -Recurse).fullname
           echo "Test Console Path: ${testConsolePath}"
