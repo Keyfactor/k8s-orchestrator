@@ -99,20 +99,28 @@ This text would be entered in as the value for the __Server Password__, instead 
 
 ## Table of Contents
 - [Kubernetes Orchestrator Extension](#kubernetes-orchestrator-extension)
+  - [Integration status: Pilot - Ready for use in test environments. Not for use in production.](#integration-status--pilot---ready-for-use-in-test-environments-not-for-use-in-production)
     * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
     * [Support for Kubernetes Orchestrator Extension](#support-for-kubernetes-orchestrator-extension)
+      + [To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.](#to-report-a-problem-or-suggest-a-new-feature--use-the----issues----issues----tab-if-you-want-to-contribute-actual-bug-fixes-or-proposed-enhancements--use-the----pull-requests----pulls----tab)
     * [Keyfactor Version Supported](#keyfactor-version-supported)
     * [Platform Specific Notes](#platform-specific-notes)
     * [PAM Integration](#pam-integration)
-        + [Register the PAM Provider](#register-the-pam-provider)
+        + [Example PAM Provider Setup](#example-pam-provider-setup)
+        + [Use the PAM Provider](#use-the-pam-provider)
+    * [Table of Contents](#table-of-contents)
     * [Keyfactor Version Supported](#keyfactor-version-supported-1)
     * [Platform Specific Notes](#platform-specific-notes-1)
     * [PAM Integration](#pam-integration-1)
     * [Overview](#overview)
+        + [K8SCert](#k8scert)
+        + [K8SSecret](#k8ssecret)
+        + [K8STLSSecret](#k8stlssecret)
     * [Versioning](#versioning)
     * [Security Considerations](#security-considerations)
         + [Service Account Setup](#service-account-setup)
     * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
+    * [Certificate Store Discovery](#certificate-store-discovery)
     * [Configuration File Setup](#configuration-file-setup)
     * [Certificate Store Types](#certificate-store-types)
         + [Configuration Information](#configuration-information)
@@ -142,6 +150,7 @@ This text would be entered in as the value for the __Server Password__, instead 
                 * [UI Advanced Tab](#ui-advanced-tab-3)
                 * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
                 * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
+    * [Certificate Discovery](#certificate-discovery)
     * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
     * [Development](#development)
     * [License](#license)
@@ -517,6 +526,11 @@ kfutil store-types create --name K8SCert
 ##### UI Entry Parameters Tab:
 Empty
 
+## Creating Certificate Stores and Scheduling Discovery Jobs
+
+Please refer to the Keyfactor Command Reference Guide for information on creating
+certificate stores and scheduling Discovery jobs in Keyfactor Command.
+
 ## Certificate Discovery
 1. Click on the "Locations > Certificate Stores" menu item.
 2. Click the "Discover" tab.
@@ -528,10 +542,26 @@ Empty
    ![discover_server_password.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_server_password.png)
 5. Click the "Save" button and wait for the Orchestrator to run the job. This may take some time depending on the number of certificates in the store and the Orchestrator's check-in schedule.
 
-## Creating Certificate Stores and Scheduling Discovery Jobs
+## Certificate Inventory
+In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
-Please refer to the Keyfactor Command Reference Guide for information on creating
-certificate stores and scheduling Discovery jobs in Keyfactor Command.
+| Store Type | Valid Secret Keys                                                                   |
+|------------|-------------------------------------------------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`                                                                 |
+| K8SSecret  | `tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
+| K8SCert    | `cert`, `csr`                                                                       |
+
+## Certificate Management
+Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
+The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
+each type of certificate store.
+
+| Store Type | Secret Keys                    |
+|------------|--------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`            |
+| K8SSecret  | `certificates`, `private_keys` |
+| K8SCert    | Management not supported.      |
+
 
 ## Development
 
