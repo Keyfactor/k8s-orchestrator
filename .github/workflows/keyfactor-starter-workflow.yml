@@ -11,7 +11,7 @@ jobs:
     with:
       release_version: ${{ needs.call-create-github-release-workflow.outputs.release_version }}
       release_url: ${{ needs.call-create-github-release-workflow.outputs.release_url }}
-      release_dir: k8s-orchestrator\bin\Release\
+      release_dir: kubernetes-orchestrator-extension\bin\Release
     secrets:
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
 
