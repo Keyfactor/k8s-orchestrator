@@ -2,32 +2,8 @@ name: Starter Workflow
 on: [workflow_dispatch, push, pull_request]
 
 jobs:
-  env:
-    KEYFACTOR_HOSTNAME: ${{ env.KEYFACTOR_HOSTNAME }}
-    KEYFACTOR_DOMAIN: ${{ env.KEYFACTOR_DOMAIN }}
-    KEYFACTOR_USERNAME: ${{ env.KEYFACTOR_USERNAME }}
-    KEYFACTOR_PASSWORD: ${{ secrets.KEYFACTOR_PASSWORD }}
-    TEST_KUBECONFIG: ${{ secrets.TEST_KUBECONFIG }}
-    TEST_KUBE_NAMESPACE: ${{ env.TEST_KUBE_NAMESPACE }}
-    TEST_MANUAL: false
-    TEST_CERT_MGMT_TYPE: "inv"
-    TEST_ORCH_OPERATION: "inv"
-    
   call-create-github-release-workflow:
     uses: Keyfactor/actions/.github/workflows/github-release.yml@main
-
-  get-manifest-properties:
-    runs-on: windows-latest
-    outputs:
-      update_catalog: ${{ steps.read-json.outputs.prop }}
-    steps:
-      - uses: actions/checkout@v3
-      - name: Read json
-        id: read-json
-        shell: pwsh
-        run: |
-          $json = Get-Content integration-manifest.json | ConvertFrom-Json
-          echo "::set-output name=prop::$(echo $json.update_catalog)"
 
   call-dotnet-build-and-release-workflow:
     needs: [call-create-github-release-workflow]
@@ -35,30 +11,16 @@ jobs:
     with:
       release_version: ${{ needs.call-create-github-release-workflow.outputs.release_version }}
       release_url: ${{ needs.call-create-github-release-workflow.outputs.release_url }}
-      release_dir: kubernetes-orchestrator-extension\bin\Release\ 
-    secrets: 
-      token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
-
-  call-dotnet-build-and-test-workflow:
-#    needs: [ get-manifest-properties ]
-    uses: spbsoluble/actions/.github/workflows/dotnet-build-and-test.yml@test_console
-    with:
-      release_dir: kubernetes-orchestrator-extension\bin\Release\
-      test_working_dir: TestConsole
-      test_sln_path: TestConsole\TestConsole.sln
+      release_dir: k8s-orchestrator\bin\Release\
     secrets:
       token: ${{ secrets.PRIVATE_PACKAGE_ACCESS }}
-    
-      
+
   call-generate-readme-workflow:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     uses: Keyfactor/actions/.github/workflows/generate-readme.yml@main
-    secrets:
-      token: ${{ secrets.APPROVE_README_PUSH }}
 
   call-update-catalog-workflow:
-    needs: get-manifest-properties
-    if: needs.get-manifest-properties.outputs.update_catalog == 'True' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
     uses: Keyfactor/actions/.github/workflows/update-catalog.yml@main
     secrets:
       token: ${{ secrets.SDK_SYNC_PAT }}
