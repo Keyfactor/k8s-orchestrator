@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
@@ -206,7 +207,27 @@ public class Inventory : JobBase, IInventoryJobExtension
 
     private JobResult HandleTlsSecret(long jobId, SubmitInventoryUpdate submitInventory)
     {
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                KubeNamespace = StorePath.Split("/").First();
+                if (KubeNamespace == KubeSecretName)
+                {
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                KubeNamespace = "default";                
+            }
+        }
 
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            KubeSecretName = StorePath.Split("/").Last();
+        }
+        
         Logger.LogDebug(
             $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace}");
         var hasPrivateKey = true;

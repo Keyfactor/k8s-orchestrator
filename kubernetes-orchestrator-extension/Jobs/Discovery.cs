@@ -36,6 +36,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+        InitializeStore(config);
         Logger.LogDebug("Begin Discovery...");
 
         Logger.LogInformation($"Discovery for store type: {config.Capability}");
@@ -44,6 +45,19 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 
         KubeSvcCreds = ServerPassword;
         KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+        var namespaces = config.JobProperties["dirs"].ToString().Split(',');
+        if (namespaces.Length == 0)
+        {
+            namespaces = new[] { "default" };
+        }
+        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString().Split(',');
+        var secretAllowedKeys = config.JobProperties["patterns"].ToString().Split(',');
+        if (secretAllowedKeys.Length == 0)
+        {
+            // secretAllowedKeys = new string[] { "tls.crt", "tls.key", "ca.crt", "ca.key", "key", "crt" };
+            
+        }
+
         try
         {
             //Code logic to:
@@ -54,10 +68,20 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //      c) Directories to ignore
             //      d) File name patterns to match
             // 3) Place found and validated store locations (path and file name) in "locations" collection instantiated above
-            var discoveredSecrets = KubeClient.DiscoverSecrets(); // This gets all secrets in the namespace but will filter by opaque and tls types below
-            var discoveredCerts = KubeClient.DiscoverCertificates(); // This gets all certs in the namespace but will filter by tls type below
-            locations.AddRange(discoveredSecrets);
-            locations.AddRange(discoveredCerts);
+            switch (config.Capability)
+            {
+                case "CertStores.K8STLSSecr.Discovery":
+                    secretAllowedKeys = new[] { "tls.crt", "tls.key"};
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "tls");
+                    break;
+                case "CertStores.K8SSecret.Discovery":
+                    secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts" };
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys,"opaque");
+                    break;
+                case "CertStores.K8SCert.Discovery":
+                    locations = KubeClient.DiscoverCertificates();
+                    break;
+            }
 
         }
         catch (Exception ex)

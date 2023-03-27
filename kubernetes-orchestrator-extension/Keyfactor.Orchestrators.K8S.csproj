@@ -25,8 +25,4 @@
     <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Clients" />
-  </ItemGroup>
-
 </Project>

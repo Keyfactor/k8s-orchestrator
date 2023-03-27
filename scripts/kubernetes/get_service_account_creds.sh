@@ -7,6 +7,9 @@ read -p "Enter the API server hostname w/ port of the cluster: " CLUSTER_API_SER
 echo "Generating kubeconfig file for service account $SA_NAME in namespace $NAMESPACE on cluster $CLUSTER_NAME at $CLUSTER_API_SERVER"
 #echo "CA_CERT: $CA_CERT" #uncomment if you need to debug
 #echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug
+SA_TOKEN=$(kubectl get secrets -n $NAMESPACE | grep -i $SA_NAME | awk '{print $1}')
+SA_TOKEN=$(kubectl get secret/$SA_TOKEN -n $NAMESPACE -o json | jq -r '.data.token' | base64 --decode)
+CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[1].cluster."certificate-authority-data"')
 # Create the kubeconfig file
 echo "apiVersion: v1
 kind: Config

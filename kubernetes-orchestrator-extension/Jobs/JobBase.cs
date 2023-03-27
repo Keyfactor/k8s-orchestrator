@@ -74,6 +74,8 @@ public abstract class JobBase
 
     internal protected ILogger Logger;
 
+    internal protected string Capability { get; set; }
+
     internal protected IPAMSecretResolver Resolver { get; set; }
 
     public string StorePath { get; set; }
@@ -104,16 +106,17 @@ public abstract class JobBase
 
     internal protected InventoryJobConfiguration InventoryConfig { get; set; }
 
-
-    public string ExtensionName => "Kube";
+    public string ExtensionName => "K8S";
 
     protected void InitializeStore(InventoryJobConfiguration config)
     {
         InventoryConfig = config;
+        Capability = config.Capability;
         Logger = LogHandler.GetClassLogger(GetType());
         var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
         //var props = Jsonconfig.CertificateStoreDetails.Properties;
-
+        ServerUsername = config?.ServerUsername;
+        ServerPassword = config?.ServerPassword;
         InitializeProperties(props);
         StorePath = config.CertificateStoreDetails?.StorePath;
     }
@@ -121,12 +124,18 @@ public abstract class JobBase
     protected void InitializeStore(DiscoveryJobConfiguration config)
     {
         DiscoveryConfig = config;
+        Logger = LogHandler.GetClassLogger(GetType());
         var props = config.JobProperties;
+        ServerUsername = config?.ServerUsername;
+        ServerPassword = config?.ServerPassword;
+        Capability = config.Capability;
         InitializeProperties(props);
     }
+
     protected void InitializeStore(ManagementJobConfiguration config)
     {
         ManagementConfig = config;
+        Capability = config.Capability;
         var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
         InitializeProperties(props);
         StorePath = config.CertificateStoreDetails?.StorePath;
@@ -140,10 +149,25 @@ public abstract class JobBase
             throw new ConfigurationException(
                 $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab.");
 
-        KubeNamespace = storeProperties["KubeNamespace"];
-        KubeSecretName = storeProperties["KubeSecretName"];
-        KubeSecretType = storeProperties["KubeSecretType"];
-        KubeSvcCreds = storeProperties["KubeSvcCreds"];
+        // check if key is present and set values if not
+
+        try
+        {
+            KubeNamespace = storeProperties["KubeNamespace"];
+            KubeSecretName = storeProperties["KubeSecretName"];
+            KubeSecretType = storeProperties["KubeSecretType"];
+            KubeSvcCreds = storeProperties["KubeSvcCreds"];
+        }
+        catch (Exception)
+        {
+            KubeSecretType = "";
+            KubeSvcCreds = "";
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            KubeSecretName = StorePath.Split("/").Last();
+        }
 
         Logger.LogDebug($"KubeNamespace: {KubeNamespace}");
         Logger.LogDebug($"KubeSecretName: {KubeSecretName}");
@@ -155,8 +179,14 @@ public abstract class JobBase
             KubeSecretName = StorePath;
         }
 
-        ServerUsername = ResolvePamField("ServerUsername", storeProperties.ServerUsername);
-        ServerPassword = ResolvePamField("ServerPassword", storeProperties.ServerPassword);
+        if (string.IsNullOrEmpty(ServerUsername))
+        {
+            ServerUsername = ResolvePamField("ServerUsername", storeProperties["ServerUsername"]);
+        }
+        if (string.IsNullOrEmpty(ServerPassword))
+        {
+            ServerPassword = ResolvePamField("ServerPassword", storeProperties["ServerPassword"]);
+        }
         // var storePassword = ResolvePamField("Store Password", storeProperties.CertificateStoreDetails.StorePassword);
 
         // if (storePassword != null)
