@@ -336,7 +336,7 @@ public class KubeCertificateManagerClient
         var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]);
         var certs = existingCerts.Split(",");
         var keys = existingKeys.Split(",");
-        var index = 0; //TODO: Currently keys are assumed to be in the same order as certs.
+        var index = 0; //Currently keys are assumed to be in the same order as certs.
         foreach (var cer in certs)
         {
             var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
@@ -350,11 +350,11 @@ public class KubeCertificateManagerClient
                 catch (IndexOutOfRangeException)
                 {
                     // Didn't find existing key for whatever reason so no need to delete.
-                    // TODO: Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
+                    // Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
                 }
 
             }
-            index++; //TODO: Currently keys are assumed to be in the same order as certs.
+            index++; //Currently keys are assumed to be in the same order as certs.
         }
         existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(existingCerts);
         existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
@@ -378,7 +378,6 @@ public class KubeCertificateManagerClient
                     new V1DeleteOptions()
                 );
             case "certificate":
-                // TODO: See if this is possible
                 Client.CertificatesV1.DeleteCertificateSigningRequest(
                     secretName,
                     new V1DeleteOptions()

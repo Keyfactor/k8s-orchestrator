@@ -4,6 +4,7 @@ read -p "Enter the name of the service account: " SA_NAME
 read -p "Enter the namespace of the service account: " NAMESPACE
 read -p "Enter the name of the cluster: " CLUSTER_NAME
 read -p "Enter the API server hostname w/ port of the cluster: " CLUSTER_API_SERVER
+read -p "Enter the index of the cluster in your kubeconfig file: " CLUSTER_INDEX
 echo "Generating kubeconfig file for service account $SA_NAME in namespace $NAMESPACE on cluster $CLUSTER_NAME at $CLUSTER_API_SERVER"
 #echo "CA_CERT: $CA_CERT" #uncomment if you need to debug
 #echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug

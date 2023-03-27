@@ -52,11 +52,6 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         }
         var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString().Split(',');
         var secretAllowedKeys = config.JobProperties["patterns"].ToString().Split(',');
-        if (secretAllowedKeys.Length == 0)
-        {
-            // secretAllowedKeys = new string[] { "tls.crt", "tls.key", "ca.crt", "ca.key", "key", "crt" };
-            
-        }
 
         try
         {
@@ -75,7 +70,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "tls");
                     break;
                 case "CertStores.K8SSecret.Discovery":
-                    secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts" };
+                    secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys,"opaque");
                     break;
                 case "CertStores.K8SCert.Discovery":
