@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 unset KUBECONFIG
-kubectl apply -f https://raw.githubusercontent.com/Keyfactor/kubernetes-orchestrator/main/scripts/kubernetes/kubernetes_svc_account.yml
+kubectl apply -f ./kubernetes_svc_account.yml
 
 # Define the name of the Kubernetes namespace where the service account resides
 NAMESPACE="${K8S_NAMESPACE:-default}"
