@@ -1,4 +1,45 @@
 {
+  "discovery": [
+    {
+      "TestName": "Kube Discovery - TLS Secrets - SUCCESS",
+      "Description": "This test is expected to succeed because the secret should be found.",
+      "Fail": false,
+      "ExpectedValue": "Success",
+      "JobConfig": {
+        "LastInventory": [],
+        "CertificateStoreDetails": {
+          "ClientMachine": "my.test.orchestrator.com",
+          "StorePath": "",
+          "StorePassword": "",
+          "Properties": "{  \"KubeNamespace\": \"default\",  \"KubeSecretName\": \"tls-secret-01\",  \"KubeSecretType\": \"tls_secret\"}",
+          "Type": 4108
+        },
+        "JobProperties": {
+          "KubeSecretType": "tls_secret",
+          "KubeNamespace": "default",
+          "KubeSecretName": "",
+          "KubeSvcCreds": "",
+          "Paths": [
+            "tls_secret",
+            "secret",
+            "cert"
+          ],
+          "ServerUsername": "kubeconfig",
+          "ServerPassword": ""
+        },
+        "JobCancelled": false,
+        "ServerError": null,
+        "JobHistoryId": 100000,
+        "RequestStatus": 1,
+        "ServerUsername": "kubeconfig",
+        "ServerPassword": "",
+        "UseSSL": true,
+        "JobTypeId": "00000000-0000-0000-0000-000000000000",
+        "JobId": "70ad3edf-68d0-4a87-b03d-083b1fd86ea1",
+        "Capability": "CertStores.Kube.Jobs.Discovery"
+      }
+    }
+  ],
   "inventory": [
     {
       "TestName": "Kube Inventory - TLS Secret - tls-secret-01 - SUCCESS",

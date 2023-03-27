@@ -21,6 +21,12 @@ rules:
     resources: ["certificatesigningrequests"]
     resourceNames: [] # Populate this to restrict access to specific certificatesigningrequests
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
 ---
 apiVersion: v1
 kind: ServiceAccount

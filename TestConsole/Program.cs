@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using IdentityModel.Client;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -111,6 +112,8 @@ namespace TestConsole
         public List<OrchTestCase> add { get; set; }
 
         public List<OrchTestCase> remove { get; set; }
+        
+        public List<OrchTestCase> discovery { get; set; }
     }
 
     class Program
@@ -209,6 +212,12 @@ namespace TestConsole
                 case "rem":
                 case "r":
                     return testConfig.remove.ToArray();
+                case "discovery":
+                case "discover":
+                case "disc":
+                case "d":
+                    return testConfig.discovery.ToArray();
+                    
             }
             throw new Exception("Invalid job type");
         }
@@ -243,6 +252,12 @@ namespace TestConsole
 
                 var pamMockUsername = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_USERNAME") ?? string.Empty;
                 var pamMockPassword = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_PASSWORD") ?? string.Empty;
+                
+                Console.WriteLine("TEST_PAM_USERNAME_FIELD: " + pamUserNameField);
+                Console.WriteLine("TEST_PAM_MOCK_USERNAME: " + pamMockUsername);
+                
+                Console.WriteLine("TEST_PAM_PASSWORD_FIELD: " + pamPasswordField);
+                Console.WriteLine("TEST_PAM_MOCK_PASSWORD: " + pamMockPassword);
 
                 var secretResolver = new Mock<IPAMSecretResolver>();
                 // Get from env var TEST_KUBECONFIG
@@ -282,6 +297,7 @@ namespace TestConsole
 
                                 var invJobConfig = GetInventoryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
                                 SubmitInventoryUpdate sui = GetItems;
+                                
                                 var jobResult = inv.ProcessJob(invJobConfig, sui);
 
                                 if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
@@ -469,6 +485,66 @@ namespace TestConsole
                         }
                         Console.WriteLine("Finished Running Management Job Test Cases");
                         break;
+                    case "discovery":
+                    case "discover":
+                    case "disc":
+                    case "d":
+                        tests = GetTestConfig(testConfigPath, input);
+                        var discovery = new Discovery(secretResolver.Object);
+
+                        Console.WriteLine("Running Discovery Job Test Cases");
+                        foreach (var testCase in tests)
+                        {
+                            testOutputDict.Add(testCase.TestName, "Running");
+                            try
+                            {
+                                //convert testCase to DiscoveryJobConfig
+                                Console.WriteLine($"=============={testCase.TestName}==================");
+                                Console.WriteLine($"Description: {testCase.Description}");
+                                Console.WriteLine($"Expected Fail: {testCase.Fail.ToString()}");
+                                Console.WriteLine($"Expected Result: {testCase.ExpectedValue}");
+
+
+                                var discoveryJobConfiguration = GetDiscoveryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
+                                // create array of strings for discovery paths
+                                var discPaths = new List<string>();
+                                // foreach (var path in invJobConfig.DiscoveryPaths)
+                                // {
+                                //     dicoveryPaths.Add(path.Path);
+                                // }
+                                discPaths.Add("tls");
+                                SubmitDiscoveryUpdate dui = DiscoverItems;
+                                var jobResult = discovery.ProcessJob(discoveryJobConfiguration,  dui);
+                                
+                                if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
+                                    (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
+                                {
+                                    testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
+                                    Console.ForegroundColor = ConsoleColor.Green;
+                                }
+                                else
+                                {
+                                    testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
+                                    Console.ForegroundColor = ConsoleColor.Red;
+                                    hasFailure = true;
+                                }
+                                // Console.WriteLine(
+                                //     $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{invJobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{invJobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
+                                Console.ResetColor();
+                            }
+                            catch (Exception e)
+                            {
+                                testOutputDict[testCase.TestName] = $"Failure - {e.Message}";
+                                Console.ForegroundColor = ConsoleColor.Red;
+                                Console.WriteLine(e);
+                                Console.WriteLine($"Failed to run inventory test case: {testCase.TestName}");
+                                Console.ResetColor();
+                            }
+
+
+                        }
+                        Console.WriteLine("Finished Running Inventory Job Test Cases");
+                        break;
                 }
                 if (input == "SerializeTest")
                 {
@@ -568,6 +644,11 @@ namespace TestConsole
         {
             return true;
         }
+        
+        public static bool DiscoverItems(IEnumerable<string> items)
+        {
+            return true;
+        }
 
         public static ManagementJobConfiguration GetJobManagementConfiguration(string jobConfigString, string alias, string privateKeyPwd = "", bool overWrite = true,
             bool trustedRoot = false)
@@ -579,6 +660,12 @@ namespace TestConsole
         public static InventoryJobConfiguration GetInventoryJobConfiguration(string jobConfigString)
         {
             var result = JsonConvert.DeserializeObject<InventoryJobConfiguration>(jobConfigString);
+            return result;
+        }
+        
+        public static DiscoveryJobConfiguration GetDiscoveryJobConfiguration(string jobConfigString)
+        {
+            var result = JsonConvert.DeserializeObject<DiscoveryJobConfiguration>(jobConfigString);
             return result;
         }
 

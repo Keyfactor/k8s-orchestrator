@@ -161,7 +161,7 @@ public class KubeCertificateManagerClient
         Client = client;
         return client;
     }
-    
+
     public V1Secret CreateOrUpdateCertificateStoreSecret(string[] keyPems, string[] certPems, string[] caCertPems, string[] chainPems, string secretName,
         string namespaceName, string secretType, bool append = false, bool overwrite = false)
     {
@@ -202,8 +202,6 @@ public class KubeCertificateManagerClient
                 {
                     { "private_keys", Encoding.UTF8.GetBytes(keyPem) },
                     { "certificates", Encoding.UTF8.GetBytes(certPem) },
-                    { "ca_certificates", Encoding.UTF8.GetBytes(caCertPem) },
-                    { "chain", Encoding.UTF8.GetBytes(chainPem) }
                 }
             },
             "tls_secret" => new V1Secret
@@ -228,7 +226,7 @@ public class KubeCertificateManagerClient
         };
         return k8SSecretData;
     }
-    
+
     private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
     {
         var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]);
@@ -302,7 +300,7 @@ public class KubeCertificateManagerClient
     {
         return Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
     }
-    
+
     private static string CleanOpaqueStore(string existingEntries, string pemString)
     {
         try
@@ -392,7 +390,7 @@ public class KubeCertificateManagerClient
     }
     public List<string> DiscoverCertificates()
     {
-        List<string> locations = new List<string>();
+        var locations = new List<string>();
         var csr = Client.CertificatesV1.ListCertificateSigningRequest();
         foreach (var cr in csr)
         {
@@ -406,11 +404,13 @@ public class KubeCertificateManagerClient
             {
                 var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
                 var certName = cert.GetNameInfo(X509NameType.SimpleName, false);
+                locations.Add($"certificate/{certName}");
             }
-            else
-            {
-                locations.Append(utfCsr);
-            }
+            // else
+            // {
+            //     // locations.Add(utfCsr);
+            //     continue;
+            // }
         }
 
         return locations;
@@ -423,15 +423,15 @@ public class KubeCertificateManagerClient
         var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
         return new[] { utfCert };
     }
-    
-    public List<string> DiscoverSecrets(string ns = "default")
+
+    public List<string> DiscoverSecrets(string[] allowedKeys, string ns = "default")
     {
         // Get a list of all namespaces
         V1NamespaceList namespaces;
-        namespaces = ns == "all" ? Client.CoreV1.ListNamespace() : Client.CoreV1.ListNamespace(labelSelector: $"name={ns}");
+        namespaces = ns == "all" ? Client.CoreV1.ListNamespace(labelSelector: $"name={ns}") : Client.CoreV1.ListNamespace();
 
-        var secretsList = new string[] { };
-        List<string> locations = new List<string>();
+        var secretsList = new List<string>();
+        var locations = new List<string>();
 
         foreach (var nsObj in namespaces.Items)
         {
@@ -447,52 +447,49 @@ public class KubeCertificateManagerClient
                         case "kubernetes.io/tls":
                             var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
                             var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
-                            
+
                             _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
-                            locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
-                            secretsList.Append(certData);
+                            locations.Add($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                            secretsList.Add(certData);
                             break;
                         case "Opaque":
                             // Check if a 'certificates' key exists
-                            if (secretData.Data.ContainsKey("certificates"))
+                            foreach (var allowedKey in allowedKeys)
                             {
-                                var certs = Encoding.UTF8.GetString(secretData.Data["certificates"]);
-                                // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
-                                var certsArray = certs.Split(",");
-                                // var keysArray = keys.Split(",");
-                                var index = 0; 
-                                foreach (var cer in certsArray)
+                                try
                                 {
-                                    _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
-                                    secretsList.Append(cer);
-                                    index++; 
+                                    if (secretData.Data.ContainsKey(allowedKey))
+                                    {
+                                        var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
+                                        // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
+                                        var certsArray = certs.Split(",");
+                                        // var keysArray = keys.Split(",");
+                                        var index = 0;
+                                        foreach (var cer in certsArray)
+                                        {
+                                            _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
+                                            secretsList.Append(cer);
+                                            index++;
+                                        }
+                                        locations.Add($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                                    }
                                 }
-                                locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
-                            } else if (secretData.Data.ContainsKey("certs"))
-                            {
-                                var certs = Encoding.UTF8.GetString(secretData.Data["certs"]);
-                                // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
-                                var certsArray = certs.Split(",");
-                                // var keysArray = keys.Split(",");
-                                var index = 0; 
-                                foreach (var cer in certsArray)
+                                catch (Exception e)
                                 {
-                                    var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
-                                    secretsList.Append(cer);
-                                    index++; 
+                                    Console.WriteLine(e);
                                 }
-                                locations.Append($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+
                             }
                             break;
                     }
-                    
+
                 }
             }
         }
-        
+
         return locations;
     }
-    
+
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
     {
         var request = new V1CertificateSigningRequest
@@ -555,29 +552,29 @@ public class KubeCertificateManagerClient
         };
     }
 
-    public struct CsrObject
-    {
-        public string Csr;
-        public string PrivateKey;
-        public string PublicKey;
-    }
-
 
     public IEnumerable<CurrentInventoryItem> GetOpaqueSecretCertificateInventory()
     {
-        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        var inventoryItems = new List<CurrentInventoryItem>();
         return inventoryItems;
     }
-    
+
     public IEnumerable<CurrentInventoryItem> GetTlsSecretCertificateInventory()
     {
-        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        var inventoryItems = new List<CurrentInventoryItem>();
         return inventoryItems;
     }
 
     public IEnumerable<CurrentInventoryItem> GetCertificateInventory()
     {
-        List<CurrentInventoryItem> inventoryItems = new List<CurrentInventoryItem>();
+        var inventoryItems = new List<CurrentInventoryItem>();
         return inventoryItems;
+    }
+
+    public struct CsrObject
+    {
+        public string Csr;
+        public string PrivateKey;
+        public string PublicKey;
     }
 }
