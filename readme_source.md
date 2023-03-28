@@ -2,7 +2,6 @@
 - [Kubernetes Orchestrator Extension](#kubernetes-orchestrator-extension)
     * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
     * [Support for Kubernetes Orchestrator Extension](#support-for-kubernetes-orchestrator-extension)
-      + [To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.](#to-report-a-problem-or-suggest-a-new-feature--use-the----issues----issues----tab-if-you-want-to-contribute-actual-bug-fixes-or-proposed-enhancements--use-the----pull-requests----pulls----tab)
     * [Keyfactor Version Supported](#keyfactor-version-supported)
     * [Platform Specific Notes](#platform-specific-notes)
     * [PAM Integration](#pam-integration)
