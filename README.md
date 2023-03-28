@@ -119,7 +119,6 @@ This text would be entered in as the value for the __Server Password__, instead 
         + [Service Account Setup](#service-account-setup)
     * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
     * [Certificate Store Discovery](#certificate-store-discovery)
-    * [Configuration File Setup](#configuration-file-setup)
     * [Certificate Store Types](#certificate-store-types)
         + [Configuration Information](#configuration-information)
             - [Common Values](#common-values)
@@ -311,16 +310,6 @@ subjects:
 Otherwise you will not be able to provide credentials to the discovery job.
 
 The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate stores with existing certificates.  To run a discovery job, follow these steps:
-
-## Configuration File Setup
-
-The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is located in the {Keyfactor Orchestrator Installation Folder}\Extensions\Kubernetes.  None of the values are required, and a description of each follows below:
-```json
-{   
-  "CreateStoreIfMissing": "Y"
-}
-```
-**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - Y**.
 
 ## Certificate Store Types
 
