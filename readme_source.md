@@ -51,8 +51,9 @@
                 * [UI Advanced Tab](#ui-advanced-tab-3)
                 * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
                 * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
-    * [Certificate Discovery](#certificate-discovery)
     * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
+    * [Certificate Discovery](#certificate-discovery)
+    * [Certificate Management](#certificate-management)
     * [Development](#development)
     * [License](#license)
 
