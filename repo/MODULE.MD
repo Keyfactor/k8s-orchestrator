@@ -1,24 +1,3 @@
-# Repo secrets manager
-
-This repo is used to manage secrets for the Keyfactor K8S Orchestrator extension to use in unit tests.
-
-## Initial setup
-Run the bootstrap script to create terraform state storage backend.
-```bash
-./bootstrap.sh
-```
-
-## Quick start
-```bash
-./get_env.sh # This configures your Azure and GitHub credentials, it also pulls the .auto.tfvars file from Azure Key Vault
-terraform init
-terraform workspace list
-terraform workspace select command_10_11
-terraform plan
-terraform apply --auto-approve
-```
-
-<!-- BEGIN_TF_DOCS -->
 ## Requirements
 
 | Name | Version |
@@ -108,4 +87,3 @@ No modules.
 ## Outputs
 
 No outputs.
-<!-- END_TF_DOCS -->
