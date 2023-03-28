@@ -150,8 +150,9 @@ This text would be entered in as the value for the __Server Password__, instead 
                 * [UI Advanced Tab](#ui-advanced-tab-3)
                 * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
                 * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
-    * [Certificate Discovery](#certificate-discovery)
     * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
+    * [Certificate Discovery](#certificate-discovery)
+    * [Certificate Management](#certificate-management)
     * [Development](#development)
     * [License](#license)
 
@@ -556,7 +557,7 @@ Management add/remove/create operations will attempt to write back to the Kubern
 The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
 each type of certificate store.
 
-| Store Type | Secret Keys                    |
+| Store Type | Managed Secret Keys            |
 |------------|--------------------------------|
 | K8STLSSecr | `tls.crt`,`tls.key`            |
 | K8SSecret  | `certificates`, `private_keys` |
