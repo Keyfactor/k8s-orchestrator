@@ -57,7 +57,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             {
                 case "secret":
                 case "secrets":
-                    return HandleOpaqueSecret(config.JobHistoryId, submitInventory);
+                    var secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
+                    return HandleOpaqueSecret(config.JobHistoryId, submitInventory, secretAllowedKeys);
                 case "tls_secret":
                 case "tls":
                 case "tlssecret":
@@ -172,9 +173,14 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult HandleOpaqueSecret(long jobId, SubmitInventoryUpdate submitInventory)
+    private JobResult HandleOpaqueSecret(long jobId, SubmitInventoryUpdate submitInventory, string [] secretAllowedKeys)
     {
         const bool hasPrivateKey = true;
+        //check if secretAllowedKeys is null or empty
+        if (secretAllowedKeys == null || secretAllowedKeys.Length == 0)
+        {
+            secretAllowedKeys = new[] { "certificates" };
+        }
 
         Logger.LogDebug(
             $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace}");
@@ -184,10 +190,18 @@ public class Inventory : JobBase, IInventoryJobExtension
                 KubeSecretName,
                 KubeNamespace
             );
-            var certificatesBytes = certData.Data["certificates"];
-            var certificates = Encoding.UTF8.GetString(certificatesBytes);
-            var certsList = certificates.Split(CertChainSeparator);
+            var certsList = new string[]{}; //empty array
+            foreach (var allowedKey in secretAllowedKeys)
+            {
+                if (certData.Data.ContainsKey(allowedKey))
+                {
+                    var certificatesBytes = certData.Data[allowedKey];
+                    var certificates = Encoding.UTF8.GetString(certificatesBytes);
+                    certsList.Concat(certificates.Split(CertChainSeparator));
+                }
+            }
             return PushInventory(certsList, jobId, submitInventory, hasPrivateKey);
+            
         }
         catch (HttpOperationException e)
         {
