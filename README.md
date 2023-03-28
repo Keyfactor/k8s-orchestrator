@@ -99,7 +99,6 @@ This text would be entered in as the value for the __Server Password__, instead 
 
 ## Table of Contents
 - [Kubernetes Orchestrator Extension](#kubernetes-orchestrator-extension)
-  - [Integration status: Pilot - Ready for use in test environments. Not for use in production.](#integration-status--pilot---ready-for-use-in-test-environments-not-for-use-in-production)
     * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
     * [Support for Kubernetes Orchestrator Extension](#support-for-kubernetes-orchestrator-extension)
       + [To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.](#to-report-a-problem-or-suggest-a-new-feature--use-the----issues----issues----tab-if-you-want-to-contribute-actual-bug-fixes-or-proposed-enhancements--use-the----pull-requests----pulls----tab)
@@ -222,7 +221,8 @@ documentation for more information.
 ### K8SSecret
 The K8SSecret store type is used to manage Kubernetes secrets of type `Opaque`.  These secrets can have any 
 arbitrary fields, but except for the `tls.crt` and `tls.key` fields, these are reserved for the `kubernetes.io/tls` 
-secret type. **NOTE**: The orchestrator will only manage the fields named `certificates` and `private_keys` in the
+secret type.    
+**NOTE**: The orchestrator will only manage the fields named `certificates` and `private_keys` in the
 secret.  Any other fields will be ignored.
 
 ### K8STLSSecret
