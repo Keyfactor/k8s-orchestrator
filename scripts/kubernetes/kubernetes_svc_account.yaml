@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keyfactor-orchestrator-config
+data:
+  namespace: default
+  service_account: keyfactor-orchestrator-sa
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+
+metadata:
+  name: keyfactor-orchestrator
+  
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [] # Populate this to restrict access to specific secrets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["certificates.k8s.io"]
+    resources: ["certificatesigningrequests"]
+    resourceNames: [] # Populate this to restrict access to specific certificatesigningrequests
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+---
+apiVersion: v1
+kind: ServiceAccount
+
+metadata:
+  name: keyfactor-orchestrator-sa
+  
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keyfactor-orchestrator-sa-binding
+  
+roleRef:
+  kind: ClusterRole
+  name: keyfactor-orchestrator
+  apiGroup: rbac.authorization.k8s.io
+  
+subjects:
+  - kind: ServiceAccount
+    name: keyfactor-orchestrator-sa
+    namespace: default
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keyfactor
+  annotations:
+    kubernetes.io/service-account.name: keyfactor-orchestrator-sa
+type: kubernetes.io/service-account-token

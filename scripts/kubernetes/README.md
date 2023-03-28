@@ -54,3 +54,40 @@ create a `kubeconfig` file.
 **NOTE**: You must have `kubectl` installed and configured to connect to the Kubernetes cluster with permissions to read the service account token and 
 CA certificate.
 
+## Example Service Account JSON
+[example_kubeconfig.json](example_kubeconfig.json)
+```json
+{
+  "kind": "Config",
+  "apiVersion": "v1",
+  "preferences": {},
+  "clusters": [
+    {
+      "name": "my-cluster",
+      "cluster": {
+        "server": "https://my.cluster.domain:443",
+        "certificate-authority-data": "<base64 encoded cluster CA certificate>"
+      }
+    }
+  ],
+  "users": [
+    {
+      "name": "keyfactor-orchestrator-sa",
+      "user": {
+        "token": "<base64 encoded token for k8s service account>"
+      }
+    }
+  ],
+  "contexts": [
+    {
+      "name": "keyfactor-orchestrator-sa-context",
+      "context": {
+        "cluster": "my-cluster",
+        "user": "keyfactor-orchestrator-sa",
+        "namespace": "default"
+      }
+    }
+  ],
+  "current-context": "keyfactor-orchestrator-sa-context"
+}
+```
