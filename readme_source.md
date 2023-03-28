@@ -457,7 +457,7 @@ Management add/remove/create operations will attempt to write back to the Kubern
 The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
 each type of certificate store.
 
-| Store Type | Secret Keys                    |
+| Store Type | Managed Secret Keys            |
 |------------|--------------------------------|
 | K8STLSSecr | `tls.crt`,`tls.key`            |
 | K8SSecret  | `certificates`, `private_keys` |
