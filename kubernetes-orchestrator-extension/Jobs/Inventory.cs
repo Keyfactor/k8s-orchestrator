@@ -57,7 +57,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             {
                 case "secret":
                 case "secrets":
-                    var secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
+                    var secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt", "tls.crt", "tls.key" };
                     return HandleOpaqueSecret(config.JobHistoryId, submitInventory, secretAllowedKeys);
                 case "tls_secret":
                 case "tls":
@@ -197,7 +197,11 @@ public class Inventory : JobBase, IInventoryJobExtension
                 {
                     var certificatesBytes = certData.Data[allowedKey];
                     var certificates = Encoding.UTF8.GetString(certificatesBytes);
-                    certsList.Concat(certificates.Split(CertChainSeparator));
+                    //split the certificates by the separator
+                    var splitCerts = certificates.Split(CertChainSeparator);
+                    //add the split certs to the list
+                    certsList = certsList.Concat(splitCerts).ToArray();
+                    // certsList.Concat(certificates.Split(CertChainSeparator));
                 }
             }
             return PushInventory(certsList, jobId, submitInventory, hasPrivateKey);
