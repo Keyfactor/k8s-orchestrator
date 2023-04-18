@@ -117,8 +117,10 @@ public abstract class JobBase
         //var props = Jsonconfig.CertificateStoreDetails.Properties;
         ServerUsername = config?.ServerUsername;
         ServerPassword = config?.ServerPassword;
-        InitializeProperties(props);
         StorePath = config.CertificateStoreDetails?.StorePath;
+        // StorePath = GetStorePath();
+        InitializeProperties(props);
+        
     }
 
     protected void InitializeStore(DiscoveryJobConfiguration config)
@@ -126,20 +128,25 @@ public abstract class JobBase
         DiscoveryConfig = config;
         Logger = LogHandler.GetClassLogger(GetType());
         var props = config.JobProperties;
+        Capability = config?.Capability;
         ServerUsername = config?.ServerUsername;
         ServerPassword = config?.ServerPassword;
-        Capability = config.Capability;
         InitializeProperties(props);
     }
 
     protected void InitializeStore(ManagementJobConfiguration config)
     {
         ManagementConfig = config;
-        Capability = config.Capability;
+        Logger = LogHandler.GetClassLogger(GetType());
         var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
-        InitializeProperties(props);
+        Capability = config?.Capability;
+        ServerUsername = config?.ServerUsername;
+        ServerPassword = config?.ServerPassword;
         StorePath = config.CertificateStoreDetails?.StorePath;
-        StorePath = GetStorePath();
+        
+        InitializeProperties(props);
+        // StorePath = config.CertificateStoreDetails?.StorePath;
+        // StorePath = GetStorePath();
         Overwrite = config.Overwrite;
     }
 
@@ -168,6 +175,11 @@ public abstract class JobBase
         {
             KubeSecretName = StorePath.Split("/").Last();
         }
+        
+        if (string.IsNullOrEmpty(KubeNamespace) && !string.IsNullOrEmpty(StorePath))
+        {
+            KubeNamespace = StorePath.Split("/").First();
+        }
 
         Logger.LogDebug($"KubeNamespace: {KubeNamespace}");
         Logger.LogDebug($"KubeSecretName: {KubeSecretName}");
@@ -178,14 +190,18 @@ public abstract class JobBase
             // KubeSecretName = StorePath.Split("/").Last();
             KubeSecretName = StorePath;
         }
+        
+        //check if storeProperties contains ServerUsername key
 
         if (string.IsNullOrEmpty(ServerUsername))
         {
-            ServerUsername = ResolvePamField("ServerUsername", storeProperties["ServerUsername"]);
+            // check if storeProperties contains ServerUsername ke
+            ServerUsername = storeProperties.ContainsKey("ServerUsername") ? (string)ResolvePamField("ServerUsername", storeProperties["ServerUsername"]) : "kubeconfig";
+
         }
         if (string.IsNullOrEmpty(ServerPassword))
         {
-            ServerPassword = ResolvePamField("ServerPassword", storeProperties["ServerPassword"]);
+            ServerPassword = storeProperties.ContainsKey("ServerPassword") ? (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]) : "";
         }
         // var storePassword = ResolvePamField("Store Password", storeProperties.CertificateStoreDetails.StorePassword);
 
