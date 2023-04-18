@@ -6,13 +6,13 @@ The Kubernetes Orchestrator allows for the remote management of certificate stor
 
 #### Integration status: Pilot - Ready for use in test environments. Not for use in production.
 
-## About the Keyfactor Universal Orchestrator Capability
+## About the Keyfactor Universal Orchestrator Extension
 
-This repository contains a Universal Orchestrator Capability which is a plugin to the Keyfactor Universal Orchestrator. Within the Keyfactor Platform, Orchestrators are used to manage “certificate stores” &mdash; collections of certificates and roots of trust that are found within and used by various applications.
+This repository contains a Universal Orchestrator Extension which is a plugin to the Keyfactor Universal Orchestrator. Within the Keyfactor Platform, Orchestrators are used to manage “certificate stores” &mdash; collections of certificates and roots of trust that are found within and used by various applications.
 
-The Universal Orchestrator is part of the Keyfactor software distribution and is available via the Keyfactor customer portal. For general instructions on installing Capabilities, see the “Keyfactor Command Orchestrator Installation and Configuration Guide” section of the Keyfactor documentation. For configuration details of this specific Capability, see below in this readme.
+The Universal Orchestrator is part of the Keyfactor software distribution and is available via the Keyfactor customer portal. For general instructions on installing Extensions, see the “Keyfactor Command Orchestrator Installation and Configuration Guide” section of the Keyfactor documentation. For configuration details of this specific Extension see below in this readme.
 
-The Universal Orchestrator is the successor to the Windows Orchestrator. This Capability plugin only works with the Universal Orchestrator and does not work with the Windows Orchestrator.
+The Universal Orchestrator is the successor to the Windows Orchestrator. This Orchestrator Extension plugin only works with the Universal Orchestrator and does not work with the Windows Orchestrator.
 
 
 
@@ -119,7 +119,6 @@ This text would be entered in as the value for the __Server Password__, instead 
         + [Service Account Setup](#service-account-setup)
     * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
     * [Certificate Store Discovery](#certificate-store-discovery)
-    * [Configuration File Setup](#configuration-file-setup)
     * [Certificate Store Types](#certificate-store-types)
         + [Configuration Information](#configuration-information)
             - [Common Values](#common-values)
@@ -182,7 +181,8 @@ The secrets that this orchestrator extension supports for use with a PAM Provide
 
 | Name           | Description                                                                                                                                                         |
 |----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeSvcCreds   | This is a raw JSON file that contains service account credentials to interact with the Kubernetes APIs. See the service account setup guide for permission details. |
+| ServerPassword | This is a raw JSON file that contains service account credentials to interact with the Kubernetes APIs. See the service account setup guide for permission details. |
+| ServerUsername | This is a static value that must be set to `kubeconfig`.                                                                                                            |
 
 
 It is not necessary to implement all of the secrets available to be managed by a PAM provider.  
@@ -312,16 +312,6 @@ Otherwise you will not be able to provide credentials to the discovery job.
 
 The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate stores with existing certificates.  To run a discovery job, follow these steps:
 
-## Configuration File Setup
-
-The Kubernetes Orchestrator Extension uses a JSON configuration file.  It is located in the {Keyfactor Orchestrator Installation Folder}\Extensions\Kubernetes.  None of the values are required, and a description of each follows below:
-```json
-{   
-  "CreateStoreIfMissing": "Y"
-}
-```
-**CreateStoreOnAddIfMissing** - Y/N - Determines, during a Management-Add job, if a certificate store should be created if it does not already exist.  If set to "N", and the store referenced in the Management-Add job is not found, the job will return an error with a message stating that the store does not exist.  If set to "Y", the store will be created and the certificate added to the certificate store.  **Default value if missing - Y**.
-
 ## Certificate Store Types
 
 When setting up the certificate store types you wish the Kubernetes Orchestrator Extension to
@@ -337,17 +327,17 @@ Below is a table of the common values that should be used for all certificate st
 
 #### Common Values
 ##### UI Basic Tab
-| Field Name              | Required | Description                                                                                                                                                                                                      | Value                  |
-|-------------------------|----------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
-| Name                    | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                                                                                             | Depends on store type. |
-| ShortName               | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                                                                                               | Depends on store type. |
-| Custom Capability       | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                                                                                          | Checked [x]            |
-| Supported Job Types     | &check;  | The job types supported by the certificate store type.                                                                                                                                                           | Depends on store type. |
-| Needs Server            |          | Must be set to true or checked to use PAM, otherwise can be left unchecked. NOTE: If using this `server_username` must be equal to `kubeconfig` and `server_password` will be the kubeconfig file in JSON format | Unchecked [ ]          |
-| Blueprint Allowed       |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature.                                                                        | Unchecked [ ]          |
-| Uses PowerShell         |          | Whether or not the certificate store type uses PowerShell.                                                                                                                                                       | Unchecked [ ]          |
-| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                                                                                                   | Unchecked [ ]          |
-| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                                                                                              | Unchecked [ ]          |
+| Field Name              | Required | Description                                                                                                                                                        | Value                  |
+|-------------------------|----------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------|
+| Name                    | &check;  | The display name you wish to use for the new Certificate Store Type.                                                                                               | Depends on store type. |
+| ShortName               | &check;  | The short name you wish to use for the new Certificate Store Type.                                                                                                 | Depends on store type. |
+| Custom Capability       | &check;  | Whether or not the certificate store type supports custom capabilities.                                                                                            | Checked [x]            |
+| Supported Job Types     | &check;  | The job types supported by the certificate store type.                                                                                                             | Depends on store type. |
+| Needs Server            | &check;  | Must be set to true or checked. NOTE: If using this `ServerUsername` must be equal to `kubeconfig` and `ServerPassword` will be the kubeconfig file in JSON format | Checked [x]            |
+| Blueprint Allowed       |          | Checked if you wish to make use of blueprinting.  Please refer to the Keyfactor Command Reference Guide for more details on this feature.                          | Unchecked [ ]          |
+| Uses PowerShell         |          | Whether or not the certificate store type uses PowerShell.                                                                                                         | Unchecked [ ]          |
+| Requires Store Password |          | Whether or not the certificate store type requires a password.                                                                                                     | Unchecked [ ]          |
+| Supports Entry Password |          | Whether or not the certificate store type supports entry passwords.                                                                                                | Unchecked [ ]          |
 
 ##### UI Advanced Tab
 | Field Name            | Required | Description                                                                                                                                | Value                  |
@@ -363,7 +353,6 @@ Below is a table of the common values that should be used for all certificate st
 | KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
 | KubeSecretName | Kube Secret Name     | String |          | none          | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                           |
 | KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  | none          | A JSON string containing the service account credentials to the Kubernetes API. Must be in `kubeconfig` format. For more information review [Kubernetes service account](scripts/kubernetes/README.md) docs and scripts. **NOTE: If using PAM this can be optional.** |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -387,17 +376,17 @@ kfutil store-types create --name K8SSecret
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name              | Required | Value                                                                   |
-|-------------------------|----------|-------------------------------------------------------------------------|
-| Name                    | &check;  | `K8SSecret`                                                             |
-| ShortName               | &check;  | `K8SSecret`                                                             |
-| Custom Capability       | &check;  | Checked [x] + `K8SSecret`                                               |
-| Supported Job Types     | &check;  | Inventory, Add, Remove, Create, Discovery                               |
-| Needs Server            |          | Unchecked [ ] **Note: Check this to use PAM or Certificate Discovery ** |
-| Blueprint Allowed       |          | Unchecked [ ]                                                           |
-| Uses PowerShell         |          | Unchecked [ ]                                                           |
-| Requires Store Password |          | Unchecked [ ]                                                           |
-| Supports Entry Password |          | Unchecked [ ]                                                           |
+| Field Name              | Required | Value                                     |
+|-------------------------|----------|-------------------------------------------|
+| Name                    | &check;  | `K8SSecret`                               |
+| ShortName               | &check;  | `K8SSecret`                               |
+| Custom Capability       | &check;  | Checked [x] + `K8SSecret`                 |
+| Supported Job Types     | &check;  | Inventory, Add, Remove, Create, Discovery |
+| Needs Server            | &check;  | Checked [x]                               |
+| Blueprint Allowed       |          | Unchecked [ ]                             |
+| Uses PowerShell         |          | Unchecked [ ]                             |
+| Requires Store Password |          | Unchecked [ ]                             |
+| Supports Entry Password |          | Unchecked [ ]                             |
 
 **NOTE:** If using PAM, `server_username` must be equal to `kubeconfig` and `server_password` will be the kubeconfig file in JSON format.
 
@@ -419,7 +408,6 @@ kfutil store-types create --name K8SSecret
 | KubeNamespace  | Kube Namespace       | String |          | `default`     |
 | KubeSecretName | Kube Secret Name     | String | &check;  |               |
 | KubeSecretType | Kube Secret Type     | String | &check;  | `secret`      |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
 ![k8ssecret_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_custom_fields.png)
 
@@ -440,17 +428,17 @@ kfutil store-types create --name K8STLSSecr
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name | Required | Value                     |
-|------------|----------|---------------------------|
-| Name       | &check;  | `K8STLSSecr`               |
-| ShortName  | &check;  | `K8STLSSecr`               |
-| Custom Capability | &check;  | Checked [x] + `K8STLSSecr` |
-| Supported Job Types | &check;  | Inventory, Add, Remove, Create, Discovery    |
-| Needs Server |          | Unchecked [ ]             |
-| Blueprint Allowed |          | Unchecked [ ]             |
-| Uses PowerShell |          | Unchecked [ ]             |
-| Requires Store Password |          | Unchecked [ ]             |
-| Supports Entry Password |          | Unchecked [ ]             |
+| Field Name              | Required | Value                                     |
+|-------------------------|----------|-------------------------------------------|
+| Name                    | &check;  | `K8STLSSecr`                              |
+| ShortName               | &check;  | `K8STLSSecr`                              |
+| Custom Capability       | &check;  | Checked [x] + `K8STLSSecr`                |
+| Supported Job Types     | &check;  | Inventory, Add, Remove, Create, Discovery |
+| Needs Server            | &check;  | Checked [x]                               |
+| Blueprint Allowed       |          | Unchecked [ ]                             |
+| Uses PowerShell         |          | Unchecked [ ]                             |
+| Requires Store Password |          | Unchecked [ ]                             |
+| Supports Entry Password |          | Unchecked [ ]                             |
 
 ![k8sstlssecr_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_basic.png)
 
@@ -470,7 +458,6 @@ kfutil store-types create --name K8STLSSecr
 | KubeNamespace  | Kube Namespace       | String |          | `default`     |
 | KubeSecretName | Kube Secret Name     | String | &check;  |               |
 | KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`  |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
 ![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
 
@@ -489,17 +476,17 @@ kfutil store-types create --name K8SCert
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name | Required | Value                     |
-|------------|----------|---------------------------|
-| Name       | &check;  | `K8SCert`               |
-| ShortName  | &check;  | `K8SCert`               |
-| Custom Capability | &check;  | Checked [x] + `K8SCert` |
-| Supported Job Types | &check;  | Inventory, Discovery    |
-| Needs Server |          | Unchecked [ ]             |
-| Blueprint Allowed |          | Unchecked [ ]             |
-| Uses PowerShell |          | Unchecked [ ]             |
-| Requires Store Password |          | Unchecked [ ]             |
-| Supports Entry Password |          | Unchecked [ ]             |
+| Field Name              | Required | Value                    |
+|-------------------------|----------|--------------------------|
+| Name                    | &check;  | `K8SCert`                |
+| ShortName               | &check;  | `K8SCert`                |
+| Custom Capability       | &check;  | Checked [x] + `K8SCert`  |
+| Supported Job Types     | &check;  | Inventory, Discovery     |
+| Needs Server            | &check;  | Checked [x]              |
+| Blueprint Allowed       |          | Unchecked [ ]            |
+| Uses PowerShell         |          | Unchecked [ ]            |
+| Requires Store Password |          | Unchecked [ ]            |
+| Supports Entry Password |          | Unchecked [ ]            |
 
 ![k8scert_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_basic.png)
 
@@ -519,7 +506,6 @@ kfutil store-types create --name K8SCert
 | KubeNamespace  | Kube Namespace       | String |          | `default`     |
 | KubeSecretName | Kube Secret Name     | String | &check;  |               |
 | KubeSecretType | Kube Secret Type     | String | &check;  | `cert`        |
-| KubeSvcCreds   | Kube Service Account | Secret | &check;  |               |
 
 ![k8scert_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_custom_fields.png)
 
