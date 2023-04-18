@@ -48,13 +48,15 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger = LogHandler.GetClassLogger(GetType());
         InitializeStore(config);
+        Logger.LogInformation("Begin MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId);
+        Logger.LogInformation($"Management for store type: {config.Capability}");
 
-        Logger.LogDebug("Begin Management...");
         var storePath = config.CertificateStoreDetails.StorePath;
         Logger.LogTrace("StorePath: " + storePath);
         Logger.LogDebug($"Canonical Store Path: {GetStorePath()}");
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
-
+        // Logger.LogTrace("CertPassword: " + certPassword);
+        Logger.LogDebug(string.IsNullOrEmpty(certPassword) ? "CertPassword is empty" : "CertPassword is not empty");
 
         //Convert properties string to dictionary
         try
@@ -64,10 +66,10 @@ public class Management : JobBase, IManagementJobExtension
                 case CertStoreOperationType.Add:
                 case CertStoreOperationType.Create:
                     //OperationType == Add - Add a certificate to the certificate store passed in the config object
-                    Logger.LogDebug($"Processing Management-{config.OperationType.GetType()} job...");
+                    Logger.LogInformation($"Processing Management-{config.OperationType.GetType()} job for certificate '{config.JobCertificate.Alias}'...");
                     return HandleCreateOrUpdate(KubeSecretType, config, certPassword, Overwrite);
                 case CertStoreOperationType.Remove:
-                    Logger.LogDebug("Processing Management-Remove job...");
+                    Logger.LogInformation($"Processing Management-{config.OperationType.GetType()} job for certificate '{config.JobCertificate.Alias}'...");
                     return HandleRemove(config);
                 case CertStoreOperationType.Unknown:
                 case CertStoreOperationType.Inventory:
@@ -76,58 +78,99 @@ public class Management : JobBase, IManagementJobExtension
                 case CertStoreOperationType.Discovery:
                 case CertStoreOperationType.SetPassword:
                 case CertStoreOperationType.FetchLogs:
+                    Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId +
+                                          $" - OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job. Failed!");
                     return FailJob($"OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job.", config.JobHistoryId);
                 default:
                     //Invalid OperationType.  Return error.  Should never happen though
                     var impError = $"Invalid OperationType '{config.OperationType.GetType()}' passed to Kubernetes certificate store job.  This should never happen.";
                     Logger.LogError(impError);
+                    Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId +
+                                          $" - OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job. Failed!");
                     return FailJob(impError, config.JobHistoryId);
             }
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error processing job");
+            Logger.LogError(ex.Message);
+            Logger.LogTrace(ex.StackTrace);
             //Status: 2=Success, 3=Warning, 4=Error
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
 
     private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
     {
+        Logger.LogTrace("Entered HandleOpaqueSecret()");
+        Logger.LogTrace("certAlias: " + certAlias);
+        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
+        Logger.LogTrace("overwrite: " + overwrite);
+        Logger.LogTrace("append: " + append);
+        Logger.LogDebug("Secret type is 'opaque', so extracting private key from certificate...");
         try
         {
             Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
             var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+            Logger.LogTrace("pemString: " + pemString);
+            Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
             var certPems = pemString.Split(";");
+            Logger.LogTrace("certPems: " + certPems);
+
+            Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
             var caPems = "".Split(";");
+            Logger.LogTrace("caPems: " + caPems);
+
+            Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
             var chainPems = "".Split(";");
+            Logger.LogTrace("chainPems: " + chainPems);
 
             string[] keyPems = { "" };
 
-            Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
+            Logger.LogInformation($"Secret type is 'opaque', so extracting private key from certificate '{certAlias}'...");
+            Logger.LogTrace("certObj: " + certObj);
             var pkey = certObj.GetRSAPrivateKey();
+            Logger.LogInformation(pkey != null
+                ? $"Certificate '{certAlias}' contains a private key, so extracting private key from certificate..."
+                : $"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
+            // Logger.LogTrace("pkey: " + pkey);
 
             var keyBytes = new byte[] { };
 
             if (pkey != null)
             {
+                Logger.LogTrace("Entering try block to extract private key from certificate " + certAlias);
                 try
                 {
                     keyBytes = pkey?.ExportRSAPrivateKey();
                     if (keyBytes != null)
                     {
+                        Logger.LogDebug("Converting private key to PEM format...");
                         var pem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+                        Logger.LogDebug(string.IsNullOrEmpty(pem)
+                            ? "Failed to convert private key to PEM format for certificate " + certAlias
+                            : "Successfully converted private key to PEM format for certificate" + certAlias);
                         keyPems = new[] { pem };
                     }
                 }
                 catch (Exception ex)
                 {
+                    Logger.LogWarning("Error extracting private key from certificate " + certAlias + ".  Will try to extract private key from ManagementConfig...");
+                    Logger.LogTrace("Attempting to extract private key from ManagementConfig...");
                     var pem = ParseJobPrivateKey(ManagementConfig);
+                    // Logger.LogTrace("pem: " + pem);
+                    Logger.LogTrace("Successfully extracted private key from ManagementConfig for certificate " + certAlias);
                     // Add to keyPems
                     keyPems = new[] { pem };
+
+                    Logger.LogDebug(string.IsNullOrEmpty(pem)
+                        ? "Failed to extract private key from ManagementConfig for certificate " + certAlias
+                        : "Successfully extracted private key from ManagementConfig for certificate " + certAlias);
                 }
             }
 
+            Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
             var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
                 keyPems,
                 certPems,
@@ -140,6 +183,8 @@ public class Management : JobBase, IManagementJobExtension
                 overwrite
             );
             Logger.LogTrace(createResponse.ToString());
+            Logger.LogInformation(
+                $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
             return createResponse;
         }
         catch (Exception ex)
@@ -151,18 +196,32 @@ public class Management : JobBase, IManagementJobExtension
 
     private V1Secret HandleTlsSecret(string certAlias, X509Certificate2 certObj, string certPassword, bool overwrite = false, bool append = true)
     {
+        Logger.LogTrace("Entered HandleTlsSecret()");
+        Logger.LogTrace("certAlias: " + certAlias);
+        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
+        Logger.LogTrace("overwrite: " + overwrite);
+        Logger.LogTrace("append: " + append);
+
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
         var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+        Logger.LogTrace("pemString: " + pemString);
+        Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
+        Logger.LogTrace("certPems: " + certPems);
+
+        Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
         var caPems = "".Split(";");
+        Logger.LogTrace("caPems: " + caPems);
+
+        Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
         var chainPems = "".Split(";");
+        Logger.LogTrace("chainPems: " + chainPems);
 
         string[] keyPems = { "" };
 
         Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
 
-        Logger.LogDebug("Attempting to extract private key from certificate as ");
-
+        Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
         var keyBytes = GetKeyBytes(certObj, certPassword);
         if (keyBytes != null)
         {
@@ -171,7 +230,12 @@ public class Management : JobBase, IManagementJobExtension
             keyPems = new[] { kemPem };
             Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
         }
+        else
+        {
+            Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
+        }
 
+        Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
             keyPems,
             certPems,
@@ -184,22 +248,33 @@ public class Management : JobBase, IManagementJobExtension
             overwrite
         );
         Logger.LogTrace(createResponse.ToString());
+        Logger.LogInformation(
+            $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;
     }
 
     private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config, string certPassword = "", bool overwrite = false)
     {
+        Logger.LogDebug("Entered HandleCreateOrUpdate()");
         var jobCert = config.JobCertificate;
         var certAlias = jobCert.Alias;
+        Logger.LogTrace("secretType: " + secretType);
+        Logger.LogTrace("certAlias: " + certAlias);
+        // Logger.LogTrace("certPassword: " + certPassword);
+        Logger.LogTrace("overwrite: " + overwrite);
+        Logger.LogDebug(string.IsNullOrEmpty(certPassword)
+            ? "No cert password provided for certificate " + certAlias
+            : "Cert password provided for certificate " + certAlias);
 
-        Logger.LogDebug($"Converting job certificate '{jobCert.Alias}' to Cert object...");
+
+        Logger.LogDebug($"Converting certificate '{certAlias}' to Cert object...");
         var certBytes = Convert.FromBase64String(jobCert.Contents);
 
-        Logger.LogDebug($"Creating X509Certificate2 object from job certificate '{jobCert.Alias}'.");
+        Logger.LogDebug($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
         var certObj = new X509Certificate2(certBytes, certPassword);
 
-        Logger.LogDebug("Setting Keyfactor cert object properties...");
-
+        Logger.LogDebug($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
+        Logger.LogTrace($"Entering switch statement for secret type: {secretType}...");
         switch (secretType)
         {
             // Process request based on secret type
@@ -207,11 +282,16 @@ public class Management : JobBase, IManagementJobExtension
             case "tls":
             case "tlssecret":
             case "tls_secrets":
+                Logger.LogInformation("Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " + certAlias + "...");
                 _ = HandleTlsSecret(certAlias, certObj, certPassword, overwrite);
+                Logger.LogInformation("Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
                 break;
+            case "opaque":
             case "secret":
             case "secrets":
+                Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " + certAlias + "...");
                 _ = HandleOpaqueSecret(certAlias, certObj, certPassword, overwrite, true);
+                Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias + ".");
                 break;
             case "certificate":
             case "cert":
@@ -221,12 +301,15 @@ public class Management : JobBase, IManagementJobExtension
             case "certificates":
                 const string csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
                 Logger.LogError(csrErrorMsg);
+                Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + csrErrorMsg + " Failed!");
                 return FailJob(csrErrorMsg, config.JobHistoryId);
             default:
                 var errMsg = $"Unsupported secret type {secretType}.";
                 Logger.LogError(errMsg);
+                Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + errMsg + " Failed!");
                 return FailJob(errMsg, config.JobHistoryId);
         }
+        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
         return SuccessJob(config.JobHistoryId);
     }
 
@@ -237,9 +320,9 @@ public class Management : JobBase, IManagementJobExtension
         var jobCert = config.JobCertificate;
         var certAlias = jobCert.Alias;
 
-
         Logger.LogInformation(
             $"Removing certificate '{certAlias}' from Kubernetes client '{kubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}...");
+        Logger.LogTrace("Calling DeleteCertificateStoreSecret() to remove certificate from Kubernetes...");
         try
         {
             var response = KubeClient.DeleteCertificateStoreSecret(
@@ -253,9 +336,11 @@ public class Management : JobBase, IManagementJobExtension
         catch (Exception e)
         {
             Logger.LogError(e, $"Error removing certificate '{certAlias}' from Kubernetes client '{kubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}.");
+            Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Failed!");
             return FailJob(e.Message, config.JobHistoryId);
         }
 
+        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
         return SuccessJob(config.JobHistoryId);
     }
 }

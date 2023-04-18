@@ -57,22 +57,28 @@ public class Cert
 
 public abstract class JobBase
 {
-    // static JobBase()
-    // {
-    //     SupportedKubeStoreTypes = new[] { "secret", "certificate" };
-    //     RequiredProperties = new[] { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
-    //     CertChainSeparator = ",";
-    // }
+    
+    static protected readonly string[] SupportedKubeStoreTypes;
+    
+    static protected readonly string[] RequiredProperties;
 
-    static protected readonly string[] SupportedKubeStoreTypes = { "secret", "certificate" };
-
-    // private static readonly string[] RequiredProperties = { "kube_namespace", "kube_secret_name", "kube_secret_type", "kube_svc_creds" };
-    static protected readonly string[] RequiredProperties = { "KubeNamespace", "KubeSecretName", "KubeSecretType", "KubeSvcCreds" };
+    static protected readonly string[] TLSAllowedKeys;
+    static protected readonly string[] OpaqueAllowedKeys;
+    static protected readonly string[] CertAllowedKeys;
+    
 
     static protected string CertChainSeparator = ",";
     internal protected KubeCertificateManagerClient KubeClient;
 
     internal protected ILogger Logger;
+    static JobBase()
+    {
+        CertAllowedKeys = new[] { "cert", "csr" };
+        TLSAllowedKeys = new[] { "tls.crt", "tls.key", "ca.crt" };
+        OpaqueAllowedKeys = new [] { "tls.crt", "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
+        SupportedKubeStoreTypes =  new [] { "secret", "certificate" };
+        RequiredProperties = new [] { "KubeNamespace", "KubeSecretName", "KubeSecretType" };
+    }
 
     internal protected string Capability { get; set; }
 
@@ -120,7 +126,7 @@ public abstract class JobBase
         StorePath = config.CertificateStoreDetails?.StorePath;
         // StorePath = GetStorePath();
         InitializeProperties(props);
-        
+
     }
 
     protected void InitializeStore(DiscoveryJobConfiguration config)
@@ -143,7 +149,7 @@ public abstract class JobBase
         ServerUsername = config?.ServerUsername;
         ServerPassword = config?.ServerPassword;
         StorePath = config.CertificateStoreDetails?.StorePath;
-        
+
         InitializeProperties(props);
         // StorePath = config.CertificateStoreDetails?.StorePath;
         // StorePath = GetStorePath();
@@ -175,7 +181,7 @@ public abstract class JobBase
         {
             KubeSecretName = StorePath.Split("/").Last();
         }
-        
+
         if (string.IsNullOrEmpty(KubeNamespace) && !string.IsNullOrEmpty(StorePath))
         {
             KubeNamespace = StorePath.Split("/").First();
@@ -190,7 +196,7 @@ public abstract class JobBase
             // KubeSecretName = StorePath.Split("/").Last();
             KubeSecretName = StorePath;
         }
-        
+
         //check if storeProperties contains ServerUsername key
 
         if (string.IsNullOrEmpty(ServerUsername))

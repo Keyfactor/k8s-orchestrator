@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -37,10 +38,9 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
         InitializeStore(config);
-        Logger.LogDebug("Begin Discovery...");
-
+        Logger.LogInformation("Begin Discovery for K8S Orchestrator Extension for job " + config.JobId);
         Logger.LogInformation($"Discovery for store type: {config.Capability}");
-
+        
         var locations = new List<string>();
 
         KubeSvcCreds = ServerPassword;
@@ -50,9 +50,15 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         {
             namespaces = new[] { "default" };
         }
-        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString().Split(',');
-        var secretAllowedKeys = config.JobProperties["patterns"].ToString().Split(',');
+        Logger.LogDebug("Namespaces: " + string.Join(",", namespaces));
 
+        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString().Split(',');
+        Logger.LogDebug("Ignored Namespaces: " + string.Join(",", ignoreNamespace));
+
+        var secretAllowedKeys = config.JobProperties["patterns"].ToString().Split(',');
+        Logger.LogDebug("Secret Allowed Keys: " + string.Join(",", secretAllowedKeys));
+
+        Logger.LogTrace("Discovery entering switch block based on capability: " + config.Capability);
         try
         {
             //Code logic to:
@@ -66,14 +72,22 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             switch (config.Capability)
             {
                 case "CertStores.K8STLSSecr.Discovery":
-                    secretAllowedKeys = new[] { "tls.crt", "tls.key"};
+                    // Combine the allowed keys with the default keys
+                    Logger.LogTrace("Entering case: CertStores.K8STLSSecr.Discovery");
+                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "tls");
                     break;
                 case "CertStores.K8SSecret.Discovery":
-                    secretAllowedKeys = new[] { "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys,"opaque");
+                    Logger.LogTrace("Entering case: CertStores.K8SSecret.Discovery");
+                    secretAllowedKeys = secretAllowedKeys.Concat(OpaqueAllowedKeys).ToArray();
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: opaque");
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "opaque");
                     break;
                 case "CertStores.K8SCert.Discovery":
+                    Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
+                    secretAllowedKeys = secretAllowedKeys.Concat(CertAllowedKeys).ToArray();
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: cert");
                     locations = KubeClient.DiscoverCertificates();
                     break;
             }
@@ -82,12 +96,18 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         catch (Exception ex)
         {
             //Status: 2=Success, 3=Warning, 4=Error
+            Logger.LogError("Discovery job has failed due to an unknown error.");
+            Logger.LogError(ex.Message);
+            Logger.LogTrace(ex.StackTrace);
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
 
         try
         {
             //Sends store locations back to KF command where they can be approved or rejected
+            Logger.LogInformation("Submitting discovered locations to Keyfactor Command...");
+            Logger.LogDebug("Discovery locations: " + string.Join(",", locations));
             submitDiscovery.Invoke(locations);
             //Status: 2=Success, 3=Warning, 4=Error
             return SuccessJob(config.JobHistoryId);
@@ -96,6 +116,10 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         {
             // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
             //  may not be reflected in Keyfactor Command.
+            Logger.LogError("Discovery job invoke has failed due to an unknown error." + ex.Message);
+            Logger.LogTrace(ex.ToString());
+            Logger.LogTrace(ex.StackTrace);
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
