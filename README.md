@@ -530,11 +530,11 @@ certificate stores and scheduling Discovery jobs in Keyfactor Command.
 ## Certificate Inventory
 In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
-| Store Type | Valid Secret Keys                                                                   |
-|------------|-------------------------------------------------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`                                                                 |
-| K8SSecret  | `tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
-| K8SCert    | `cert`, `csr`                                                                       |
+| Store Type | Valid Secret Keys                                                                             |
+|------------|-----------------------------------------------------------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`                                                                           |
+| K8SSecret  | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
+| K8SCert    | `cert`, `csr`                                                                                 |
 
 ## Certificate Management
 Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
