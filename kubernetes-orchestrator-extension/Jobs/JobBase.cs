@@ -202,12 +202,31 @@ public abstract class JobBase
         if (string.IsNullOrEmpty(ServerUsername))
         {
             // check if storeProperties contains ServerUsername ke
-            ServerUsername = storeProperties.ContainsKey("ServerUsername") ? (string)ResolvePamField("ServerUsername", storeProperties["ServerUsername"]) : "kubeconfig";
+            try
+            {
+                ServerUsername = storeProperties.ContainsKey("ServerUsername") && string.IsNullOrEmpty(storeProperties["ServerUsername"]) ? (string)ResolvePamField("ServerUsername", storeProperties["ServerUsername"]) : "kubeconfig";    
+            } catch (Exception)
+            {
+                ServerUsername = "kubeconfig";
+            }
+
 
         }
         if (string.IsNullOrEmpty(ServerPassword))
         {
-            ServerPassword = storeProperties.ContainsKey("ServerPassword") ? (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]) : "";
+            try
+            {
+                ServerPassword = storeProperties.ContainsKey("ServerPassword") ? (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]) : "";
+            }
+            catch (Exception e)
+            {
+                ServerPassword = "";
+                Logger.LogError(e.Message);
+                // Logger.LogTrace(e.ToString());
+                // Logger.LogTrace(e.StackTrace);
+                throw new ConfigurationException($"Invalid configuration. ServerPassword not provided or is invalid.");
+            }
+            
         }
         // var storePassword = ResolvePamField("Store Password", storeProperties.CertificateStoreDetails.StorePassword);
 
@@ -216,7 +235,7 @@ public abstract class JobBase
         //     Logger.LogWarning($"Store password provided but is not supported by store type {storeProperties.Capability}).");
         // }
 
-        if (ServerUsername == "kubeconfig")
+        if (ServerUsername == "kubeconfig" || string.IsNullOrEmpty(ServerUsername))
         {
             Logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
             storeProperties["KubeSvcCreds"] = ServerPassword;
@@ -239,7 +258,26 @@ public abstract class JobBase
 
     public string GetStorePath()
     {
-        var secretType = KubeSecretType.ToLower() is "tls_secret" or "secret" ? "secret" : "certificate";
+        var secretType = KubeSecretType.ToLower();
+        switch (secretType)
+        {
+            case "secret":
+            case "opaque":
+            case "tls":
+            case "tls_secret":
+                secretType = "secret";
+                break;
+            case "cert":
+            case "certs":
+            case "certificate":
+            case "certificates":
+                secretType = "certificate";
+                break;
+            default:
+                Logger.LogWarning("Unknown secret type. Will use value provided.");
+                Logger.LogTrace($"secretType: {secretType}");
+                break;
+        }
         StorePath = $"{KubeHost}/{KubeNamespace}/{secretType}/{KubeSecretName}";
         return StorePath;
     }

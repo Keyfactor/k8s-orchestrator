@@ -32,7 +32,7 @@ public class KubeCertificateManagerClient
     internal protected ILogger Logger;
     public KubeCertificateManagerClient(string kubeconfig)
     {
-        Logger = LogHandler.GetClassLogger(GetType());
+        Logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod().DeclaringType);
         Client = GetKubeClient(kubeconfig);
         
     }
@@ -167,7 +167,7 @@ public class KubeCertificateManagerClient
         Logger.LogTrace($"Executing assembly directory: {strWorkPath}");
 
         var credentialFileName = kubeconfig;
-        Logger.LogDebug($"credentialFileName: {credentialFileName}");
+        // Logger.LogDebug($"credentialFileName: {credentialFileName}");
         Logger.LogDebug("Calling ParseKubeConfig()");
         var k8SConfiguration = ParseKubeConfig(kubeconfig);
         Logger.LogDebug("Finished calling ParseKubeConfig()");
@@ -188,7 +188,7 @@ public class KubeCertificateManagerClient
         }
         else
         {
-            Logger.LogDebug($"Attempting to load config from file {credentialFileName}");
+            // Logger.LogDebug($"Attempting to load config from file {credentialFileName}");
             config = KubernetesClientConfiguration.BuildConfigFromConfigFile(!credentialFileName.Contains(strWorkPath)
                 ? Path.Join(strWorkPath, credentialFileName)
                 : // Else attempt to load config from file
@@ -261,6 +261,23 @@ public class KubeCertificateManagerClient
     {
         Logger.LogTrace("Entered CreateNewSecret()");
         Logger.LogDebug("Attempting to create new secret...");
+        
+        switch (secretType)
+        {
+            case "secret":
+            case "opaque":
+            case "opaque_secret":
+                secretType = "secret";
+                break;
+            case "tls_secret":
+            case "tls":
+                secretType = "tls_secret";
+                break;
+            default:
+                Logger.LogError("Unknown secret type: " + secretType);
+                break;
+        }
+        
         var k8SSecretData = secretType switch
         {
             "secret" => new V1Secret

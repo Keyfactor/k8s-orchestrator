@@ -101,6 +101,27 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
+
+    private V1Secret creatEmptySecret(string secretType)
+    {
+        Logger.LogWarning("Certificate object and certificate alias are both null or empty.  Assuming this is a 'create_store' action and populating an empty store.");
+        var emptyStrArray = Array.Empty<string>();
+        var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
+            emptyStrArray,
+            emptyStrArray,
+            emptyStrArray,
+            emptyStrArray,
+            KubeSecretName,
+            KubeNamespace,
+            secretType,
+            false,
+            true
+        );
+        Logger.LogTrace(createResponse.ToString());
+        Logger.LogInformation(
+            $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with no data.");
+        return createResponse;
+    }
     private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
@@ -108,6 +129,12 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
+        
+        if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+        {
+            return creatEmptySecret("opaque");
+        }
+        
         Logger.LogDebug("Secret type is 'opaque', so extracting private key from certificate...");
         try
         {
@@ -201,6 +228,11 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
+        
+        if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+        {
+            return creatEmptySecret("tls");
+        }
 
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
         var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
@@ -268,10 +300,19 @@ public class Management : JobBase, IManagementJobExtension
 
 
         Logger.LogDebug($"Converting certificate '{certAlias}' to Cert object...");
-        var certBytes = Convert.FromBase64String(jobCert.Contents);
-
-        Logger.LogDebug($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
-        var certObj = new X509Certificate2(certBytes, certPassword);
+        
+        var certBytes = Array.Empty<byte>();
+        var certObj = new X509Certificate2();
+        if (!string.IsNullOrEmpty(jobCert.Contents))
+        {
+            Logger.LogTrace("Converting job certificate contents to byte array...");
+            certBytes = Convert.FromBase64String(jobCert.Contents);
+            Logger.LogTrace("Successfully converted job certificate contents to byte array.");
+            
+            Logger.LogTrace($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
+            certObj = new X509Certificate2(certBytes, certPassword);
+            Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
+        }
 
         Logger.LogDebug($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         Logger.LogTrace($"Entering switch statement for secret type: {secretType}...");

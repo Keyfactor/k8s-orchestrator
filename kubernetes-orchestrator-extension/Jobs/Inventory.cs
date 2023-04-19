@@ -128,8 +128,9 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace(e.ToString());
             Logger.LogTrace(e.StackTrace);
             var certDataErrorMsg =
-                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
+                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on host '{KubeClient.GetHost()}'.";
             Logger.LogError(certDataErrorMsg);
+            Logger.LogTrace("Exiting HandleCertificate for job id " + jobId + "...");
             return FailJob(certDataErrorMsg, jobId);
         }
         catch (Exception e)
@@ -139,6 +140,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace(e.StackTrace);
             var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
             Logger.LogError(certDataErrorMsg);
+            Logger.LogTrace("Exiting HandleCertificate for job id " + jobId + "...");
             return FailJob(certDataErrorMsg, jobId);
         }
     }
