@@ -34,7 +34,7 @@ public class KubeCertificateManagerClient
     {
         Logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod().DeclaringType);
         Client = GetKubeClient(kubeconfig);
-        
+
     }
 
     private IKubernetes Client { get; set; }
@@ -261,7 +261,7 @@ public class KubeCertificateManagerClient
     {
         Logger.LogTrace("Entered CreateNewSecret()");
         Logger.LogDebug("Attempting to create new secret...");
-        
+
         switch (secretType)
         {
             case "secret":
@@ -277,7 +277,7 @@ public class KubeCertificateManagerClient
                 Logger.LogError("Unknown secret type: " + secretType);
                 break;
         }
-        
+
         var k8SSecretData = secretType switch
         {
             "secret" => new V1Secret
@@ -321,10 +321,16 @@ public class KubeCertificateManagerClient
     private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
     {
         Logger.LogTrace("Entered UpdateOpaqueSecret()");
-        var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]); //TODO: Make this configurable
+
+        var existingCerts = existingSecret.Data.ContainsKey("certificates")
+            ? Encoding.UTF8.GetString(existingSecret.Data["certificates"])
+            : ""; //TODO: Make this configurable
+
         Logger.LogTrace("Existing certificates: " + existingCerts);
 
-        var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]); //TODO: Make this configurable
+        var existingKeys = existingSecret.Data.ContainsKey("private_keys")
+            ? Encoding.UTF8.GetString(existingSecret.Data["private_keys"])
+            : ""; //TODO: Make this configurable
         // Logger.LogTrace("Existing private keys: " + existingKeys);
 
         if (existingCerts.Contains(certPem) && existingKeys.Contains(keyPem))
@@ -403,6 +409,12 @@ public class KubeCertificateManagerClient
         switch (secretType)
         {
             // check if certificate already exists in "certificates" field
+            // case "secret" when !overwrite:
+            //     Logger.LogInformation($"Attempting to create opaque secret {secretName} in namespace {namespaceName}");
+            //     Logger.LogInformation("Overwrite is not specified, checking if certificate already exists in secret");
+            //     
+            //     
+            //     return CreateNewSecret(secretName, namespaceName, keyPem,certPem,"","",secretType);
             case "secret":
             {
                 Logger.LogInformation($"Attempting to update opaque secret {secretName} in namespace {namespaceName}");
@@ -489,63 +501,90 @@ public class KubeCertificateManagerClient
 
         // handle cert removal
         Logger.LogDebug("Parsing existing certificates from secret into a string.");
-        var existingCerts = Encoding.UTF8.GetString(existingSecret.Data["certificates"]); //TODO: Make this configurable.
-        Logger.LogTrace("existingCerts: " + existingCerts);
-
-        Logger.LogDebug("Parsing existing private keys from secret into a string.");
-        var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]); //TODO: Make this configurable.
-        // Logger.LogTrace("existingKeys: " + existingKeys);
-
-        Logger.LogDebug("Splitting existing certificates into an array.");
-        var certs = existingCerts.Split(",");
-        Logger.LogTrace("certs: " + certs);
-
-        Logger.LogDebug("Splitting existing private keys into an array.");
-        var keys = existingKeys.Split(",");
-        // Logger.LogTrace("keys: " + keys);
-
-        var index = 0; //Currently keys are assumed to be in the same order as certs. //TODO: Make this less fragile
-        Logger.LogTrace("Entering foreach loop to remove existing certificate from opaque secret");
-        foreach (var cer in certs)
+        foreach (var sKey in existingSecret.Data.Keys)
         {
-            Logger.LogTrace("pkey index: " + index);
-            Logger.LogTrace("cer: " + cer);
-            Logger.LogDebug("Creating X509Certificate2 from certificate string.");
-            var sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
-            Logger.LogDebug("sCert.Thumbprint: " + sCert.Thumbprint);
+            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]); //TODO: Make this configurable.
+            Logger.LogTrace("existingCerts: " + existingCerts);
 
-            if (sCert.Thumbprint == alias)
+            Logger.LogDebug("Parsing existing private keys from secret into a string.");
+            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]); //TODO: Make this configurable.
+            // Logger.LogTrace("existingKeys: " + existingKeys);
+
+            Logger.LogDebug("Splitting existing certificates into an array.");
+            var certs = existingCerts.Split(",");
+            Logger.LogTrace("certs: " + certs);
+
+            Logger.LogDebug("Splitting existing private keys into an array.");
+            var keys = existingKeys.Split(",");
+            // Logger.LogTrace("keys: " + keys);
+
+            var index = 0; //Currently keys are assumed to be in the same order as certs. //TODO: Make this less fragile
+            Logger.LogTrace("Entering foreach loop to remove existing certificate from opaque secret");
+            foreach (var cer in certs)
             {
-                Logger.LogDebug("Found matching certificate thumbprint. Removing certificate from opaque secret.");
-                Logger.LogTrace("Calling CleanOpaqueStore()");
-                existingCerts = CleanOpaqueStore(existingCerts, cer);
-                Logger.LogTrace("Finished calling CleanOpaqueStore()");
-                Logger.LogTrace("Updated existingCerts: " + existingCerts);
-                Logger.LogTrace("Calling CleanOpaqueStore()");
+                Logger.LogTrace("pkey index: " + index);
+                Logger.LogTrace("cer: " + cer);
+                Logger.LogTrace("alias: " + alias);
+                if (string.IsNullOrEmpty(cer))
+                {
+                    Logger.LogDebug("Found empty certificate string. Skipping.");
+                    continue;
+                }
+                Logger.LogDebug("Creating X509Certificate2 from certificate string.");
+                var sCert = new X509Certificate2();
                 try
                 {
-                    existingKeys = CleanOpaqueStore(existingKeys, keys[index]);
-                }
-                catch (IndexOutOfRangeException)
+                    sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));    
+                } catch (Exception e)
                 {
-                    // Didn't find existing key for whatever reason so no need to delete.
-                    // Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
-                    Logger.LogWarning($"Unable to find corresponding private key in opaque secret for certificate {sCert.Thumbprint}. No need to remove.");
+                    Logger.LogWarning($"Unable to create X509Certificate2 from string in '{sKey}' field. Skipping. Error: {e.Message}");
+                    continue;
                 }
+                
+                Logger.LogDebug("sCert.Thumbprint: " + sCert.Thumbprint);
 
+                if (sCert.Thumbprint == alias)
+                {
+                    Logger.LogDebug("Found matching certificate thumbprint. Removing certificate from opaque secret.");
+                    Logger.LogTrace("Calling CleanOpaqueStore()");
+                    existingCerts = CleanOpaqueStore(existingCerts, cer);
+                    Logger.LogTrace("Finished calling CleanOpaqueStore()");
+                    Logger.LogTrace("Updated existingCerts: " + existingCerts);
+                    Logger.LogTrace("Calling CleanOpaqueStore()");
+                    try
+                    {
+                        existingKeys = CleanOpaqueStore(existingKeys, keys[index]);
+                    }
+                    catch (IndexOutOfRangeException)
+                    {
+                        // Didn't find existing key for whatever reason so no need to delete.
+                        // Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
+                        Logger.LogWarning($"Unable to find corresponding private key in opaque secret for certificate {sCert.Thumbprint}. No need to remove.");
+                    }
+
+                }
+                Logger.LogTrace("Incrementing pkey index...");
+                index++; //Currently keys are assumed to be in the same order as certs.
             }
-            Logger.LogTrace("Incrementing pkey index...");
-            index++; //Currently keys are assumed to be in the same order as certs.
+
+            Logger.LogDebug("Updating existing secret with new certificate data.");
+            existingSecret.Data[sKey] = Encoding.UTF8.GetBytes(existingCerts); //TODO: Make this configurable.
+            Logger.LogDebug("Updating existing secret with new key data.");
+            try
+            {
+                existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
+            }
+            catch (Exception)
+            {
+                Logger.LogWarning("Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");    
+            } //TODO: Make this configurable.
+            
+
+            // Update Kubernetes secret
+            Logger.LogDebug($"Updating secret {secretName} in namespace {namespaceName} on {GetHost()} with new certificate data.");
+            Logger.LogTrace("Calling ReplaceNamespacedSecret()");
         }
 
-        Logger.LogDebug("Updating existing secret with new certificate data.");
-        existingSecret.Data["certificates"] = Encoding.UTF8.GetBytes(existingCerts); //TODO: Make this configurable.
-        Logger.LogDebug("Updating existing secret with new key data.");
-        existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys); //TODO: Make this configurable.
-
-        // Update Kubernetes secret
-        Logger.LogDebug($"Updating secret {secretName} in namespace {namespaceName} on {GetHost()} with new certificate data.");
-        Logger.LogTrace("Calling ReplaceNamespacedSecret()");
         return Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
     }
 
@@ -663,104 +702,125 @@ public class KubeCertificateManagerClient
         return new[] { utfCert };
     }
 
-    public List<string> DiscoverSecrets(string[] allowedKeys, string ns = "default")
+    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default")
     {
         // Get a list of all namespaces
         Logger.LogTrace("Entered DiscoverSecrets()");
         V1NamespaceList namespaces;
         Logger.LogDebug("Attempting to list k8s namespaces from " + GetHost());
-        namespaces = ns == "all" ? Client.CoreV1.ListNamespace(labelSelector: $"name={ns}") : Client.CoreV1.ListNamespace();
-        Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
-        Logger.LogTrace("namespaces.Items: " + namespaces.Items);
+        var nsList = new string[] { };
 
-        var secretsList = new List<string>();
         var locations = new List<string>();
-
-
-        Logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
-        foreach (var nsObj in namespaces.Items)
+        nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
+        foreach (var nsLI in nsList)
         {
-            Logger.LogDebug("Attempting to list secrets in namespace " + nsObj.Metadata.Name);
-            // Get a list of all secrets in the namespace
-            Logger.LogTrace("Calling CoreV1.ListNamespacedSecret()");
-            var secrets = Client.CoreV1.ListNamespacedSecret(nsObj.Metadata.Name);
-            Logger.LogTrace("Finished calling CoreV1.ListNamespacedSecret()");
+            var secretsList = new List<string>();
+            namespaces = Client.CoreV1.ListNamespace();
+            Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
+            Logger.LogTrace("namespaces.Items: " + namespaces.Items);
 
-            Logger.LogDebug("Attempting to read each secret in namespace " + nsObj.Metadata.Name);
-            Logger.LogTrace("Entering foreach loop to read each secret in namespace " + nsObj.Metadata.Name);
-            foreach (var secret in secrets.Items)
+            Logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
+            foreach (var nsObj in namespaces.Items)
             {
-                if (secret.Type is "kubernetes.io/tls" or "Opaque")
+                if (nsLI != "all" && nsLI != nsObj.Metadata.Name)
                 {
-                    Logger.LogTrace("secret.Type: " + secret.Type);
-                    Logger.LogTrace("secret.Metadata.Name: " + secret.Metadata.Name);
-                    Logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
-                    var secretData = Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, nsObj.Metadata.Name);
-                    Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
-                    // Logger.LogTrace("secretData: " + secretData);
-                    Logger.LogTrace("Entering switch statement to check secret type.");
-                    switch (secret.Type)
+                    Logger.LogWarning("Skipping namespace " + nsObj.Metadata.Name + " because it does not match the namespace filter.");
+                    continue;
+                }
+                Logger.LogDebug("Attempting to list secrets in namespace " + nsObj.Metadata.Name);
+                // Get a list of all secrets in the namespace
+                Logger.LogTrace("Calling CoreV1.ListNamespacedSecret()");
+                var secrets = Client.CoreV1.ListNamespacedSecret(nsObj.Metadata.Name);
+                Logger.LogTrace("Finished calling CoreV1.ListNamespacedSecret()");
+
+                Logger.LogDebug("Attempting to read each secret in namespace " + nsObj.Metadata.Name);
+                Logger.LogTrace("Entering foreach loop to read each secret in namespace " + nsObj.Metadata.Name);
+                foreach (var secret in secrets.Items)
+                {
+                    if (secret.Type is "kubernetes.io/tls" or "Opaque")
                     {
-                        case "kubernetes.io/tls":
-                            Logger.LogDebug("Attempting to parse TLS certificate from secret");
-                            var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
-                            Logger.LogTrace("certData: " + certData);
-
-                            Logger.LogDebug("Attempting to parse TLS key from secret");
-                            var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
-
-                            Logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
-                            _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
-
-                            var cLocation = $"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
-                            Logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
-                            locations.Add(cLocation);
-                            secretsList.Add(certData);
-                            break;
-                        case "Opaque":
-                            // Check if a 'certificates' key exists
-                            Logger.LogDebug("Attempting to parse certificate from opaque secret");
-                            Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
-                            foreach (var allowedKey in allowedKeys)
-                            {
-                                Logger.LogTrace("allowedKey: " + allowedKey);
-                                try
+                        Logger.LogTrace("secret.Type: " + secret.Type);
+                        Logger.LogTrace("secret.Metadata.Name: " + secret.Metadata.Name);
+                        Logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
+                        var secretData = Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, nsObj.Metadata.Name);
+                        Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
+                        // Logger.LogTrace("secretData: " + secretData);
+                        Logger.LogTrace("Entering switch statement to check secret type.");
+                        switch (secret.Type)
+                        {
+                            case "kubernetes.io/tls":
+                                if (secType != "kubernetes.io/tls")
                                 {
-                                    if (!secretData.Data.ContainsKey(allowedKey)) continue;
+                                    Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
+                                    continue;
+                                }
+                                Logger.LogDebug("Attempting to parse TLS certificate from secret");
+                                var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
+                                Logger.LogTrace("certData: " + certData);
 
-                                    Logger.LogDebug("Attempting to parse certificate from opaque secret");
-                                    var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
-                                    Logger.LogTrace("certs: " + certs);
-                                    // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
-                                    Logger.LogTrace("Splitting certs into array by ','.");
-                                    var certsArray = certs.Split(",");
-                                    // var keysArray = keys.Split(",");
-                                    var index = 0;
-                                    foreach (var cer in certsArray)
+                                Logger.LogDebug("Attempting to parse TLS key from secret");
+                                var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
+
+                                Logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
+                                _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
+
+                                var cLocation = $"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
+                                Logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
+                                locations.Add(cLocation);
+                                secretsList.Add(certData);
+                                break;
+                            case "Opaque":
+                                if (secType != "Opaque")
+                                {
+                                    Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
+                                    continue;
+                                }
+                                // Check if a 'certificates' key exists
+                                Logger.LogDebug("Attempting to parse certificate from opaque secret");
+                                Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
+                                foreach (var allowedKey in allowedKeys)
+                                {
+                                    Logger.LogTrace("allowedKey: " + allowedKey);
+                                    try
                                     {
-                                        Logger.LogTrace("cer: " + cer);
-                                        Logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
-                                        _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
+                                        if (secretData.Data == null || !secretData.Data.ContainsKey(allowedKey)) continue;
 
-                                        Logger.LogDebug("Adding certificate to list of discovered certificates");
-                                        secretsList.Append(cer);
-                                        index++;
+                                        Logger.LogDebug("Attempting to parse certificate from opaque secret");
+                                        var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
+                                        Logger.LogTrace("certs: " + certs);
+                                        // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
+                                        Logger.LogTrace("Splitting certs into array by ','.");
+                                        var certsArray = certs.Split(",");
+                                        // var keysArray = keys.Split(",");
+                                        var index = 0;
+                                        foreach (var cer in certsArray)
+                                        {
+                                            Logger.LogTrace("cer: " + cer);
+                                            Logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
+                                            _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
+
+                                            Logger.LogDebug("Adding certificate to list of discovered certificates");
+                                            secretsList.Append(cer);
+                                            index++;
+                                        }
+                                        locations.Add($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
                                     }
-                                    locations.Add($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                                    catch (Exception e)
+                                    {
+                                        Logger.LogError("Error parsing certificate from opaque secret: " + e.Message);
+                                        Logger.LogTrace(e.ToString());
+                                        Logger.LogTrace(e.StackTrace);
+                                    }
                                 }
-                                catch (Exception e)
-                                {
-                                    Logger.LogError("Error parsing certificate from opaque secret: " + e.Message);
-                                    Logger.LogTrace(e.ToString());
-                                    Logger.LogTrace(e.StackTrace);
-                                }
-                            }
-                            Logger.LogTrace("Exiting foreach loop to check if any allowed keys exist in secret");
-                            break;
+                                Logger.LogTrace("Exiting foreach loop to check if any allowed keys exist in secret");
+                                break;
+                        }
                     }
                 }
             }
+
         }
+
         Logger.LogTrace("locations: " + locations);
         Logger.LogTrace("Exiting DiscoverSecrets()");
         return locations;
@@ -797,18 +857,18 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("Entered GenerateCertificateRequest()");
         var sanBuilder = new SubjectAlternativeNameBuilder();
         Logger.LogDebug($"Building IP and SAN lists for CSR {name}");
-        
+
         foreach (var ip in ips) sanBuilder.AddIpAddress(ip);
         foreach (var san in sans) sanBuilder.AddDnsName(san);
 
         Logger.LogTrace("sanBuilder: " + sanBuilder);
-        
+
         Logger.LogTrace("Setting DN to CN=" + name);
         var distinguishedName = new X500DistinguishedName(name);
 
         Logger.LogDebug("Generating private key and CSR");
         using var rsa = RSA.Create(4096); // TODO: Make key size and type configurable 
-        
+
         Logger.LogDebug("Exporting private key and public key");
         var pkey = rsa.ExportPkcs8PrivateKey();
         var pubkey = rsa.ExportRSAPublicKey();

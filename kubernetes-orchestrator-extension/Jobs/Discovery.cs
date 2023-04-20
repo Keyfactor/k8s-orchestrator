@@ -8,6 +8,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -76,13 +77,13 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     Logger.LogTrace("Entering case: CertStores.K8STLSSecr.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "tls");
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "kubernetes.io/tls", string.Join(",",namespaces));
                     break;
                 case "CertStores.K8SSecret.Discovery":
                     Logger.LogTrace("Entering case: CertStores.K8SSecret.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(OpaqueAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: opaque");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "opaque");
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "Opaque",string.Join(",",namespaces));
                     break;
                 case "CertStores.K8SCert.Discovery":
                     Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
@@ -99,7 +100,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             Logger.LogError("Discovery job has failed due to an unknown error.");
             Logger.LogError(ex.Message);
             Logger.LogTrace(ex.StackTrace);
-            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
+            Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
 
@@ -108,9 +109,14 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //Sends store locations back to KF command where they can be approved or rejected
             Logger.LogInformation("Submitting discovered locations to Keyfactor Command...");
             Logger.LogDebug("Discovery locations: " + string.Join(",", locations));
-            submitDiscovery.Invoke(locations);
+            submitDiscovery.Invoke(locations.Distinct().ToArray());
             //Status: 2=Success, 3=Warning, 4=Error
-            return SuccessJob(config.JobHistoryId);
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = config.JobHistoryId,
+                FailureMessage = "Discovered the following locations: " + string.Join(",\n", locations),
+            };
         }
         catch (Exception ex)
         {
@@ -119,7 +125,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             Logger.LogError("Discovery job invoke has failed due to an unknown error." + ex.Message);
             Logger.LogTrace(ex.ToString());
             Logger.LogTrace(ex.StackTrace);
-            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
+            Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }

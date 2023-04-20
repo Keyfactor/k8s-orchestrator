@@ -1,43 +1,43 @@
 ﻿{
 	"extensions": {
 		"Keyfactor.Orchestrators.Extensions.IOrchestratorJobExtension": {
-			"CertStores.K8SSECRET.Inventory": {
+			"CertStores.K8SSecret.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
 			},
-			"CertStores.K8SSECRET.Discovery": {
+			"CertStores.K8SSecret.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
 			},
-			"CertStores.K8SSECRET.Management": {
+			"CertStores.K8SSecret.Management": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Management"
 			},
-			"CertStores.K8SSECRET.Reenrollment": {
+			"CertStores.K8SSecret.Reenrollment": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
 			},
-			"CertStores.K8STLSSECR.Inventory": {
+			"CertStores.K8STLSSecr.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
 			},
-			"CertStores.K8STLSSECR.Discovery": {
+			"CertStores.K8STLSSecr.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
 			},
-			"CertStores.K8STLSSECR.Management": {
+			"CertStores.K8STLSSecr.Management": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Management"
 			},
-			"CertStores.K8STLSSECR.Reenrollment": {
+			"CertStores.K8STLSSecr.Reenrollment": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
 			},
-			"CertStores.K8SCERT.Inventory": {
+			"CertStores.K8SCert.Inventory": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
 			},
-			"CertStores.K8SCERT.Discovery": {
+			"CertStores.K8SCert.Discovery": {
 				"assemblypath": "Keyfactor.Orchestrators.K8S.dll",
 				"TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
 			}

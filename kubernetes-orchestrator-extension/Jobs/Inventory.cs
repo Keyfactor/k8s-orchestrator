@@ -130,8 +130,16 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certDataErrorMsg =
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on host '{KubeClient.GetHost()}'.";
             Logger.LogError(certDataErrorMsg);
+            var inventoryItems = new List<CurrentInventoryItem>();
+            submitInventory.Invoke(inventoryItems);
             Logger.LogTrace("Exiting HandleCertificate for job id " + jobId + "...");
-            return FailJob(certDataErrorMsg, jobId);
+            // return FailJob(certDataErrorMsg, jobId);
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = jobId,
+                FailureMessage = certDataErrorMsg
+            };
         }
         catch (Exception e)
         {
@@ -275,7 +283,15 @@ public class Inventory : JobBase, IInventoryJobExtension
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on host '{KubeClient.GetHost()}'.";
             Logger.LogError(certDataErrorMsg);
             Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
-            return FailJob(certDataErrorMsg, jobId);
+            // return FailJob(certDataErrorMsg, jobId);
+            var inventoryItems = new List<CurrentInventoryItem>();
+            submitInventory.Invoke(inventoryItems);
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = jobId,
+                FailureMessage = certDataErrorMsg
+            };
         }
         catch (Exception e)
         {
@@ -360,10 +376,12 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certDataErrorMsg =
                 $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
             Logger.LogError(certDataErrorMsg);
+            var inventoryItems = new List<CurrentInventoryItem>();
+            submitInventory.Invoke(inventoryItems);
             Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
             return new JobResult
             {
-                Result = OrchestratorJobStatusJobResult.Failure,
+                Result = OrchestratorJobStatusJobResult.Success,
                 JobHistoryId = jobId,
                 FailureMessage = certDataErrorMsg
             };

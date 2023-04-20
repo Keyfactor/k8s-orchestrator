@@ -6,6 +6,7 @@
 // and limitations under the License.
 
 using System;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using k8s.Models;
 using Keyfactor.Logging;
@@ -96,7 +97,7 @@ public class Management : JobBase, IManagementJobExtension
             Logger.LogError(ex.Message);
             Logger.LogTrace(ex.StackTrace);
             //Status: 2=Success, 3=Warning, 4=Error
-            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
+            Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
@@ -130,9 +131,22 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
         
-        if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+        try
         {
-            return creatEmptySecret("opaque");
+            if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+            {
+                return creatEmptySecret("opaque");
+            }    
+        } catch (Exception ex)
+        {
+            if (!string.IsNullOrEmpty(certAlias))
+            {
+                Logger.LogWarning("This is fine");
+            }
+            else
+            {
+                Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
+            }
         }
         
         Logger.LogDebug("Secret type is 'opaque', so extracting private key from certificate...");
@@ -196,6 +210,21 @@ public class Management : JobBase, IManagementJobExtension
                         : "Successfully extracted private key from ManagementConfig for certificate " + certAlias);
                 }
             }
+            else
+            {
+                keyBytes = GetKeyBytes(certObj, keyPasswordStr);
+                if (keyBytes != null)
+                {
+                    Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
+                    var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+                    keyPems = new[] { kemPem };
+                    Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
+                }
+                else
+                {
+                    Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
+                }
+            }
 
             Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
             var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
@@ -228,11 +257,25 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
-        
-        if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+
+        try
         {
-            return creatEmptySecret("tls");
+            if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+            {
+                return creatEmptySecret("tls");
+            }    
+        } catch (Exception ex)
+        {
+            if (!string.IsNullOrEmpty(certAlias))
+            {
+                Logger.LogWarning("This is fine");
+            }
+            else
+            {
+                Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
+            }
         }
+        
 
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
         var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
@@ -311,6 +354,7 @@ public class Management : JobBase, IManagementJobExtension
             
             Logger.LogTrace($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
             certObj = new X509Certificate2(certBytes, certPassword);
+            certAlias = certAlias == certObj.Thumbprint ? certAlias : certObj.Thumbprint;
             Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         }
 
@@ -373,6 +417,20 @@ public class Management : JobBase, IManagementJobExtension
                 jobCert.Alias
             );
             Logger.LogTrace($"REMOVE '{kubeHost}/{KubeNamespace}/{KubeSecretType}/{KubeSecretName}' response from Kubernetes:\n\t{response}");
+        }
+        catch (k8s.Autorest.HttpOperationException rErr)
+        {
+            if (rErr.Message.Contains("NotFound")){
+                var certDataErrorMsg =
+                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'. Assuming empty inventory.";
+                return new JobResult
+                {
+                    Result = OrchestratorJobStatusJobResult.Success,
+                    JobHistoryId = config.JobHistoryId,
+                    FailureMessage = certDataErrorMsg
+                };
+            }
+            return FailJob(rErr.Message, config.JobHistoryId);
         }
         catch (Exception e)
         {
