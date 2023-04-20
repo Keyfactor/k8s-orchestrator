@@ -57,7 +57,6 @@ The secrets that this orchestrator extension supports for use with a PAM Provide
 |----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | ServerUsername | Must be set to `kubeconfig` if used. If you do not set it to `kubeconfig` the `ServerPassword` will be ignored.                                                                                                                                                                                                             |
 | ServerPassword | Must be set if `ServerUsername` is provided. The service account credentials for the Universal Orchestrator to use. Must be in `kubeconfig` format. For more information review [Kubernetes service account](https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/README.md) docs and scripts. |
-| KubeSvcCreds   | This overrides the `ServerPassword` value. If set, the Universal Orchestrator will use the service account credentials from the specified Kubernetes secret.                                                                                                                                                                |
   
 
 It is not necessary to use a PAM Provider for all of the secrets available above. If a PAM Provider should not be used, simply enter in the actual value to be used, as normal.
@@ -531,11 +530,11 @@ certificate stores and scheduling Discovery jobs in Keyfactor Command.
 ## Certificate Inventory
 In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
-| Store Type | Valid Secret Keys                                                                   |
-|------------|-------------------------------------------------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`                                                                 |
-| K8SSecret  | `tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
-| K8SCert    | `cert`, `csr`                                                                       |
+| Store Type | Valid Secret Keys                                                                             |
+|------------|-----------------------------------------------------------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`                                                                           |
+| K8SSecret  | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
+| K8SCert    | `cert`, `csr`                                                                                 |
 
 ## Certificate Management
 Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
