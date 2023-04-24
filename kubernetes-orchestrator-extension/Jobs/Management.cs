@@ -261,7 +261,8 @@ public class Management : JobBase, IManagementJobExtension
 
         try
         {
-            if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+            //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
+            if (string.IsNullOrEmpty(certAlias))
             {
                 return creatEmptySecret("tls");
             }
@@ -324,7 +325,15 @@ public class Management : JobBase, IManagementJobExtension
             append,
             overwrite
         );
-        Logger.LogTrace(createResponse.ToString());
+        if (createResponse == null)
+        {
+            Logger.LogError("createResponse is null");
+        }
+        else
+        {
+            Logger.LogTrace(createResponse.ToString());    
+        }
+        
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;

@@ -173,6 +173,87 @@ public abstract class JobBase
         Logger.LogTrace($"Overwrite: {Overwrite.ToString()}");
     }
 
+
+    public string resolveStorePath(string spath)
+    {
+        Logger.LogTrace("Entered resolveStorePath()");
+        Logger.LogTrace("Passed Store Path: " + spath);
+        
+        Logger.LogTrace("Attempting to split storepath by '/'");
+        var sPathParts = spath.Split("/");
+        Logger.LogTrace("Split count: " + sPathParts.Length);
+        
+        switch (sPathParts.Length)
+        {
+            case 1:
+                Logger.LogTrace("Store path is 1 part assuming that it is the secret name");
+                if (string.IsNullOrEmpty(KubeSecretName))
+                {
+                    Logger.LogTrace("No KubeSecretName set. Setting KubeSecretName to store path.");
+                    KubeSecretName = sPathParts[0];
+                }
+                break;
+            case 2:
+                Logger.LogTrace("Store path is 2 parts assuming that it is the namespace/secret name");
+                var kNs = sPathParts[0];
+                var kSn = sPathParts[1];
+                if (string.IsNullOrEmpty(KubeNamespace))
+                {
+                    Logger.LogTrace("No KubeNamespace set. Setting KubeNamespace to store path.");
+                    KubeNamespace = kNs;
+                }
+                if (string.IsNullOrEmpty(KubeSecretName))
+                {
+                    Logger.LogTrace("No KubeSecretName set. Setting KubeSecretName to store path.");
+                    KubeSecretName = kSn;
+                }
+                break;
+            case 3:
+                Logger.LogTrace("Store path is 3 parts assuming that it is the cluster/namespace/secret name");
+                var kH = sPathParts[0];
+                var kN = sPathParts[1];
+                var kS = sPathParts[2];
+                if (kN == "secret" || kN == "tls" || kN == "certificate")
+                {
+                    Logger.LogTrace("Store path is 3 parts and the second part is a secret type. Assuming that it is the namespace/secret name");
+                    kN = sPathParts[0];
+                    kS = sPathParts[1];
+                }
+                if (string.IsNullOrEmpty(KubeNamespace))
+                {
+                    Logger.LogTrace("No KubeNamespace set. Setting KubeNamespace to store path.");
+                    KubeNamespace = kN;
+                }
+                if (string.IsNullOrEmpty(KubeSecretName))
+                {
+                    Logger.LogTrace("No KubeSecretName set. Setting KubeSecretName to store path.");
+                    KubeSecretName = kS;
+                }
+                break;
+            case 4:
+                Logger.LogTrace("Store path is 4 parts assuming that it is the cluster/namespace/secret type/secret name");
+                var kHN = sPathParts[0];
+                var kNN = sPathParts[1];
+                var kST = sPathParts[2];
+                var kSN = sPathParts[3];
+                if (string.IsNullOrEmpty(KubeNamespace))
+                {
+                    Logger.LogTrace("No KubeNamespace set. Setting KubeNamespace to store path.");
+                    KubeNamespace = kNN;
+                }
+                if (string.IsNullOrEmpty(KubeSecretName))
+                {
+                    Logger.LogTrace("No KubeSecretName set. Setting KubeSecretName to store path.");
+                    KubeSecretName = kSN;
+                }
+                break;
+            default:
+                Logger.LogWarning("Unable to resolve store path. Please check the store path and try again.");
+                break;
+        }
+        return GetStorePath();
+    }
+    
     private void InitializeProperties(dynamic storeProperties)
     {
         Logger.LogTrace("Entered InitializeProperties()");
@@ -197,37 +278,7 @@ public abstract class JobBase
             KubeSecretType = "";
             KubeSvcCreds = "";
         }
-
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogDebug("KubeSecretName is empty. Setting KubeSecretName from StorePath.");
-            Logger.LogTrace("StorePath: " + StorePath);
-            Logger.LogTrace("Attempting to split StorePath on / and use last element.");
-            KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
-        }
-
-        if (string.IsNullOrEmpty(KubeNamespace) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogDebug("KubeNamespace is empty. Setting KubeNamespace from StorePath.");
-            Logger.LogTrace("StorePath: " + StorePath);
-            Logger.LogTrace("Attempting to split StorePath on / and use first element.");
-            KubeNamespace = StorePath.Split("/").First();
-            Logger.LogTrace("KubeNamespace: " + KubeNamespace);
-        }
-
-        Logger.LogDebug($"KubeNamespace: {KubeNamespace}");
-        Logger.LogDebug($"KubeSecretName: {KubeSecretName}");
-        Logger.LogDebug($"KubeSecretType: {KubeSecretType}");
-
-        if (string.IsNullOrEmpty(KubeSecretName))
-        {
-            // KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogWarning("KubeSecretName is empty. Setting KubeSecretName to StorePath.");
-            KubeSecretName = StorePath;
-            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
-        }
-
+        
         //check if storeProperties contains ServerUsername key
 
         if (string.IsNullOrEmpty(ServerUsername))
@@ -251,6 +302,10 @@ public abstract class JobBase
             {
                 Logger.LogDebug("Attempting to resolve ServerPassword from store properties or PAM provider.");
                 ServerPassword = storeProperties.ContainsKey("ServerPassword") ? (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]) : "";
+                if (string.IsNullOrEmpty(ServerPassword))
+                {
+                    ServerPassword = (string)ResolvePamField("ServerPassword",storeProperties["ServerPassword"]);    
+                }
                 // Logger.LogTrace("ServerPassword: " + ServerPassword);
             }
             catch (Exception e)
@@ -279,51 +334,94 @@ public abstract class JobBase
             // logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
         }
 
-        if (string.IsNullOrEmpty(KubeSvcCreds))
-        {
-            const string credsErr =
-                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
-            Logger.LogError(credsErr);
-            throw new AuthenticationException(credsErr);
-        }
+        // if (string.IsNullOrEmpty(KubeSvcCreds))
+        // {
+        //     const string credsErr =
+        //         "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
+        //     Logger.LogError(credsErr);
+        //     throw new AuthenticationException(credsErr);
+        // }
 
         KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
 
         KubeHost = KubeClient.GetHost();
+        KubeCluster = KubeClient.GetClusterName();
+        
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogDebug("KubeSecretName is empty. Attempting to set KubeSecretName from StorePath.");
+            resolveStorePath(StorePath);
+        }
+
+        if (string.IsNullOrEmpty(KubeNamespace) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogDebug("KubeNamespace is empty. Attempting to set KubeNamespace from StorePath.");
+            resolveStorePath(StorePath);
+        }
+        
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogDebug("KubeNamespace is empty. Setting KubeNamespace to 'default'.");
+            KubeNamespace = "default";
+        }
+
+        Logger.LogDebug($"KubeNamespace: {KubeNamespace}");
+        Logger.LogDebug($"KubeSecretName: {KubeSecretName}");
+        Logger.LogDebug($"KubeSecretType: {KubeSecretType}");
+
+        if (string.IsNullOrEmpty(KubeSecretName))
+        {
+            // KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogWarning("KubeSecretName is empty. Setting KubeSecretName to StorePath.");
+            KubeSecretName = StorePath;
+            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        }
+        
     }
+
+    public string KubeCluster { get; set; }
 
     public string GetStorePath()
     {
         Logger.LogTrace("Entered GetStorePath()");
-        var secretType = KubeSecretType.ToLower();
-        Logger.LogTrace("secretType: " + secretType);
-        Logger.LogTrace("Entered switch statement based on secretType.");
-        switch (secretType)
+        try
         {
-            case "secret":
-            case "opaque":
-            case "tls":
-            case "tls_secret":
-                Logger.LogDebug("Kubernetes secret resource type. Setting secretType to 'secret'.");
-                secretType = "secret";
-                break;
-            case "cert":
-            case "certs":
-            case "certificate":
-            case "certificates":
-                Logger.LogDebug("Kubernetes certificate resource type. Setting secretType to 'certificate'.");
-                secretType = "certificate";
-                break;
-            default:
-                Logger.LogWarning("Unknown secret type. Will use value provided.");
-                Logger.LogTrace($"secretType: {secretType}");
-                break;
+            var secretType = KubeSecretType.ToLower();
+            Logger.LogTrace("secretType: " + secretType);
+            Logger.LogTrace("Entered switch statement based on secretType.");
+            switch (secretType)
+            {
+                case "secret":
+                case "opaque":
+                case "tls":
+                case "tls_secret":
+                    Logger.LogDebug("Kubernetes secret resource type. Setting secretType to 'secret'.");
+                    secretType = "secret";
+                    break;
+                case "cert":
+                case "certs":
+                case "certificate":
+                case "certificates":
+                    Logger.LogDebug("Kubernetes certificate resource type. Setting secretType to 'certificate'.");
+                    secretType = "certificate";
+                    break;
+                default:
+                    Logger.LogWarning("Unknown secret type. Will use value provided.");
+                    Logger.LogTrace($"secretType: {secretType}");
+                    break;
+            }
+
+            Logger.LogTrace("Building StorePath.");
+            var storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
+            Logger.LogDebug("Returning StorePath: " + storePath);
+            return storePath;
+        }
+        catch (Exception e)
+        {
+            Logger.LogError("Unknown error constructing canonical store path.");
+            return StorePath;
         }
         
-        Logger.LogTrace("Building StorePath.");
-        StorePath = $"{KubeHost}/{KubeNamespace}/{secretType}/{KubeSecretName}";
-        Logger.LogDebug("Returning StorePath: " + StorePath);
-        return StorePath;
     }
 
     protected string ResolvePamField(string name, string value)

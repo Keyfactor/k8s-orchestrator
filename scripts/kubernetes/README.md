@@ -25,9 +25,12 @@ Please note that this is only an example and you may need to modify the script a
 
 ## Quickstart
 Assuming you've got `kubectl` configured to connect to your Kubernetes cluster and `jq` installed, you can run the following command to create the service account, role and role binding.
+
+**NOTE**: If you have more than one cluster, you may need to change the index of the array in the script above to match the cluster you want to use. Assumes index is 0
 ```bash
 bash <(curl -s https://raw.githubusercontent.com/Keyfactor/kubernetes-orchestrator/main/scripts/kubernetes/create_service_account.sh)
 ```
+**NOTE**: If you have more than one cluster, you may need to change the index of the array in the script above to match the cluster you want to use. Assumes index is 0
 
 ## Manual Steps
 If you prefer to manually create and/or modify the service account, role and role binding, you can follow the steps below.

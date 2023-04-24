@@ -30,15 +30,37 @@ public class KubeCertificateManagerClient
 {
 
     internal protected ILogger Logger;
+    private string ConfigJson { get; set; }
+    private K8SConfiguration ConfigObj { get; set; }
     public KubeCertificateManagerClient(string kubeconfig)
     {
         Logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod().DeclaringType);
         Client = GetKubeClient(kubeconfig);
-
+        ConfigJson = kubeconfig;
+        try
+        {
+            ConfigObj = ParseKubeConfig(kubeconfig);    
+        } catch (Exception ex)
+        {
+            ConfigObj = new K8SConfiguration() { };
+        }
     }
 
     private IKubernetes Client { get; set; }
 
+    public string GetClusterName()
+    {
+        Logger.LogTrace("Entered GetClusterName()");
+        try
+        {
+            return ConfigObj.Clusters.FirstOrDefault()?.Name;    
+        } catch (Exception ex)
+        {
+            return GetHost();
+        }
+        
+    }
+    
     public string GetHost()
     {
         Logger.LogTrace("Entered GetHost()");
@@ -640,6 +662,7 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("csr.Items.Count: " + csr.Items.Count);
 
         Logger.LogTrace("Entering foreach loop to add certificate locations to list.");
+        var clusterName = GetClusterName(); 
         foreach (var cr in csr)
         {
             Logger.LogTrace("cr.Metadata.Name: " + cr.Metadata.Name);
@@ -669,12 +692,7 @@ public class KubeCertificateManagerClient
             Logger.LogTrace("certName: " + certName);
 
             Logger.LogDebug($"Adding certificate {certName} discovered location to list.");
-            locations.Add($"certificate/{certName}");
-            // else
-            // {
-            //     // locations.Add(utfCsr);
-            //     continue;
-            // }
+            locations.Add($"{clusterName}/certificate/{certName}");
         }
 
         Logger.LogDebug("Completed discovering certificates from k8s certificate resources.");
@@ -746,6 +764,9 @@ public class KubeCertificateManagerClient
                         Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
                         // Logger.LogTrace("secretData: " + secretData);
                         Logger.LogTrace("Entering switch statement to check secret type.");
+                        
+                        var clusterName = GetClusterName() ?? GetHost();
+                        
                         switch (secret.Type)
                         {
                             case "kubernetes.io/tls":
@@ -763,8 +784,8 @@ public class KubeCertificateManagerClient
 
                                 Logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
                                 _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
-
-                                var cLocation = $"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
+                                
+                                var cLocation = $"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
                                 Logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
                                 locations.Add(cLocation);
                                 secretsList.Add(certData);
@@ -803,7 +824,7 @@ public class KubeCertificateManagerClient
                                             secretsList.Append(cer);
                                             index++;
                                         }
-                                        locations.Add($"{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                                        locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
                                     }
                                     catch (Exception e)
                                     {

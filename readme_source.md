@@ -19,9 +19,9 @@
     * [Security Considerations](#security-considerations)
         + [Service Account Setup](#service-account-setup)
     * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
-    * [Certificate Store Discovery](#certificate-store-discovery)
     * [Certificate Store Types](#certificate-store-types)
         + [Configuration Information](#configuration-information)
+            - [Store Path](#note-about-storepath)
             - [Common Values](#common-values)
                 * [UI Basic Tab](#ui-basic-tab)
                 * [UI Advanced Tab](#ui-advanced-tab)
@@ -132,7 +132,7 @@ must have the `tls.crt` and `tls.key` fields and may only contain a single key a
 ## Versioning
 
 The version number of a the Kubernetes Orchestrator Extension can be verified by right clicking on the
-`Kube.dll` file in the `<path>/<to>/<orchstrator install>/Extensions/Kubernetes` installation folder,
+`Kyefactor.Orchestrators.K8S.dll` file in the `<path>/<to>/<orchstrator install>/Extensions/Kubernetes` installation folder,
 selecting Properties, and then clicking on the Details tab.
 
 ## Security Considerations
@@ -207,12 +207,6 @@ subjects:
    certificates.  See the [Certificate Store Discovery](#certificate-store-discovery) section later in this README for more
    information.
 
-## Certificate Store Discovery
-**NOTE:** To use disovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` checkbox MUST be checked. 
-Otherwise you will not be able to provide credentials to the discovery job.
-
-The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate stores with existing certificates.  To run a discovery job, follow these steps:
-
 ## Certificate Store Types
 
 When setting up the certificate store types you wish the Kubernetes Orchestrator Extension to
@@ -225,6 +219,16 @@ the creation of the desired store types.
 
 ### Configuration Information
 Below is a table of the common values that should be used for all certificate store types.
+
+#### Note about StorePath
+A Keyfactor Command certificate store `StorePath` for the K8S orchestrator extension can follow the following formats:
+
+| Pattern                                       | Description                                                                                                                                    |
+|-----------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `secretName`                                  | The name of the secret to use. This assumes `KubeNamespace` is defined or `default` and will be the `secret` or `cert` name on k8s.            |
+| `namespace/secretName`                        | If `KubeNamespace` or `KubeSecretName` are not set, then the path will be split by `/` and the values will be parsed according to the pattern. |
+| `clusterName/namespace/secretName`            | Same as above, clusterName is purely informational                                                                                             |
+| `clusterName/namespace/secretType/secretName` | Considered a `full` path, this is what discovery will return as `StorePath`                                                                    |
 
 #### Common Values
 ##### UI Basic Tab
@@ -249,11 +253,11 @@ Below is a table of the common values that should be used for all certificate st
 | PFX Password Style    |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                                                                                                                                                                           |
-|----------------|----------------------|--------|----------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside.                                                                                                                                                                                                                       |
-| KubeSecretName | Kube Secret Name     | String |          | none          | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                                                                                                                                           |
-| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                                                                                                                                           |
+| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                 |
+|----------------|----------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------|
+| KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside. This will override the value parsed from `storepath`.       |
+| KubeSecretName | Kube Secret Name     | String |          | none          | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                 |
+| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -294,12 +298,12 @@ kfutil store-types create --name K8SSecret
 ![k8ssecret_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_basic.png)
 
 ##### UI Advanced Tab
-| Field Name | Required | Value     |
-|------------|----------|-----------|
-| Store Path Type |          | Freeform  |
+| Field Name            | Required | Value     |
+|-----------------------|----------|-----------|
+| Store Path Type       |          | Freeform  |
 | Supports Custom Alias |          | Forbidden |
-| Private Key Handling |          | Optional  |
-| PFX Password Style |          | Default   |
+| Private Key Handling  |          | Optional  |
+| PFX Password Style    |          | Default   |
 
 ![k8ssecret_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_advanced.png)
 
@@ -344,12 +348,12 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_basic.png)
 
 ##### UI Advanced Tab
-| Field Name | Required | Value     |
-|------------|----------|-----------|
-| Store Path Type |          | Freeform  |
+| Field Name            | Required | Value     |
+|-----------------------|----------|-----------|
+| Store Path Type       |          | Freeform  |
 | Supports Custom Alias |          | Forbidden |
-| Private Key Handling |          | Optional  |
-| PFX Password Style |          | Default   |
+| Private Key Handling  |          | Optional  |
+| PFX Password Style    |          | Default   |
 
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
@@ -392,12 +396,12 @@ kfutil store-types create --name K8SCert
 ![k8scert_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_basic.png)
 
 ##### UI Advanced Tab
-| Field Name | Required | Value     |
-|------------|----------|-----------|
-| Store Path Type |          | Freeform  |
-| Supports Custom Alias |          | Forbidden |
-| Private Key Handling |          | Forbidden  |
-| PFX Password Style |          | Default   |
+| Field Name            | Required | Value      |
+|-----------------------|----------|------------|
+| Store Path Type       |          | Freeform   |
+| Supports Custom Alias |          | Forbidden  |
+| Private Key Handling  |          | Forbidden  |
+| PFX Password Style    |          | Default    |
 
 ![k8scert_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_advanced.png)
 
@@ -419,6 +423,10 @@ Please refer to the Keyfactor Command Reference Guide for information on creatin
 certificate stores and scheduling Discovery jobs in Keyfactor Command.
 
 ## Certificate Discovery
+**NOTE:** To use disovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` checkbox MUST be checked.
+Otherwise you will not be able to provide credentials to the discovery job.
+
+The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate stores with existing certificates.  To run a discovery job, follow these steps:
 1. Click on the "Locations > Certificate Stores" menu item.
 2. Click the "Discover" tab.
 3. Click the "Schedule" button.
