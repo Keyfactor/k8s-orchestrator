@@ -49,6 +49,7 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger = LogHandler.GetClassLogger(GetType());
         InitializeStore(config);
+        var jobCertObj = InitJobCertificate(config);
         Logger.LogInformation("Begin MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId);
         Logger.LogInformation($"Management for store type: {config.Capability}");
 
@@ -58,6 +59,8 @@ public class Management : JobBase, IManagementJobExtension
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
         // Logger.LogTrace("CertPassword: " + certPassword);
         Logger.LogDebug(string.IsNullOrEmpty(certPassword) ? "CertPassword is empty" : "CertPassword is not empty");
+        
+        
 
         //Convert properties string to dictionary
         try
@@ -68,7 +71,7 @@ public class Management : JobBase, IManagementJobExtension
                 case CertStoreOperationType.Create:
                     //OperationType == Add - Add a certificate to the certificate store passed in the config object
                     Logger.LogInformation($"Processing Management-{config.OperationType.GetType()} job for certificate '{config.JobCertificate.Alias}'...");
-                    return HandleCreateOrUpdate(KubeSecretType, config, certPassword, Overwrite);
+                    return HandleCreateOrUpdate(KubeSecretType, config, jobCertObj, Overwrite);
                 case CertStoreOperationType.Remove:
                     Logger.LogInformation($"Processing Management-{config.OperationType.GetType()} job for certificate '{config.JobCertificate.Alias}'...");
                     return HandleRemove(config);
@@ -124,7 +127,7 @@ public class Management : JobBase, IManagementJobExtension
         return createResponse;
     }
 
-    private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
+    private V1Secret HandleOpaqueSecret(string certAlias, K8SJobCertificate certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -133,7 +136,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("append: " + append);
         
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
-        var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+        var pemString = certObj.CertPEM;
         Logger.LogTrace("pemString: " + pemString);
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
@@ -152,11 +155,11 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
 
         Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
-        var keyBytes = GetKeyBytes(certObj, keyPasswordStr);
+        var keyBytes = certObj.CertBytes;
         if (keyBytes != null)
         {
             Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-            var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+            var kemPem = certObj.PrivateKeyPEM;
             keyPems = new[] { kemPem };
             Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
         }
@@ -320,7 +323,7 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
-    private V1Secret HandleTlsSecret(string certAlias, X509Certificate2 certObj, string certPassword, bool overwrite = false, bool append = true)
+    private V1Secret HandleTlsSecret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true)
     {
         Logger.LogTrace("Entered HandleTlsSecret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -350,7 +353,7 @@ public class Management : JobBase, IManagementJobExtension
 
 
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
-        var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+        var pemString = certObj.CertPEM;
         Logger.LogTrace("pemString: " + pemString);
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
@@ -369,11 +372,11 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
 
         Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
-        var keyBytes = GetKeyBytes(certObj, certPassword);
+        var keyBytes = certObj.PrivateKeyBytes;
         if (keyBytes != null)
         {
             Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-            var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+            var kemPem = certObj.PrivateKeyPEM;
             keyPems = new[] { kemPem };
             Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
         }
@@ -408,16 +411,17 @@ public class Management : JobBase, IManagementJobExtension
         return createResponse;
     }
 
-    private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config, string certPassword = "", bool overwrite = false)
+    private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config, K8SJobCertificate jobCertObj, bool overwrite = false)
     {
+        var certPassword = jobCertObj.Password;
         Logger.LogDebug("Entered HandleCreateOrUpdate()");
         var jobCert = config.JobCertificate;
-        var certAlias = jobCert.Alias;
+        var certAlias = jobCertObj.CertThumbprint;
         Logger.LogTrace("secretType: " + secretType);
         Logger.LogTrace("certAlias: " + certAlias);
         // Logger.LogTrace("certPassword: " + certPassword);
         Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogDebug(string.IsNullOrEmpty(certPassword)
+        Logger.LogDebug(string.IsNullOrEmpty(jobCertObj.Password)
             ? "No cert password provided for certificate " + certAlias
             : "Cert password provided for certificate " + certAlias);
 
@@ -429,12 +433,12 @@ public class Management : JobBase, IManagementJobExtension
         if (!string.IsNullOrEmpty(jobCert.Contents))
         {
             Logger.LogTrace("Converting job certificate contents to byte array...");
-            certBytes = Convert.FromBase64String(jobCert.Contents);
+            certBytes = jobCertObj.CertBytes;
             Logger.LogTrace("Successfully converted job certificate contents to byte array.");
 
             Logger.LogTrace($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
             certObj = new X509Certificate2(certBytes, certPassword, X509KeyStorageFlags.Exportable);
-            certAlias = certAlias == certObj.Thumbprint ? certAlias : certObj.Thumbprint;
+            certAlias = jobCertObj.CertThumbprint;
             Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         }
 
@@ -448,14 +452,14 @@ public class Management : JobBase, IManagementJobExtension
             case "tlssecret":
             case "tls_secrets":
                 Logger.LogInformation("Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " + certAlias + "...");
-                _ = HandleTlsSecret(certAlias, certObj, certPassword, overwrite);
+                _ = HandleTlsSecret(certAlias, jobCertObj, certPassword, overwrite);
                 Logger.LogInformation("Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
                 break;
             case "opaque":
             case "secret":
             case "secrets":
                 Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " + certAlias + "...");
-                _ = HandleOpaqueSecret(certAlias, certObj, certPassword, overwrite, false);
+                _ = HandleOpaqueSecret(certAlias, jobCertObj, certPassword, overwrite, false);
                 Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias + ".");
                 break;
             case "certificate":
