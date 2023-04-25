@@ -122,7 +122,7 @@ namespace TestConsole
         private const string KubeConfigEnvVar = "TEST_KUBECONFIG";
         private const string KubeNamespaceEnvVar = "TEST_KUBE_NAMESPACE";
 
-        public static int tableWidth = 120;
+        public static int tableWidth = 200;
 
         private static readonly TestEnvironmentalVariable[] _envVariables;
 
@@ -340,7 +340,7 @@ namespace TestConsole
                             Console.WriteLine("Select Management Type Add or Remove");
                             testMgmtType = Console.ReadLine();
                         }
-
+                        
                         tests = GetTestConfig(testConfigPath, testMgmtType);
 
                         Console.WriteLine("Running Management Job Test Cases");
@@ -417,17 +417,22 @@ namespace TestConsole
                                         );
 
                                         jobResult = mgmt.ProcessJob(jobConfig);
-                                        if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
-                                            (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
+                                        if(testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Success)
                                         {
-                                            testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
-                                            Console.ForegroundColor = ConsoleColor.Green;
+                                            testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage} This test case was expected to fail but succeeded.";
+                                            Console.ForegroundColor = ConsoleColor.Red;
+                                            hasFailure = true;
+                                        }
+                                        else if(!testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Failure)
+                                        {
+                                            testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage} This test case was expected to succeed but failed.";
+                                            Console.ForegroundColor = ConsoleColor.Red;
+                                            hasFailure = true;
                                         }
                                         else
                                         {
-                                            testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
-                                            Console.ForegroundColor = ConsoleColor.Red;
-                                            hasFailure = true;
+                                            testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
+                                            Console.ForegroundColor = ConsoleColor.Green;
                                         }
                                         Console.WriteLine(
                                             $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{jobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{jobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
