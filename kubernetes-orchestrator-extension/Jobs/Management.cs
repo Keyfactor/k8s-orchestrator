@@ -123,7 +123,76 @@ public class Management : JobBase, IManagementJobExtension
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with no data.");
         return createResponse;
     }
+
     private V1Secret HandleOpaqueSecret(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
+    {
+        Logger.LogTrace("Entered HandleOpaqueSecret()");
+        Logger.LogTrace("certAlias: " + certAlias);
+        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
+        Logger.LogTrace("overwrite: " + overwrite);
+        Logger.LogTrace("append: " + append);
+        
+        Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
+        var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
+        Logger.LogTrace("pemString: " + pemString);
+        Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
+        var certPems = pemString.Split(";");
+        Logger.LogTrace("certPems: " + certPems);
+
+        Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
+        var caPems = "".Split(";");
+        Logger.LogTrace("caPems: " + caPems);
+
+        Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
+        var chainPems = "".Split(";");
+        Logger.LogTrace("chainPems: " + chainPems);
+
+        string[] keyPems = { "" };
+
+        Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
+
+        Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
+        var keyBytes = GetKeyBytes(certObj, keyPasswordStr);
+        if (keyBytes != null)
+        {
+            Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
+            var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
+            keyPems = new[] { kemPem };
+            Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
+        }
+        else
+        {
+            Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
+        }
+
+        Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
+        var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
+            keyPems,
+            certPems,
+            caPems,
+            chainPems,
+            KubeSecretName,
+            KubeNamespace,
+            "secret",
+            append,
+            overwrite
+        );
+        if (createResponse == null)
+        {
+            Logger.LogError("createResponse is null");
+        }
+        else
+        {
+            Logger.LogTrace(createResponse.ToString());    
+        }
+        
+        Logger.LogInformation(
+            $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+        return createResponse;
+
+    }
+    
+    private V1Secret HandleOpaqueSecretMultiCert(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -386,7 +455,7 @@ public class Management : JobBase, IManagementJobExtension
             case "secret":
             case "secrets":
                 Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " + certAlias + "...");
-                _ = HandleOpaqueSecret(certAlias, certObj, certPassword, overwrite, true);
+                _ = HandleOpaqueSecret(certAlias, certObj, certPassword, overwrite, false);
                 Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias + ".");
                 break;
             case "certificate":

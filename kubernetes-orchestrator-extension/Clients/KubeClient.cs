@@ -312,8 +312,8 @@ public class KubeCertificateManagerClient
 
                 Data = new Dictionary<string, byte[]>
                 {
-                    { "private_keys", Encoding.UTF8.GetBytes(keyPem) }, //TODO: Make this configurable
-                    { "certificates", Encoding.UTF8.GetBytes(certPem) } //TODO: Make this configurable
+                    { "tls.key", Encoding.UTF8.GetBytes(keyPem) }, //TODO: Make this configurable
+                    { "tls.crt", Encoding.UTF8.GetBytes(certPem) } //TODO: Make this configurable
                 }
             },
             "tls_secret" => new V1Secret
@@ -338,9 +338,22 @@ public class KubeCertificateManagerClient
         };
         Logger.LogTrace("Exiting CreateNewSecret()");
         return k8SSecretData;
+        
+    }
+    
+    private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
+    {
+        Logger.LogTrace("Entered UpdateOpaqueSecret()");
+
+        Logger.LogDebug($"Attempting to update secret {secretName} in namespace {namespaceName}");
+        Logger.LogTrace("Calling ReplaceNamespacedSecret()");
+        var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
+        Logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
+        Logger.LogTrace("Exiting UpdateOpaqueSecret()");
+        return secretResponse;
     }
 
-    private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
+    private V1Secret UpdateOpaqueSecretMultiple(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
     {
         Logger.LogTrace("Entered UpdateOpaqueSecret()");
 
