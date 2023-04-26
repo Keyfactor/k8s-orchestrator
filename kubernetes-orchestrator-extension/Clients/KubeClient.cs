@@ -363,8 +363,8 @@ public class KubeCertificateManagerClient
 
         Logger.LogTrace("Existing certificates: " + existingCerts);
 
-        var existingKeys = existingSecret.Data.ContainsKey("private_keys")
-            ? Encoding.UTF8.GetString(existingSecret.Data["private_keys"])
+        var existingKeys = existingSecret.Data.ContainsKey("tls.key")
+            ? Encoding.UTF8.GetString(existingSecret.Data["tls.key"])
             : ""; //TODO: Make this configurable
         // Logger.LogTrace("Existing private keys: " + existingKeys);
 
@@ -405,7 +405,7 @@ public class KubeCertificateManagerClient
             newKeys += keyPem;
 
             Logger.LogTrace("Updating 'private_keys' secret data");
-            existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(newKeys);
+            existingSecret.Data["tls.key"] = Encoding.UTF8.GetBytes(newKeys);
         }
 
         Logger.LogDebug($"Attempting to update secret {secretName} in namespace {namespaceName}");
@@ -542,7 +542,7 @@ public class KubeCertificateManagerClient
             Logger.LogTrace("existingCerts: " + existingCerts);
 
             Logger.LogDebug("Parsing existing private keys from secret into a string.");
-            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["private_keys"]); //TODO: Make this configurable.
+            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]); //TODO: Make this configurable.
             // Logger.LogTrace("existingKeys: " + existingKeys);
 
             Logger.LogDebug("Splitting existing certificates into an array.");
@@ -607,7 +607,7 @@ public class KubeCertificateManagerClient
             Logger.LogDebug("Updating existing secret with new key data.");
             try
             {
-                existingSecret.Data["private_keys"] = Encoding.UTF8.GetBytes(existingKeys);
+                existingSecret.Data["tls.key"] = Encoding.UTF8.GetBytes(existingKeys);
             }
             catch (Exception)
             {
@@ -822,7 +822,7 @@ public class KubeCertificateManagerClient
                                         Logger.LogDebug("Attempting to parse certificate from opaque secret");
                                         var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
                                         Logger.LogTrace("certs: " + certs);
-                                        // var keys = Encoding.UTF8.GetString(secretData.Data["private_keys"]);
+                                        // var keys = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
                                         Logger.LogTrace("Splitting certs into array by ','.");
                                         var certsArray = certs.Split(",");
                                         // var keysArray = keys.Split(",");
