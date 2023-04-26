@@ -372,18 +372,13 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
         var keyBytes = certObj.PrivateKeyBytes;
-        if (keyBytes != null)
+        
+        var keyPem = certObj.PrivateKeyPEM;
+        if (!string.IsNullOrEmpty(keyPem))
         {
-            Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-            var kemPem = certObj.PrivateKeyPEM;
-            keyPems = new[] { kemPem };
-            Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
+            keyPems = new[] { keyPem };            
         }
-        else
-        {
-            Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
-        }
-
+        
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
             keyPems,

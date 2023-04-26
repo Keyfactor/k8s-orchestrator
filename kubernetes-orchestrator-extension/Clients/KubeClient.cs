@@ -456,11 +456,11 @@ public class KubeCertificateManagerClient
                 Logger.LogTrace("Calling UpdateOpaqueSecret()");
                 return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, certPem, keyPem);
             }
-            case "tls_secret" when !overwrite:
-                var errMsg = "Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.";
-                Logger.LogError(errMsg);
-                Logger.LogTrace("Exiting UpdateSecretStore()");
-                throw new Exception(errMsg);
+            // case "tls_secret" when !overwrite:
+            //     var errMsg = "Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.";
+            //     Logger.LogError(errMsg);
+            //     Logger.LogTrace("Exiting UpdateSecretStore()");
+            //     throw new Exception(errMsg);
             case "tls_secret":
             {
                 Logger.LogInformation($"Attempting to update tls secret {secretName} in namespace {namespaceName}");
