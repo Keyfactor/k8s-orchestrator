@@ -427,17 +427,14 @@ public class Management : JobBase, IManagementJobExtension
 
 
         Logger.LogDebug($"Converting certificate '{certAlias}' to Cert object...");
-
-        var certBytes = Array.Empty<byte>();
-        var certObj = new X509Certificate2();
+        
         if (!string.IsNullOrEmpty(jobCert.Contents))
         {
             Logger.LogTrace("Converting job certificate contents to byte array...");
-            certBytes = jobCertObj.CertBytes;
             Logger.LogTrace("Successfully converted job certificate contents to byte array.");
 
             Logger.LogTrace($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
-            certObj = new X509Certificate2(certBytes, certPassword, X509KeyStorageFlags.Exportable);
+            
             certAlias = jobCertObj.CertThumbprint;
             Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         }

@@ -217,11 +217,23 @@ public abstract class JobBase
         {
             Logger.LogDebug($"Certificate {jobCertObject.CertThumbprint} does not have a password");
             Logger.LogTrace("Attempting to create certificate without password");
-            var x509 = new X509Certificate2(config.JobCertificate.Contents);
-            Logger.LogTrace("Created certificate without password");
-
-            Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
-            var rawData = x509.Export(X509ContentType.Cert);
+            X509Certificate2 x509Obj;
+            byte[] rawData = null;
+            try
+            {
+                x509Obj = new X509Certificate2(config.JobCertificate.Contents, pKeyPassword, X509KeyStorageFlags.Exportable);
+                Logger.LogTrace("Created certificate without password");
+                Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
+                rawData = x509Obj.Export(X509ContentType.Cert);
+                jobCertObject.CertThumbprint = x509Obj.Thumbprint;
+            } catch (Exception e)
+            {
+                Logger.LogError("Error creating certificate without password, " + e.Message);
+                Logger.LogTrace(e.StackTrace);
+                rawData = Convert.FromBase64String(config.JobCertificate.Contents);
+                jobCertObject.CertThumbprint = config.JobCertificate.Thumbprint;
+            }
+            
             Logger.LogTrace($"Exported certificate obj to raw data {rawData}");
             
             Logger.LogDebug("Attempting to create PEM formatted string from raw data");
@@ -235,8 +247,8 @@ public abstract class JobBase
             jobCertObject.Certb64 = config.JobCertificate.Contents;
             jobCertObject.PrivateKeyB64 = "";
             jobCertObject.PrivateKeyPEM = "";
-            jobCertObject.PrivateKeyBytes = null;
-            jobCertObject.CertThumbprint = x509.Thumbprint;
+            jobCertObject.PrivateKeyBytes = new byte[] { };
+
         }
         else
         {
