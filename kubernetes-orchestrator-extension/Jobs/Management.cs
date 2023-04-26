@@ -334,8 +334,9 @@ public class Management : JobBase, IManagementJobExtension
         try
         {
             //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
-            if (string.IsNullOrEmpty(certAlias))
+            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM))
             {
+                Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
                 return creatEmptySecret("tls");
             }
         }
@@ -350,11 +351,9 @@ public class Management : JobBase, IManagementJobExtension
                 Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
             }
         }
-
-
-        Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
         var pemString = certObj.CertPEM;
         Logger.LogTrace("pemString: " + pemString);
+        
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
         Logger.LogTrace("certPems: " + certPems);
