@@ -91,6 +91,8 @@ public abstract class JobBase
     static protected readonly string[] TLSAllowedKeys;
     static protected readonly string[] OpaqueAllowedKeys;
     static protected readonly string[] CertAllowedKeys;
+    static protected readonly string[] Pkcs12AllowedKeys;
+    
 
     static protected string CertChainSeparator = ",";
     internal protected KubeCertificateManagerClient KubeClient;
@@ -103,6 +105,7 @@ public abstract class JobBase
         OpaqueAllowedKeys = new[] { "tls.crt", "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
         SupportedKubeStoreTypes = new[] { "secret", "certificate" };
         RequiredProperties = new[] { "KubeNamespace", "KubeSecretName", "KubeSecretType" };
+        Pkcs12AllowedKeys = new[] { "p12" };
     }
 
     public K8SJobCertificate K8SCertificate { get; set; }
@@ -302,6 +305,15 @@ public abstract class JobBase
         return jobCertObject;
     }
 
+    public bool isNamespaceStore(string capability)
+    {
+        if (string.IsNullOrEmpty(capability) && capability.Contains("K8SNS"))
+        {
+            return true;
+        }
+        return false;
+    }
+
     public string resolveStorePath(string spath)
     {
         Logger.LogTrace("Entered resolveStorePath()");
@@ -310,6 +322,7 @@ public abstract class JobBase
         Logger.LogTrace("Attempting to split storepath by '/'");
         var sPathParts = spath.Split("/");
         Logger.LogTrace("Split count: " + sPathParts.Length);
+        var isNsStore = isNamespaceStore(Capability);
 
         switch (sPathParts.Length)
         {
@@ -341,7 +354,7 @@ public abstract class JobBase
                 var kH = sPathParts[0];
                 var kN = sPathParts[1];
                 var kS = sPathParts[2];
-                if (kN == "secret" || kN == "tls" || kN == "certificate")
+                if (kN == "secret" || kN == "tls" || kN == "certificate" || kN == "namespace")
                 {
                     Logger.LogTrace("Store path is 3 parts and the second part is a secret type. Assuming that it is the namespace/secret name");
                     kN = sPathParts[0];
@@ -515,7 +528,10 @@ public abstract class JobBase
         Logger.LogTrace("Entered GetStorePath()");
         try
         {
-            var secretType = KubeSecretType.ToLower();
+            var secretType = "";
+            var storePath = StorePath;
+            secretType = Capability.Contains("K8SNS") ? "namespace" : KubeSecretType.ToLower();
+             
             Logger.LogTrace("secretType: " + secretType);
             Logger.LogTrace("Entered switch statement based on secretType.");
             switch (secretType)
@@ -534,6 +550,10 @@ public abstract class JobBase
                     Logger.LogDebug("Kubernetes certificate resource type. Setting secretType to 'certificate'.");
                     secretType = "certificate";
                     break;
+                case "namespace":
+                    storePath = $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
+                    KubeSecretType = "namespace";
+                    return storePath;
                 default:
                     Logger.LogWarning("Unknown secret type. Will use value provided.");
                     Logger.LogTrace($"secretType: {secretType}");
@@ -541,7 +561,7 @@ public abstract class JobBase
             }
 
             Logger.LogTrace("Building StorePath.");
-            var storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
+             storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
             Logger.LogDebug("Returning StorePath: " + storePath);
             return storePath;
         }

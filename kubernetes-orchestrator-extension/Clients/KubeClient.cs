@@ -733,15 +733,27 @@ public class KubeCertificateManagerClient
         return new[] { utfCert };
     }
 
-    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default")
+    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
     {
         // Get a list of all namespaces
         Logger.LogTrace("Entered DiscoverSecrets()");
         V1NamespaceList namespaces;
-        Logger.LogDebug("Attempting to list k8s namespaces from " + GetHost());
+        var clusterName = GetClusterName() ?? GetHost();
+        
         var nsList = new string[] { };
 
         var locations = new List<string>();
+
+        if (secType == "cluster")
+        {
+            Logger.LogTrace("Discovering K8S cluster secrets from k8s cluster resources and returning only a single location.");
+             locations.Add($"{clusterName}");
+             return locations;
+        }
+        
+
+        Logger.LogDebug("Attempting to list k8s namespaces from " + clusterName);
+        
         nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
         foreach (var nsLI in nsList)
         {
@@ -758,6 +770,7 @@ public class KubeCertificateManagerClient
                     Logger.LogWarning("Skipping namespace " + nsObj.Metadata.Name + " because it does not match the namespace filter.");
                     continue;
                 }
+
                 Logger.LogDebug("Attempting to list secrets in namespace " + nsObj.Metadata.Name);
                 // Get a list of all secrets in the namespace
                 Logger.LogTrace("Calling CoreV1.ListNamespacedSecret()");
@@ -766,6 +779,16 @@ public class KubeCertificateManagerClient
 
                 Logger.LogDebug("Attempting to read each secret in namespace " + nsObj.Metadata.Name);
                 Logger.LogTrace("Entering foreach loop to read each secret in namespace " + nsObj.Metadata.Name);
+                
+                if (secType == "namespace")
+                {
+                    Logger.LogDebug("Discovering K8S secrets at the namespace level");
+                    var nsLocation = $"{clusterName}/namespace/{nsObj.Metadata.Name}";
+                    locations.Add(nsLocation);
+                    Logger.LogTrace("Added namespace location " + nsLocation + " to list of locations.");
+                    continue;
+                }
+                
                 foreach (var secret in secrets.Items)
                 {
                     if (secret.Type is "kubernetes.io/tls" or "Opaque")
@@ -778,7 +801,7 @@ public class KubeCertificateManagerClient
                         // Logger.LogTrace("secretData: " + secretData);
                         Logger.LogTrace("Entering switch statement to check secret type.");
                         
-                        var clusterName = GetClusterName() ?? GetHost();
+                        
                         
                         switch (secret.Type)
                         {

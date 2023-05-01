@@ -72,6 +72,20 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             // 3) Place found and validated store locations (path and file name) in "locations" collection instantiated above
             switch (config.Capability)
             {
+                case "CertStores.K8SCluster.Discovery":
+                    // Combine the allowed keys with the default keys
+                    Logger.LogTrace("Entering case: CertStores.K8SCluster.Discovery");
+                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "cluster", string.Join(",",namespaces)); 
+                    break;
+                case "CertStores.K8SNS.Discovery":
+                    // Combine the allowed keys with the default keys
+                    Logger.LogTrace("Entering case: CertStores.K8SNamespace.Discovery");
+                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "namespace", string.Join(",",namespaces));
+                    break;
                 case "CertStores.K8STLSSecr.Discovery":
                     // Combine the allowed keys with the default keys
                     Logger.LogTrace("Entering case: CertStores.K8STLSSecr.Discovery");
