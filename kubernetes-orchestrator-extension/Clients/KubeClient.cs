@@ -634,13 +634,20 @@ public class KubeCertificateManagerClient
         switch (storeType)
         {
             case "secret":
+            case "opaque":
                 // check the current inventory and only remove the cert if it is found else throw not found exception
                 Logger.LogDebug($"Attempting to delete certificate from opaque secret {secretName} in namespace {namespaceName} on {GetHost()}");
                 Logger.LogTrace("Calling DeleteCertificateStoreSecret()");
-                _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
-                Logger.LogTrace("Finished calling DeleteCertificateStoreSecret()");
-                return new V1Status("v1", 0, status: "Success");
+                // _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
+                return Client.CoreV1.DeleteNamespacedSecret(
+                    secretName,
+                    namespaceName,
+                    new V1DeleteOptions()
+                );
+                // Logger.LogTrace("Finished calling DeleteCertificateStoreSecret()");
+                // return new V1Status("v1", 0, status: "Success");
             case "tls_secret":
+            case "tls":
                 Logger.LogDebug($"Deleting TLS secret {secretName} in namespace {namespaceName} on {GetHost()}");
                 Logger.LogTrace("Calling DeleteNamespacedSecret()");
                 return Client.CoreV1.DeleteNamespacedSecret(
@@ -816,7 +823,7 @@ public class KubeCertificateManagerClient
                                 var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
 
                                 Logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
-                                _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
+                                // _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
                                 
                                 var cLocation = $"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
                                 Logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
@@ -851,7 +858,7 @@ public class KubeCertificateManagerClient
                                         {
                                             Logger.LogTrace("cer: " + cer);
                                             Logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
-                                            _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
+                                            // _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
 
                                             Logger.LogDebug("Adding certificate to list of discovered certificates");
                                             secretsList.Append(cer);

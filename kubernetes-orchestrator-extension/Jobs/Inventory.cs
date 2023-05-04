@@ -408,7 +408,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 Logger.LogTrace(e.ToString());
                 Logger.LogTrace(e.StackTrace);
                 Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
-                return FailJob(e.Message, jobId);
+                // return FailJob(e.Message, jobId);
             }
 
             var certs = new[] { cert };
