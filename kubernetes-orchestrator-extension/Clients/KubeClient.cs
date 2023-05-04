@@ -753,15 +753,14 @@ public class KubeCertificateManagerClient
         
 
         Logger.LogDebug("Attempting to list k8s namespaces from " + clusterName);
+        namespaces = Client.CoreV1.ListNamespace();
+        Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
+        Logger.LogTrace("namespaces.Items: " + namespaces.Items);
         
         nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
         foreach (var nsLI in nsList)
         {
             var secretsList = new List<string>();
-            namespaces = Client.CoreV1.ListNamespace();
-            Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
-            Logger.LogTrace("namespaces.Items: " + namespaces.Items);
-
             Logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
             foreach (var nsObj in namespaces.Items)
             {
@@ -801,12 +800,10 @@ public class KubeCertificateManagerClient
                         // Logger.LogTrace("secretData: " + secretData);
                         Logger.LogTrace("Entering switch statement to check secret type.");
                         
-                        
-                        
                         switch (secret.Type)
                         {
                             case "kubernetes.io/tls":
-                                if (secType != "kubernetes.io/tls")
+                                if (secType != "kubernetes.io/tls" && secType != "tls")
                                 {
                                     Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
                                     continue;
