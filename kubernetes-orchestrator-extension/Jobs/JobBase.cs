@@ -681,11 +681,12 @@ public abstract class JobBase
             var secretType = "";
             var storePath = StorePath;
 
-            
+
             if (Capability.Contains("K8SNS"))
             {
                 secretType = "namespace";
-            } else if (Capability.Contains("K8SCluster"))
+            }
+            else if (Capability.Contains("K8SCluster"))
             {
                 secretType = "cluster";
             }

@@ -62,7 +62,7 @@ public class Management : JobBase, IManagementJobExtension
             Logger.LogError(e, initErrMsg);
             return FailJob(initErrMsg, config.JobHistoryId);
         }
-        
+
         Logger.LogInformation("Begin MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId);
         Logger.LogInformation($"Management for store type: {config.Capability}");
 
@@ -145,7 +145,7 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
-        
+
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
         var pemString = certObj.CertPEM;
         Logger.LogTrace("pemString: " + pemString);
@@ -197,15 +197,15 @@ public class Management : JobBase, IManagementJobExtension
         }
         else
         {
-            Logger.LogTrace(createResponse.ToString());    
+            Logger.LogTrace(createResponse.ToString());
         }
-        
+
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;
 
     }
-    
+
     private V1Secret HandleOpaqueSecretMultiCert(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
@@ -364,7 +364,7 @@ public class Management : JobBase, IManagementJobExtension
         }
         var pemString = certObj.CertPEM;
         Logger.LogTrace("pemString: " + pemString);
-        
+
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
         Logger.LogTrace("certPems: " + certPems);
@@ -383,13 +383,13 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
         var keyBytes = certObj.PrivateKeyBytes;
-        
+
         var keyPem = certObj.PrivateKeyPEM;
         if (!string.IsNullOrEmpty(keyPem))
         {
-            keyPems = new[] { keyPem };            
+            keyPems = new[] { keyPem };
         }
-        
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
             keyPems,
@@ -408,9 +408,9 @@ public class Management : JobBase, IManagementJobExtension
         }
         else
         {
-            Logger.LogTrace(createResponse.ToString());    
+            Logger.LogTrace(createResponse.ToString());
         }
-        
+
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;
@@ -427,7 +427,7 @@ public class Management : JobBase, IManagementJobExtension
         {
             certAlias = jobCertObj.CertThumbprint;
         }
-        
+
         Logger.LogTrace("secretType: " + secretType);
         Logger.LogTrace("certAlias: " + certAlias);
         // Logger.LogTrace("certPassword: " + certPassword);
@@ -438,14 +438,14 @@ public class Management : JobBase, IManagementJobExtension
 
 
         Logger.LogDebug($"Converting certificate '{certAlias}' to Cert object...");
-        
+
         if (!string.IsNullOrEmpty(jobCert.Contents))
         {
             Logger.LogTrace("Converting job certificate contents to byte array...");
             Logger.LogTrace("Successfully converted job certificate contents to byte array.");
 
             Logger.LogTrace($"Creating X509Certificate2 object from job certificate '{certAlias}'.");
-            
+
             certAlias = jobCertObj.CertThumbprint;
             Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         }
@@ -569,7 +569,8 @@ public class Management : JobBase, IManagementJobExtension
                 {
                     KubeNamespace = StorePath;
                 }
-            } else if (Capability.Contains("K8SCluster"))
+            }
+            else if (Capability.Contains("K8SCluster"))
             {
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];

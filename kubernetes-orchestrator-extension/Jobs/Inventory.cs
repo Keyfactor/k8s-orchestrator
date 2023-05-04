@@ -69,12 +69,12 @@ public class Inventory : JobBase, IInventoryJobExtension
             if (Capability.Contains("Cluster"))
             {
                 KubeSecretType = "cluster";
-            } 
+            }
             if (Capability.Contains("NS"))
             {
                 KubeSecretType = "namespace";
             }
-            
+
             switch (KubeSecretType)
             {
                 case "secret":
@@ -122,7 +122,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             var storePathSplitList = storePathSplit.ToList();
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
-                            
+
                             var opaqueObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
                             clusterInventoryDict[StorePath] = opaqueObj[0]; //todo: fix this    
                         }
@@ -182,7 +182,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
-                            
+
                             var opaqueObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
                             namespaceInventoryDict[StorePath] = opaqueObj[0]; //todo: fix this    
                         }
@@ -203,7 +203,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         {
                             resolveStorePath(tlsSecret);
                             StorePath = tlsSecret.Replace("secrets", "secrets/tls");
-                            
+
                             //Split storepath by / and remove first 2 elements
                             var storePathSplit = StorePath.Split('/');
                             var storePathSplitList = storePathSplit.ToList();
@@ -381,7 +381,6 @@ public class Inventory : JobBase, IInventoryJobExtension
         var inventoryItems = new List<CurrentInventoryItem>();
         foreach (KeyValuePair<string, string> certObj in certsList)
         {
-
             var cert = certObj.Value;
             Logger.LogTrace($"Cert:\n{cert}");
             // load as x509

@@ -41,7 +41,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         InitializeStore(config);
         Logger.LogInformation("Begin Discovery for K8S Orchestrator Extension for job " + config.JobId);
         Logger.LogInformation($"Discovery for store type: {config.Capability}");
-        
+
         var locations = new List<string>();
 
         KubeSvcCreds = ServerPassword;
@@ -77,27 +77,27 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     Logger.LogTrace("Entering case: CertStores.K8SCluster.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "cluster", string.Join(",",namespaces)); 
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "cluster", string.Join(",", namespaces));
                     break;
                 case "CertStores.K8SNS.Discovery":
                     // Combine the allowed keys with the default keys
                     Logger.LogTrace("Entering case: CertStores.K8SNamespace.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "namespace", string.Join(",",namespaces));
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "namespace", string.Join(",", namespaces));
                     break;
                 case "CertStores.K8STLSSecr.Discovery":
                     // Combine the allowed keys with the default keys
                     Logger.LogTrace("Entering case: CertStores.K8STLSSecr.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: tls");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "kubernetes.io/tls", string.Join(",",namespaces));
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "kubernetes.io/tls", string.Join(",", namespaces));
                     break;
                 case "CertStores.K8SSecret.Discovery":
                     Logger.LogTrace("Entering case: CertStores.K8SSecret.Discovery");
                     secretAllowedKeys = secretAllowedKeys.Concat(OpaqueAllowedKeys).ToArray();
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: opaque");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "Opaque",string.Join(",",namespaces));
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "Opaque", string.Join(",", namespaces));
                     break;
                 case "CertStores.K8SCert.Discovery":
                     Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
