@@ -657,6 +657,15 @@ The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This
    ![discover_server_password.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_server_password.png)
 5. Click the "Save" button and wait for the Orchestrator to run the job. This may take some time depending on the number of certificates in the store and the Orchestrator's check-in schedule.
 
+### K8SNS Discovery
+For discovery of K8SNS stores toy can use the following params to filter the certificates that will be discovered:
+- `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all namespaces. *This cannot be left blank.*
+
+### K8SPKCS12 and K8SJKS Discovery
+For discovery of K8SPKCS12 and K8SJKS stores toy can use the following params to filter the certificates that will be discovered:
+- `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all namespaces. *This cannot be left blank.*
+- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`jks`.
+
 ## Certificate Inventory
 In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
