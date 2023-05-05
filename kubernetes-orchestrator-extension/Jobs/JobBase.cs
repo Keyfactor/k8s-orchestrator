@@ -79,6 +79,8 @@ public class K8SJobCertificate
     public bool hasPrivateKey { get; set; } = false;
 
     public bool hasPassword { get; set; } = false;
+
+    public string Pkcs12 { get; set; }
 }
 
 public abstract class JobBase
@@ -231,15 +233,16 @@ public abstract class JobBase
         {
             Logger.LogDebug($"Certificate {jobCertObject.CertThumbprint} does not have a password");
             Logger.LogTrace("Attempting to create certificate without password");
-            X509Certificate2 x509Obj;
             byte[] rawData = null;
             try
             {
-                x509Obj = new X509Certificate2(config.JobCertificate.Contents, pKeyPassword, X509KeyStorageFlags.Exportable);
+                var x509Obj = new X509Certificate2(config.JobCertificate.Contents, pKeyPassword, X509KeyStorageFlags.Exportable);
                 Logger.LogTrace("Created certificate without password");
                 Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
                 rawData = x509Obj.Export(X509ContentType.Cert);
                 jobCertObject.CertThumbprint = x509Obj.Thumbprint;
+                var pkcs12data = x509Obj.Export(X509ContentType.Pkcs12, pKeyPassword);
+                jobCertObject.Pkcs12 = Convert.ToBase64String(pkcs12data);
             }
             catch (Exception e)
             {
@@ -294,6 +297,7 @@ public abstract class JobBase
             jobCertObject.Certb64 = certB64;
             jobCertObject.CertBytes = x509.RawData;
             jobCertObject.CertThumbprint = x509.Thumbprint;
+            jobCertObject.Pkcs12 = Encoding.UTF8.GetString(certBytes);
 
             PrivateKeyConverter pkey;
             try
@@ -313,7 +317,7 @@ public abstract class JobBase
                 jobCertObject.PrivateKeyB64 = pKeyB64;
                 Logger.LogTrace("Private key exported to PKCS8 blob");
             }
-            catch (System.ArgumentException)
+            catch (ArgumentException)
             {
 
                 var refStr = string.IsNullOrEmpty(jobCertObject.Alias) ? jobCertObject.CertThumbprint : jobCertObject.Alias;

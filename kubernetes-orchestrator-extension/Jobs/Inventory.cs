@@ -664,9 +664,9 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace("certData: " + certData);
 
             var storeBytes = new byte[] { };
-            if (certData.Data.ContainsKey(KubeSecretKey))
+            if (certData.Data.TryGetValue(KubeSecretKey, out var value))
             {
-                storeBytes = certData.Data[KubeSecretKey];
+                storeBytes = value;
             }
             else
             {
@@ -675,12 +675,22 @@ public class Inventory : JobBase, IInventoryJobExtension
                 throw new Exception(pfxEx);
             }
             Logger.LogTrace("storeb64: " + Encoding.UTF8.GetString(storeBytes));
-
-
+            
             var storePasswordBytes = new byte[] { };
-            if (certData.Data.ContainsKey(PasswordFieldName))
+            
+            // if secret is a buddy pass
+            if (!string.IsNullOrEmpty(KubeSecretPasswordPath))
             {
-                storePasswordBytes = certData.Data[PasswordFieldName];
+                // Split password path into namespace and secret name
+                var passwordPath = KubeSecretPasswordPath.Split("/");
+                var passwordNamespace = passwordPath[0];
+                var passwordSecretName = passwordPath[1];
+                var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
+                storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
+            }
+            else if (certData.Data.TryGetValue(PasswordFieldName, out var value1))
+            {
+                storePasswordBytes = value1;
             }
             else
             {
