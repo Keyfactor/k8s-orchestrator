@@ -5,48 +5,44 @@ on:
       - main
       - release*
       - pan_feedback
-#name: autorelease
+#name: autochangelog
+#
 #on:
-#  pull_request:
-#    types: [closed]
-#    branches:
-#      - master
+#  repository_dispatch:
+#    types: [autochangelog]
+
 jobs:
-  build:
+  push:
+    name: Push Container
     runs-on: ubuntu-latest
-    env:
-      manifest_file: 'manifest.yml'
-      changelog_file: 'CHANGELOG.md'
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout Code
+        uses: actions/checkout@v2
         with:
-          ref: master
-      - name: get version
-        id: version
+          fetch-depth: '0'
+      - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+      - name: autochangelog-action
+        id: ac
+        uses: rubenfiszel/autochangelog-action@v0.16.0
+        with:
+          changelog_file: './CHANGELOG.md'
+          manifest_file: './manifest.yaml'
+          dry_run: false
+          issues_url_prefix: 'https://github.com/org/repo/issues/'
+          tag_prefix: 'v'
+      - name: Create Pull Request
+        id: cpr
+        uses: peter-evans/create-pull-request@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'Update changelog and manifest'
+          title: 'ci: release ${{ steps.ac.outputs.version }}'
+          body: |
+            Release [${{ steps.ac.outputs.version }}](https://github.com/org/repo/releases/tag/v${{ steps.ac.outputs.version }})
+          labels: autorelease
+          branch: automatic-release-prs
+          reviewers: your-reviewers-list
+      - name: Check outputs
         run: |
-          sed -n 's/^version:\s\(.*\)$/\1/p' ${{ env.manifest_file }} \
-          | xargs -I {} echo "::set-output name=version::{}"
-      - name: get changelog
-        id: changelog
-        run: |
-          changelog=$(echo "${{ steps.version.outputs.version}}" \
-          | xargs -I {} sed -n '/^#\s'"{}"'.*$/,/^#\s\([^[:space:]]\+\).*$/{//!p}' ${{ env.changelog_file }})
-          echo $changelog
-          changelog="${changelog//'%'/'%25'}"
-          changelog="${changelog//$'\n'/'%0A'}"
-          changelog="${changelog//$'\r'/'%0D'}"
-          echo "::set-output name=changelog::$changelog" 
-      - name: echo version and changelog
-        run: |
-          echo "${{ steps.version.outputs.version}}"
-          echo "${{ steps.changelog.outputs.changelog }}"
-#      - name: Create Release
-#        uses: ncipollo/release-action@v1.4.0
-#        with:
-#          name: ${{ steps.version.outputs.version }}
-#          tag: v${{ steps.version.outputs.version }}
-#          body: ${{ steps.changelog.outputs.changelog}}
-#          draft: false
-#          prerelease: false
-#          # An optional tag for the release. If this is omitted the git ref will be used (if it is a tag).
-#          token: ${{ secrets.GITHUB_TOKEN }}
+          echo "Pull Request Number - ${{ env.PULL_REQUEST_NUMBER }}"
+          echo "Pull Request Number - ${{ steps.cpr.outputs.pr_number }}"
