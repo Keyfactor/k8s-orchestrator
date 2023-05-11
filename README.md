@@ -563,4 +563,3 @@ each type of certificate store.
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
 
-
