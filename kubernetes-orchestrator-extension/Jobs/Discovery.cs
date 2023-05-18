@@ -111,12 +111,22 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     {
                         pfxNamespaces = "default";
                     }
-                    var secretAllowedKeysStr = config.JobProperties["patterns"].ToString();
+                    var secretAllowedKeysStr = config.JobProperties["extensions"].ToString();
+                    var allowedPatterns = config.JobProperties["patterns"].ToString();
 
-                    secretAllowedKeys = string.IsNullOrEmpty(secretAllowedKeysStr) ? new[] { "pfx", "pkcs12", "tls.pfx", "tls.pkcs12" } : secretAllowedKeysStr.Split(',');
+                    var additionalKeyPatterns = string.IsNullOrEmpty(allowedPatterns) ? new [] {"p12"} : allowedPatterns.Split(',');
+                    secretAllowedKeys = string.IsNullOrEmpty(secretAllowedKeysStr) ? new[] { "p12" } : secretAllowedKeysStr.Split(',');
 
                     Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
                     Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: cert");
+                    
+                    //append pkcs12AllowedKeys to secretAllowedKeys
+                    secretAllowedKeys = secretAllowedKeys.Concat(additionalKeyPatterns).ToArray();
+                    secretAllowedKeys = secretAllowedKeys.Concat(Pkcs12AllowedKeys).ToArray();
+                    
+                    //make secretAllowedKeys unique
+                    secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
+                    
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "pkcs12", string.Join(",", pfxNamespaces));
                     break;
                 case "CertStores.K8SCert.Discovery":
