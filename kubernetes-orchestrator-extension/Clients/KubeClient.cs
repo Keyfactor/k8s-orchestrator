@@ -1667,7 +1667,7 @@ public class KubeCertificateManagerClient
 
                 foreach (var secret in secrets.Items)
                 {
-                    if (secret.Type is "kubernetes.io/tls" or "Opaque" or "pkcs12" or "p12" or "pfx")
+                    if (secret.Type is "kubernetes.io/tls" or "Opaque" or "pkcs12" or "p12" or "pfx" or "jks")
                     {
                         Logger.LogTrace("secret.Type: " + secret.Type);
                         Logger.LogTrace("secret.Metadata.Name: " + secret.Metadata.Name);
@@ -1701,7 +1701,7 @@ public class KubeCertificateManagerClient
                                 secretsList.Add(certData);
                                 break;
                             case "Opaque":
-                                if (secType != "Opaque" && secType != "pkcs12" && secType != "p12" && secType != "pfx")
+                                if (secType != "Opaque" && secType != "pkcs12" && secType != "p12" && secType != "pfx" && secType != "jks")
                                 {
                                     Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
                                     continue;
@@ -1710,15 +1710,19 @@ public class KubeCertificateManagerClient
                                 // Check if a 'certificates' key exists
                                 Logger.LogDebug("Attempting to parse certificate from opaque secret");
                                 Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
-                                foreach (var allowedKey in allowedKeys)
+                                if (secretData.Data == null || secret.Data.Keys == null ) continue;
+                                foreach (var dataKey in secretData.Data.Keys)
                                 {
-                                    Logger.LogTrace("allowedKey: " + allowedKey);
+                                    Logger.LogTrace("dataKey: " + dataKey);
                                     try
                                     {
-                                        if (secretData.Data == null || !secretData.Data.ContainsKey(allowedKey)) continue;
-
+                                        // split dataKey by '.' and take the last element
+                                        var dataKeyArray = dataKey.Split(".");
+                                        var extension = dataKeyArray[^1];
+                                        
+                                        if (!allowedKeys.Contains(extension)) continue;
                                         Logger.LogDebug("Attempting to parse certificate from opaque secret");
-                                        var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
+                                        var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
                                         Logger.LogTrace("certs: " + certs);
                                         // var keys = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
                                         Logger.LogTrace("Splitting certs into array by ','.");

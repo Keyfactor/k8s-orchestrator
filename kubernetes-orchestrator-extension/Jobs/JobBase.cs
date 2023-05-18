@@ -100,6 +100,7 @@ public abstract class JobBase
     static protected readonly string[] OpaqueAllowedKeys;
     static protected readonly string[] CertAllowedKeys;
     static protected readonly string[] Pkcs12AllowedKeys;
+    static protected readonly string[] JksAllowedKeys;
     static protected readonly string DefaultPFXSecretFieldName = "pfx";
     static protected readonly string DefaultJKSSecretFieldName = "jks";
     static protected readonly string DefaultPFXPasswordSecretFieldName = "password";
@@ -117,6 +118,7 @@ public abstract class JobBase
         SupportedKubeStoreTypes = new[] { "secret", "certificate" };
         RequiredProperties = new[] { "KubeNamespace", "KubeSecretName", "KubeSecretType" };
         Pkcs12AllowedKeys = new[] { "p12", "pkcs12", "pfx" };
+        JksAllowedKeys = new[] { "jks" };
     }
 
     public K8SJobCertificate K8SCertificate { get; set; }

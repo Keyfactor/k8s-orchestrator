@@ -129,6 +129,35 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "pkcs12", string.Join(",", pfxNamespaces));
                     break;
+                case "CertStores.K8SJKS.Discovery":
+                    // config.JobProperties["dirs"] - Directories to search
+                    // config.JobProperties["extensions"] - Extensions to search
+                    // config.JobProperties["ignoreddirs"] - Directories to ignore
+                    // config.JobProperties["patterns"] - File name patterns to match
+                    
+                    var jksNamespaces = config.JobProperties["dirs"].ToString();
+                    if (jksNamespaces.Length == 0)
+                    {
+                        jksNamespaces = "default";
+                    }
+                    var jksSecretAllowedKeysStr = config.JobProperties["extensions"].ToString();
+                    var jksAllowedPatterns = config.JobProperties["patterns"].ToString();
+
+                    var jksAdditionalKeyPatterns = string.IsNullOrEmpty(jksAllowedPatterns) ? new [] {"jks"} : jksAllowedPatterns.Split(',');
+                    secretAllowedKeys = string.IsNullOrEmpty(jksSecretAllowedKeysStr) ? new[] { "jks" } : jksSecretAllowedKeysStr.Split(',');
+
+                    Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: cert");
+                    
+                    //append pkcs12AllowedKeys to secretAllowedKeys
+                    secretAllowedKeys = secretAllowedKeys.Concat(jksAdditionalKeyPatterns).ToArray();
+                    secretAllowedKeys = secretAllowedKeys.Concat(JksAllowedKeys).ToArray();
+                    
+                    //make secretAllowedKeys unique
+                    secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
+                    
+                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "jks", string.Join(",", jksNamespaces));
+                    break;
                 case "CertStores.K8SCert.Discovery":
                     break;
             }
