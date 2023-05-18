@@ -33,6 +33,9 @@ using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 using ECCurve = Org.BouncyCastle.Math.EC.ECCurve;
 using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Utilities.IO.Pem;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S;
 
@@ -846,14 +849,37 @@ public class KubeCertificateManagerClient
         Logger.LogError("Unable to create secret for unknown reason.");
         return null;
     }
-
-    private AsymmetricKeyParameter ReadPrivateKey(byte[] privateKeyBytes)
+    
+    public byte[] ReadCertificatesAndKeysFromJks(byte[] jksBytes, string password)
     {
-        var reader = new PemReader(new StreamReader(new MemoryStream(privateKeyBytes)));
-        var keyPair = (AsymmetricCipherKeyPair)reader.ReadObject();
-        return keyPair.Private;
-    }
+        var jksStore = new Pkcs12Store();
+        X509Certificate2Collection collection = new X509Certificate2Collection();
 
+        using (var jksStream = new MemoryStream(jksBytes))
+        {
+            jksStore.Load(jksStream, password.ToCharArray());
+        }
+
+        var certificatesAndKeys = new Dictionary<string, AsymmetricKeyParameter>();
+
+        // foreach (string alias in jksStore.Aliases)
+        // {
+        //     
+        //     var keyEntry = jksStore.GetKey(alias);
+        //     certificatesAndKeys.Add(alias, keyEntry.Key);
+        //
+        //     var certificateEntry = jksStore.GetCertificate(alias);
+        //     certificatesAndKeys.Add(alias, certificateEntry.Certificate.GetPublicKey());
+        // }
+        
+        //Convert jksStore to byte array
+        using (var jksStream = new MemoryStream())
+        {
+            jksStore.Save(jksStream, password.ToCharArray(), new SecureRandom());
+            return jksStream.ToArray();
+        }
+    }
+    
     public Pkcs12Store CreatePKCS12Collection(byte[] pkcs12bytes, string currentPassword, string newPassword)
     {
             try
@@ -1609,6 +1635,72 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("Exiting GetCertificateSigningRequestStatus()");
         return new[] { utfCert };
     }
+    
+    public byte[] ConvertPkcs12ToJks(byte[] pkcs12Bytes, string password)
+    {
+        var pkcs12Store = new Pkcs12StoreBuilder().Build();
+
+        using (var pkcs12Stream = new MemoryStream(pkcs12Bytes))
+        {
+            pkcs12Store.Load(pkcs12Stream, password.ToCharArray());
+        }
+
+        var jksStore = new Pkcs12Store();
+
+        foreach (string alias in pkcs12Store.Aliases)
+        {
+            if (pkcs12Store.IsKeyEntry(alias))
+            {
+                var keyEntry = pkcs12Store.GetKey(alias);
+                var certChain = pkcs12Store.GetCertificateChain(alias);
+
+                jksStore.SetKeyEntry(alias, keyEntry, certChain);
+            }
+        }
+
+        using (var jksStream = new MemoryStream())
+        {
+            jksStore.Save(jksStream, password.ToCharArray(), new SecureRandom());
+            return jksStream.ToArray();
+        }
+    }
+
+    // public byte[] CreateJKSFromPKCS12(byte[] pkcs12bytes, string password)
+    // {
+    //     // https://stackoverflow.com/questions/4926676/how-to-create-a-java-keystore-ks-from-private-key-and-certificate-files
+    //     Logger.LogTrace("Entered CreateJKSFromPKCS12()");
+    //     Logger.LogDebug("Attempting to create JKS from PKCS12...");
+    //     var store = new Pkcs12Store();
+    //     Logger.LogTrace("store: " + store);
+    //     Logger.LogTrace("Attempting to load PKCS12 bytes into store.");
+    //     store.Load(new MemoryStream(pkcs12bytes), password.ToCharArray());
+    //     Logger.LogTrace("Successfully loaded PKCS12 bytes into store.");
+    //     Logger.LogTrace("store: " + store);
+    //     Logger.LogTrace("Attempting to create JKS store.");
+    //     var jks = new MemoryStream();
+    //     Logger.LogTrace("jks: " + jks);
+    //     Logger.LogTrace("Attempting to create JKS store.");
+    //     var jksStore = new KeyStore(jks, password.ToCharArray());
+    //     Logger.LogTrace("jksStore: " + jksStore);
+    //     Logger.LogTrace("Attempting to get aliases from store.");
+    //     var aliases = store.Aliases;
+    //     Logger.LogTrace("aliases: " + aliases);
+    //     Logger.LogTrace("Entering foreach loop to add aliases to JKS store.");
+    //     foreach (string alias in aliases)
+    //     {
+    //         Logger.LogTrace("alias: " + alias);
+    //         Logger.LogTrace("Attempting to get certificate chain from store.");
+    //         var chain = store.GetCertificateChain(alias);
+    //         Logger.LogTrace("chain: " + chain);
+    //         Logger.LogTrace("Attempting to get private key from store.");
+    //         var key = store.GetKey(alias);
+    //         Logger.LogTrace("key: " + key);
+    //         Logger.LogTrace("Attempting to add certificate chain to JKS store.");
+    //         jksStore.SetCertificateEntry(alias, chain[0].Certificate);
+    //         Logger.LogTrace("Attempting to add private key to JKS store.");
+    //         jksStore.SetKeyEntry(alias, key.Key, new[] { new X509CertificateEntry(chain[0].Certificate) });
+    //     }
+    // }
 
     public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
     {

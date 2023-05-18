@@ -654,7 +654,7 @@ public abstract class JobBase
                 PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName") ? storeProperties["PasswordFieldName"] : DefaultPFXPasswordSecretFieldName;
                 PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret") ? bool.Parse(storeProperties["PasswordIsSeparateSecret"]) : false;
                 StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath") ? storeProperties["StorePasswordPath"] : "";
-                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") ? bool.Parse(storeProperties["PasswordIsK8SSecret"]) : false;
+                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") ? storeProperties["PasswordIsK8SSecret"] : false;
                 KubeSecretPassword = storeProperties.ContainsKey("KubeSecretPassword") ? storeProperties["KubeSecretPassword"] : "";
                 CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName") ? storeProperties["CertificateDataFieldName"] : DefaultJKSSecretFieldName;
                 break;

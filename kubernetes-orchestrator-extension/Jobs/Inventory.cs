@@ -102,6 +102,10 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "pfx":
                     Logger.LogInformation("Inventorying PKCS12 using " + Pkcs12AllowedKeys);
                     return HandlePkcs12Secret(config.JobHistoryId, submitInventory);
+                case "jks":
+                    Logger.LogInformation("Inventorying jks using " + JksAllowedKeys);
+                    return HandlePkcs12Secret(config.JobHistoryId, submitInventory, true);
+
                 case "cluster":
                     var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all", false);
                     var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all", false);
@@ -614,7 +618,7 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult HandlePkcs12Secret(long jobId, SubmitInventoryUpdate submitInventory)
+    private JobResult HandlePkcs12Secret(long jobId, SubmitInventoryUpdate submitInventory, bool isJks = false)
     {
         Logger.LogDebug("Inventory entering HandlePkcs12Secret for job id " + jobId + "...");
         Logger.LogTrace("KubeNamespace: " + KubeNamespace);
@@ -667,20 +671,22 @@ public class Inventory : JobBase, IInventoryJobExtension
             var storeBytes = new byte[] { };
 
             // Iterate through all keys in secret to see if any match the Pkcs12AllowedKeyNames
-            KeyValuePair<string, byte[]> pkcsStores = new KeyValuePair<string, byte[]>();
+            // KeyValuePair<string, byte[]> pkcsStores = new KeyValuePair<string, byte[]>();
+
+            var allowedKeys = isJks ? JksAllowedKeys : Pkcs12AllowedKeys;
+            
             foreach (var key in certData.Data.Keys)
             {
                 // split key on '.' and take the last element
                 var keyName = key.Split(".").Last();
-                if (Pkcs12AllowedKeys.Contains(keyName) || CertificateDataFieldName.Contains(keyName))
-                {
-                    Logger.LogTrace("Found key '" + key + "' in secret '" + KubeSecretName + "' for job id " + jobId + "...");
-                    storeBytes = certData.Data[key];
-                    Logger.LogTrace("storeBytes: " + Encoding.UTF8.GetString(storeBytes));
-                    // add key and value to dictionary
-                    pkcsStores = new KeyValuePair<string, byte[]>(key, storeBytes);
-                    break;
-                }
+                if (!allowedKeys.Contains(keyName) && !CertificateDataFieldName.Contains(keyName)) continue;
+
+                Logger.LogTrace("Found key '" + key + "' in secret '" + KubeSecretName + "' for job id " + jobId + "...");
+                storeBytes = certData.Data[key];
+                Logger.LogTrace("storeBytes: " + Encoding.UTF8.GetString(storeBytes));
+                // add key and value to dictionary
+                // pkcsStores = new KeyValuePair<string, byte[]>(key, storeBytes);
+                break;
             }
 
             if (storeBytes == null)
@@ -725,7 +731,18 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             // Load the bytes into a collection of X509Certificates
             var certCollection = new X509Certificate2Collection();
-            certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);
+
+            if (isJks)
+            {
+                var jksCerts = KubeClient.ReadCertificatesAndKeysFromJks(storeBytes, storePassword);
+                certCollection.Import(jksCerts, storePassword, X509KeyStorageFlags.Exportable);
+            }
+            else
+            {
+                certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);    
+            }
+            
+            
 
             // Extract the private key and certificate for each certificate in the collection
 
