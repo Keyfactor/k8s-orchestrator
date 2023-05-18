@@ -62,6 +62,11 @@ It is not necessary to use a PAM Provider for all of the secrets available above
 
 If a PAM Provider will be used for one of the fields above, start by referencing the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam). The GitHub repo for the PAM Provider to be used contains important information such as the format of the `json` needed. What follows is an example but does not reflect the `json` values for all PAM Providers as they have different "instance" and "initialization" parameter names and values.
 
+<details><summary>General PAM Provider Configuration</summary>
+<p>
+
+
+
 ### Example PAM Provider Setup
 
 To use a PAM Provider to resolve a field, in this example the __Server Password__ will be resolved by the `Hashicorp-Vault` provider, first install the PAM Provider extension from the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam) on the Universal Orchestrator.
@@ -88,7 +93,8 @@ To have the __Server Password__ field resolved by the `Hashicorp-Vault` provider
 ~~~
 
 This text would be entered in as the value for the __Server Password__, instead of entering in the actual password. The Orchestrator will attempt to use the PAM Provider to retrieve the __Server Password__. If PAM should not be used, just directly enter in the value for the field.
-
+</p>
+</details> 
 
 
 
@@ -481,17 +487,17 @@ kfutil store-types create --name K8SPKCS12
 #### UI Configuration
 
 ##### UI Basic Tab
-| Field Name              | Required | Value                                      |
-|-------------------------|----------|--------------------------------------------|
-| Name                    | &check;  | `K8SPKCS12`                                |
-| ShortName               | &check;  | `K8SPKCS12`                                |
-| Custom Capability       | &check;  | Checked [x] + `K8SPKCS12`                  |
-| Supported Job Types     | &check;  | Inventory, Add, Remove, Create, Discovery  |
-| Needs Server            | &check;  | Checked [x]                                |
-| Blueprint Allowed       |          | Unchecked [ ]                              |
-| Uses PowerShell         |          | Unchecked [ ]                              |
-| Requires Store Password |          | Unchecked [ ]                              |
-| Supports Entry Password |          | Unchecked [ ]                              |
+| Field Name              | Required  | Value                                     |
+|-------------------------|-----------|-------------------------------------------|
+| Name                    | &check;   | `K8SPKCS12`                               |
+| ShortName               | &check;   | `K8SPKCS12`                               |
+| Custom Capability       | &check;   | Checked [x] + `K8SPKCS12`                 |
+| Supported Job Types     | &check;   | Inventory, Add, Remove, Create, Discovery |
+| Needs Server            | &check;   | Checked [x]                               |
+| Blueprint Allowed       |           | Unchecked [ ]                             |
+| Uses PowerShell         |           | Unchecked [ ]                             |
+| Requires Store Password | &check;   | Checked [x]                               |
+| Supports Entry Password |           | Unchecked [ ]                             |
 
 ![k8spkcs12_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_basic.png)
 
@@ -506,16 +512,16 @@ kfutil store-types create --name K8SPKCS12
 ![k8spkcs12_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name                   | Display Name              | Type   | Required | Default Value | Description                                                                                                       |
-|------------------------|---------------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace          | Kube Namespace            | String |          | `default`     | K8S namespace the PKCS12 secret lives                                                                             |
-| KubeSecretName         | Kube Secret Name          | String | &check;  |               | The K8S secret name that contains PKCS12 data                                                                     |
-| KubeSecretType         | Kube Secret Type          | String | &check;  | `pkcs12`      | This must be set to `pkcs12`.                                                                                     |
-| KubeSecretKey          | Kube Secret Key           | String | &check;  | `tls.pkcs12`  | The K8S secret field name to source the PKCS12 data from                                                          |
-| PasswordFieldName      | Password Field Name       | String |          | `password`    | If sourcing the PKCS12 password from a K8S secret this is the field it will look for the password in.             |
-| PasswordIsK8SSecret    | Password Is K8S Secret    | Bool   | &check;  | `false`       | If you want to use the PKCS12 secret or a separate secret specific in `KubeSecretPasswordPath` set this to `true` |
-| KubeSecretPassword     | Kube Secret Password      | Secret |          |               | If you want to specify the PKCS12 password on the store in Command use this.                                      |
-| KubeSecretPasswordPath | Kube Secret Password Path | String |          |               | Source PKCS12 password from a separate K8S secret. Pattern: `namespace_name/secret_name`                          |
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                                                                    |
+|--------------------------|-----------------------------|--------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the PKCS12 secret lives                                                                                                          |
+| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains PKCS12 data                                                                                                  |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `pkcs12`      | This must be set to `pkcs12`.                                                                                                                  |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.p12`        | The K8S secret field name to source the PKCS12 data from. You can provide an extension `.p12` or `.pfx` for a secret with a key `example.p12`  |
+| PasswordFieldName        | Password Field Name         | String |          | `password`    | If sourcing the PKCS12 password from a K8S secret this is the field it will look for the password in.                                          |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the PKCS12 secret or a separate secret specific in `KubeSecretPasswordPath` set this to `true`                              |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the PKCS12 password on the store in Command use this.                                                                   |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source PKCS12 password from a separate K8S secret. Pattern: `namespace_name/secret_name`                                                       |
                                                                                                    
 
 ![k8spkcs12_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_custom_fields.png)
@@ -562,16 +568,16 @@ kfutil store-types create --name K8SJKS
 ![k8sJKS_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name                   | Display Name              | Type   | Required | Default Value | Description                                                                                        |
-|------------------------|---------------------------|--------|----------|---------------|----------------------------------------------------------------------------------------------------|
-| KubeNamespace          | Kube Namespace            | String |          | `default`     | K8S namespace the JKS secret lives                                                                 |
-| KubeSecretName         | Kube Secret Name          | String | &check;  |               | The K8S secret name that contains JKS data                                                         |
-| KubeSecretType         | Kube Secret Type          | String | &check;  | `JKS`         |                                                                                                    |
-| KubeSecretKey          | Kube Secret Key           | String | &check;  | `tls.JKS`     | The K8S secret field name to source the JKS data from                                              |
-| PasswordFieldName      | Password Field Name       | String | &check;  | `password`    | If sourcing the JKS password from a K8S secret this is the field it will look for the password in. |
-| PasswordIsK8SSecret    | Password Is K8S Secret    | Bool   | &check;  | `true`        | If you want to use the JKS secret or a separate secret specific in `` set this to `true`           |
-| KubeSecretPassword     | Kube Secret Password      | Secret |          |               | If you want to specify the JKS password on the store in Command use this.                          |
-| KubeSecretPasswordPath | Kube Secret Password Path | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`              |
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                        |
+|--------------------------|-----------------------------|--------|----------|---------------|----------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the JKS secret lives                                                                 |
+| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains JKS data                                                         |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `JKS`         |                                                                                                    |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.jks`        | The K8S secret field name to source the JKS data from                                              |
+| PasswordFieldName        | Password Field Name         | String | &check;  | `password`    | If sourcing the JKS password from a K8S secret this is the field it will look for the password in. |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the JKS secret or a separate secret specific in `` set this to `true`           |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the JKS password on the store in Command use this.                          |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`              |
 
 
 ![k8sJKS_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_custom_fields.png)
