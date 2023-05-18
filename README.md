@@ -1,7 +1,7 @@
 # Kubernetes Orchestrator Extension
 
 The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported:
-   - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
+    - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
     - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
 #### Integration status: Pilot - Ready for use in test environments. Not for use in production.
