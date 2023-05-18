@@ -59,6 +59,8 @@ public class Management : JobBase, IManagementJobExtension
         {
             InitializeStore(config);
             jobCertObj = InitJobCertificate(config);
+            jobCertObj.PasswordIsK8SSecret = PasswordIsK8SSecret;
+            jobCertObj.StorePasswordPath = StorePasswordPath;
         }
         catch (Exception e)
         {
@@ -89,7 +91,7 @@ public class Management : JobBase, IManagementJobExtension
                     return HandleCreateOrUpdate(KubeSecretType, config, jobCertObj, Overwrite);
                 case CertStoreOperationType.Remove:
                     Logger.LogInformation($"Processing Management-{config.OperationType.GetType()} job for certificate '{config.JobCertificate.Alias}'...");
-                    return HandleRemove(config);
+                    return HandleRemove(KubeSecretType, config);
                 case CertStoreOperationType.Unknown:
                 case CertStoreOperationType.Inventory:
                 case CertStoreOperationType.CreateAdd:
@@ -338,7 +340,7 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
-    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true)
+    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false)
     {
         Logger.LogTrace("Entered HandlePKCS12Secret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -349,7 +351,7 @@ public class Management : JobBase, IManagementJobExtension
         try
         {
             //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
-            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM))
+            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM) && !remove)
             {
                 Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
                 return creatEmptySecret("pfx");
@@ -380,9 +382,13 @@ public class Management : JobBase, IManagementJobExtension
             KubeNamespace,
             KubeSecretType,
             overwrite,
-            KubeSecretKey,
+            CertificateDataFieldName,
             PasswordFieldName,
-            KubeSecretPasswordPath
+            StorePasswordPath,
+            PasswordIsK8SSecret,
+            StorePassword,
+            Pkcs12AllowedKeys,
+            remove
         );
         if (createResponse == null)
         {
@@ -620,12 +626,25 @@ public class Management : JobBase, IManagementJobExtension
         return SuccessJob(config.JobHistoryId);
     }
 
-    private JobResult HandleRemove(ManagementJobConfiguration config)
+    private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
         //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
         var kubeHost = KubeClient.GetHost();
         var jobCert = config.JobCertificate;
-        var certAlias = jobCert.Alias;
+        var certAlias = config.JobCertificate.Alias;
+
+        K8SJobCertificate cert = new K8SJobCertificate();
+        cert.Alias = certAlias;
+        cert.StorePassword = config.CertificateStoreDetails.StorePassword;
+        cert.PasswordIsK8SSecret = PasswordIsK8SSecret;
+        cert.StorePasswordPath = StorePasswordPath;
+        
+        if (secretType is "pkcs12")
+        {
+            _ = HandlePKCS12Secret(certAlias, cert, StorePassword, true, false, true);
+            return SuccessJob(config.JobHistoryId);
+        }
+        
 
         if (!string.IsNullOrEmpty(certAlias))
         {

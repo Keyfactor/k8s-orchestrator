@@ -663,26 +663,45 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogDebug("KubeClient.GetCertificateStoreSecret() returned successfully.");
             Logger.LogTrace("certData: " + certData);
 
+
             var storeBytes = new byte[] { };
-            if (certData.Data.TryGetValue(KubeSecretKey, out var value))
+
+            // Iterate through all keys in secret to see if any match the Pkcs12AllowedKeyNames
+            KeyValuePair<string, byte[]> pkcsStores = new KeyValuePair<string, byte[]>();
+            foreach (var key in certData.Data.Keys)
             {
-                storeBytes = value;
+                // split key on '.' and take the last element
+                var keyName = key.Split(".").Last();
+                if (Pkcs12AllowedKeys.Contains(keyName) || CertificateDataFieldName.Contains(keyName))
+                {
+                    Logger.LogTrace("Found key '" + key + "' in secret '" + KubeSecretName + "' for job id " + jobId + "...");
+                    storeBytes = certData.Data[key];
+                    Logger.LogTrace("storeBytes: " + Encoding.UTF8.GetString(storeBytes));
+                    // add key and value to dictionary
+                    pkcsStores = new KeyValuePair<string, byte[]>(key, storeBytes);
+                    break;
+                }
             }
-            else
+
+            if (storeBytes == null)
             {
-                var pfxEx = "PKCS12 store '" + StorePath + "' did not contain key '" + KubeSecretKey + "' for job id " + jobId + "...";
-                Logger.LogError(pfxEx);
-                throw new Exception(pfxEx);
+                var storeEx = "PKCS12 store did not contain key '" + CertificateDataFieldName + "for job id " + jobId + "...";
+                Logger.LogError(storeEx);
+                throw new Exception(storeEx);
             }
             Logger.LogTrace("storeb64: " + Encoding.UTF8.GetString(storeBytes));
-            
+
             var storePasswordBytes = new byte[] { };
-            
+
             // if secret is a buddy pass
-            if (!string.IsNullOrEmpty(KubeSecretPasswordPath))
+            if (!string.IsNullOrEmpty(StorePassword))
+            {
+                storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
+            }
+            else if (!string.IsNullOrEmpty(StorePasswordPath))
             {
                 // Split password path into namespace and secret name
-                var passwordPath = KubeSecretPasswordPath.Split("/");
+                var passwordPath = StorePasswordPath.Split("/");
                 var passwordNamespace = passwordPath[0];
                 var passwordSecretName = passwordPath[1];
                 var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
@@ -694,7 +713,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             }
             else
             {
-                var passwdEx = "PKCS12 store did not contain key '" + KubeSecretKey + "for job id " + jobId + "...";
+                var passwdEx = "PKCS12 store did not contain key '" + CertificateDataFieldName + "for job id " + jobId + "...";
                 Logger.LogError(passwdEx);
                 throw new Exception(passwdEx);
             }
@@ -721,7 +740,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 var certObject = new X509Certificate2(certBytes);
 
                 // Do something with the private key and certificate
-                Logger.LogTrace("privateKey: " + privateKey);
+                // Logger.LogTrace("privateKey: " + privateKey);
                 Logger.LogTrace("certBytes: " + certBytes);
                 Logger.LogTrace("certObject: " + certObject);
                 Logger.LogTrace("certObject.Thumbprint: " + certObject.Thumbprint);
