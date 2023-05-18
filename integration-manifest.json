@@ -2,7 +2,7 @@
   "$schema": "https://keyfactor.github.io/integration-manifest-schema.json",
   "integration_type": "orchestrator",
   "name": "Kubernetes Orchestrator Extension",
-  "status": "pilot",
+  "status": "production",
   "description": "The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported:\n- Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` \n- Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`",
   "short_description": "The Kubernetes Orchestrator allows for remote management of Kubernetes secret types 'Opaque' and 'kubernetes.io/tls' as well as 'certificates.k8s.io/v1' resources. ",
   "link_github": false,
@@ -18,8 +18,8 @@
     "orchestrator",
     "keyfactor-universal-orchestrator"
   ],
-  "update_catalog": false,
-  "support_level": "kf-community",
+  "update_catalog": true,
+  "support_level": "kf-supported",
   "about": {
     "orchestrator": {
       "UOFramework": "10.1",
@@ -57,25 +57,23 @@
           },
           "Properties": [
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeNamespace",
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
+
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
               "Type": "String",
@@ -113,25 +111,22 @@
           },
           "Properties": [
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeNamespace",
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
               "Type": "String",
@@ -169,25 +164,22 @@
           },
           "Properties": [
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeNamespace",
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": true
+              "Required": false
             },
             {
-              "StoreTypeId;omitempty": 0,
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
               "Type": "String",

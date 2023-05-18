@@ -4,7 +4,7 @@ The Kubernetes Orchestrator allows for the remote management of certificate stor
 - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
 - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
-#### Integration status: Pilot - Ready for use in test environments. Not for use in production.
+#### Integration status: Production - Ready for use in production environments.
 
 ## About the Keyfactor Universal Orchestrator Extension
 
@@ -18,10 +18,9 @@ The Universal Orchestrator is the successor to the Windows Orchestrator. This Or
 
 ## Support for Kubernetes Orchestrator Extension
 
-Kubernetes Orchestrator Extension is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
+Kubernetes Orchestrator Extension is supported by Keyfactor for Keyfactor customers. If you have a support issue, please open a support ticket with your Keyfactor representative.
 
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
-___
 
 
 
@@ -89,6 +88,7 @@ To have the __Server Password__ field resolved by the `Hashicorp-Vault` provider
 ~~~
 
 This text would be entered in as the value for the __Server Password__, instead of entering in the actual password. The Orchestrator will attempt to use the PAM Provider to retrieve the __Server Password__. If PAM should not be used, just directly enter in the value for the field.
+
 
 
 
@@ -562,5 +562,4 @@ each type of certificate store.
 
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
-
 
