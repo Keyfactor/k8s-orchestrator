@@ -340,7 +340,7 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
-    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false)
+    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false, bool isJks = false)
     {
         Logger.LogTrace("Entered HandlePKCS12Secret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -552,9 +552,14 @@ public class Management : JobBase, IManagementJobExtension
                 return FailJob(csrErrorMsg, config.JobHistoryId);
             case "pfx":
             case "pkcs12":
-                Logger.LogInformation("Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " + certAlias + "...");
+                Logger.LogInformation("Secret type is 'pkcs12', calling HandlePKCS12Secret() for certificate " + certAlias + "...");
                 _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite);
-                Logger.LogInformation("Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
+                Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
+                break;
+            case "jks":
+                Logger.LogInformation("Secret type is 'jks', calling HandlePKCS12Secret() for certificate " + certAlias + "...");
+                _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite, false,false, true);
+                Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
                 break;
             case "namespace":
                 jobCertObj.Alias = config.JobCertificate.Alias;

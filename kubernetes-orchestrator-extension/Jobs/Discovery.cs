@@ -118,7 +118,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     secretAllowedKeys = string.IsNullOrEmpty(secretAllowedKeysStr) ? new[] { "p12" } : secretAllowedKeysStr.Split(',');
 
                     Logger.LogTrace("Entering case: CertStores.K8SCert.Discovery");
-                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: cert");
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: pkcs12");
                     
                     //append pkcs12AllowedKeys to secretAllowedKeys
                     secretAllowedKeys = secretAllowedKeys.Concat(additionalKeyPatterns).ToArray();
@@ -156,6 +156,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     //make secretAllowedKeys unique
                     secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
                     
+                    Logger.LogInformation("Discovering secrets with allowed keys: " + string.Join(",", secretAllowedKeys) + " and type: jks");
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "jks", string.Join(",", jksNamespaces));
                     break;
                 case "CertStores.K8SCert.Discovery":

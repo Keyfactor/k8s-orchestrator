@@ -1801,10 +1801,15 @@ public class KubeCertificateManagerClient
 
                                 // Check if a 'certificates' key exists
                                 Logger.LogDebug("Attempting to parse certificate from opaque secret");
+                                if (secretData.Data == null || secret.Data.Keys == null)
+                                {
+                                    Logger.LogWarning("secretData.Data is null for secret '" + secret.Metadata.Name + "'. Skipping secret.");
+                                    continue;
+                                }
                                 Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
-                                if (secretData.Data == null || secret.Data.Keys == null ) continue;
                                 foreach (var dataKey in secretData.Data.Keys)
                                 {
+                                    Logger.LogDebug("Checking if secret key " + dataKey + " is in list of allowed keys" + allowedKeys);
                                     Logger.LogTrace("dataKey: " + dataKey);
                                     try
                                     {
@@ -1812,24 +1817,34 @@ public class KubeCertificateManagerClient
                                         var dataKeyArray = dataKey.Split(".");
                                         var extension = dataKeyArray[^1];
                                         
-                                        if (!allowedKeys.Contains(extension)) continue;
-                                        Logger.LogDebug("Attempting to parse certificate from opaque secret");
+                                        Logger.LogDebug("Checking if key " + extension + " is in list of allowed keys" + allowedKeys);
+                                        Logger.LogTrace("extension: " + extension);
+                                        
+                                        
+                                        if (!allowedKeys.Contains(extension))
+                                        {
+                                            Logger.LogTrace("Extension " + extension + " is not in list of allowed keys" + allowedKeys);
+                                            if(!allowedKeys.Contains(dataKey))
+                                            {
+                                                Logger.LogDebug("Skipping secret field" + dataKey + " because it is not in the list of allowed keys" + allowedKeys);
+                                                continue;
+                                            }
+                                        }
+                                        Logger.LogDebug("Secret field '" + dataKey + "' is an allowed key.");
+                                        Logger.LogDebug("Attempting to parse certificate from opaque secret data");
                                         var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
                                         Logger.LogTrace("certs: " + certs);
                                         // var keys = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
                                         Logger.LogTrace("Splitting certs into array by ','.");
                                         var certsArray = certs.Split(",");
                                         // var keysArray = keys.Split(",");
-                                        var index = 0;
                                         foreach (var cer in certsArray)
                                         {
                                             Logger.LogTrace("cer: " + cer);
                                             Logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
                                             // _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
-
                                             Logger.LogDebug("Adding certificate to list of discovered certificates");
                                             secretsList.Append(cer);
-                                            index++;
                                         }
                                         locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
                                     }
