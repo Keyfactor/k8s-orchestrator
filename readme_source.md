@@ -67,9 +67,9 @@ The minimum version of the Keyfactor Universal Orchestrator Framework needed to 
 
 ## Platform Specific Notes
 
-The Keyfactor Universal Orchestrator may be installed on either Windows or Linux based platforms.
+The Keyfactor Command Universal Orchestrator may be installed on either Windows or Linux based platforms.
 The certificate operations supported by a capability may vary based what platform the capability is installed on.
-See the store type specific sections below for more details on specific cababilities based on Kubernetes resource type.
+See the store type specific sections below for more details on specific capabilities based on Kubernetes resource type.
 
 ## PAM Integration
 
@@ -119,15 +119,20 @@ To provision these certs use the [k8s-csr-signer](https://github.com/Keyfactor/k
 documentation for more information.
 
 ### K8SSecret
-The K8SSecret store type is used to manage Kubernetes secrets of type `Opaque`.  These secrets can have any 
-arbitrary fields, but except for the `tls.crt` and `tls.key` fields, these are reserved for the `kubernetes.io/tls` 
-secret type.    
-**NOTE**: The orchestrator will only manage the fields named `certificates` and `private_keys` in the
+The K8SSecret store type is used to manage Kubernetes secrets of type `Opaque`.  These secrets must contain at least one 
+of the following keys: `tls.crt` and `tls.key` fields.  The `tls.crt` field must contain a valid certificate and the `tls.key`
+field must contain the corresponding private key for the certificate.  The `tls.crt` and `tls.key` fields may be in 
+either PEM or DER format.
+**NOTE**: The orchestrator will only manage the fields named `tls.key` and `tls.crt` in the
 secret.  Any other fields will be ignored.
 
 ### K8STLSSecret
-The K8STLSSecret store type is used to manage Kubernetes secrets of type `kubernetes.io/tls`.  These secrets
-must have the `tls.crt` and `tls.key` fields and may only contain a single key and single certificate.
+The K8STLSSecret store type is used to manage Kubernetes secrets of type `kubernetes.io/tls`. These secrets must contain at least one
+of the following keys: `tls.crt` and `tls.key` fields.  The `tls.crt` field must contain a valid certificate and the `tls.key`
+field must contain the corresponding private key for the certificate.  The `tls.crt` and `tls.key` fields may be in
+either PEM or DER format.
+**NOTE**: The orchestrator will only manage the fields named `tls.key` and `tls.crt` in the
+secret.  Any other fields will be ignored.
 
 ## Versioning
 
@@ -144,7 +149,10 @@ can be provided to the extension in one of two ways:
 - As a base64 encoded string that contains the service account credentials
 
 ### Service Account Setup
-To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension, use the following example as a guide:
+For more details on the service account check the service account docs here [K8S service account setup guide](scripts%2Fkubernetes%2FREADME.md)
+**NOTE**: The orchestrator extension requires the service account to be in the specific format detailed in the setup guide.
+
+For a quick reference on what permissions are required for the service account, see the following example YAML file:
 ```yaml
 apiVersion: v1
 kind: ServiceAccount
@@ -194,13 +202,13 @@ subjects:
    link on the right hand side of the main page and download the first zip file.
 5. Copy the contents of the download installation zip file to the folder created in Step 3.
 6. (Optional) If you decide to create one or more certificate store types with short names different
-   than the suggested values (please see the individual certificate store type sections in "Certificate
-   Store Types" later in this README for more information regarding certificate store types), edit the
+   than the suggested values (please see the individual certificate store type sections in [Certificate Store Types](#certificate-store-types) 
+   later in this README for more information regarding certificate store types), edit the
    manifest.json file in the folder you created in step 3, and modify each "ShortName" in each
    "Certstores.{ShortName}.{Operation}" line with the ShortName you used to create the respective
    certificate store type.  If you created it with the suggested values, this step can be skipped.
 7. Modify the config.json file (See the "Configuration File Setup" section later in this README)
-8. Start the Keyfactor Universal Orchestrator Service.
+8. Start the Keyfactor Command Universal Orchestrator Service.
 9. Create the certificate store types you wish to manage.  Please refer to the individual sections
    devoted to each supported store type under [Certificate Store Types](#certificate-store-types) later in this README.
 10. (Optional) Run certificate discovery jobs to populate the certificate stores with existing
@@ -260,7 +268,7 @@ A Keyfactor Command certificate store `StorePath` for the K8S orchestrator exten
 | KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
 
 ##### Kube Secret Types
-- `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
+- `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `tls.crt`, `tls.key`, `ca.crt` ] to be inventoried.
 - `tls_secret` - A secret of type `kubernetes.io/tls`. Must contain the following keys: [ `tls.crt`, `tls.key` ] to be inventoried.
 - `cert` - A certificate `certificates.k8s.io/v1` resource. Must contain the following keys: [ `csr`, `cert` ] to be inventoried.
 
@@ -423,39 +431,58 @@ Please refer to the Keyfactor Command Reference Guide for information on creatin
 certificate stores and scheduling Discovery jobs in Keyfactor Command.
 
 ## Certificate Discovery
-**NOTE:** To use disovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` checkbox MUST be checked.
-Otherwise you will not be able to provide credentials to the discovery job.
+**NOTE:** To use discovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` 
+checkbox MUST be checked. Otherwise you will not be able to provide credentials to the discovery job.
 
-The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate stores with existing certificates.  To run a discovery job, follow these steps:
+| Field Name            | Value                                | Description                                                                                                                                                                                                                                                             |
+|-----------------------|--------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Category              | [`K8SSECRET`,`K8SCERT`,`K8STLSSECR`] | The storetype you wish to discover. They must first be created in Keyfactor Command to be used here.                                                                                                                                                                    |
+| Orchestrator          | <unique to environment>              | This is a drop down of a list of orchestrators capable of running K8S related discoveries. If not there you'll need to register one.                                                                                                                                    |
+| Schedule              | `Immediate`                          | This is a drop down of a list of schedules, `Immediate` is recommended for discovery.                                                                                                                                                                                   |
+| Client Machine        | <unique to environment>              | This field isn't used for anything, but is required. It is recommended to use orchestrator or cluster name here, but can be anything meaningful to you.                                                                                                                 |
+| Server Username       | `kubeconfig`                         | This is a static value and MUST be `kubeconfig`.                                                                                                                                                                                                                        |
+| Server Password       | <kubeconfig JSON>                    | This is the kubeconfig JSON file that contains the service account credentials. For more information on how to create this credential review [service account setup](scripts%2Fkubernetes%2FREADME.md) documentation.                                                   |
+| Directories to Search | `all`                                | This is a freeform CSV field. You can provide a list of K8S namespaces `default,engineering, ops` or specify `all` to query all namespaces. *NOTE* The service account must have permissions list all namespaces and secrets.                                           |
+| Extensions            |                                      | This only gets used in discovery for `K8SJKS` and `K8SPKCS12` stores and will be used when searching K8S secrets. It is a comma separated list. For example if you put in `p12` this will discover secrets with field names that contain `p12` such as `my.host.io.p12` |
+| Filename Patterns     | <not useable>                        | Unused and does nothing.                                                                                                                                                                                                                                                |
+| Follow Symlinks       | <not useable>                        | Unused and does nothing.                                                                                                                                                                                                                                                |
+| Include PKCS12 Files? | <not useable>                        | Unused and does nothing.                                                                                                                                                                                                                                                |
+| Use SSL               | [x] checked                          | Unused and does nothing, but it checked by default.                                                                                                                                                                                                                     |
+
+The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This allows you to populate the certificate 
+stores with existing certificates.  To run a discovery job, follow these steps:
 1. Click on the "Locations > Certificate Stores" menu item.
 2. Click the "Discover" tab.
 3. Click the "Schedule" button.
-4. Configure the job based on storetype. **Note** the "Server Username" field must be set to `kubeconfig` and the "Server Password" field is the `kubeconfig` formatted JSON file containing the service account credentials.  See the "Service Account Setup" section earlier in this README for more information on setting up a service account.
+4. Configure the job based on storetype. **Note** the "Server Username" field must be set to `kubeconfig` and the 
+"Server Password" field is the `kubeconfig` formatted JSON file containing the service account credentials.  See the 
+"Service Account Setup" section earlier in this README for more information on setting up a service account.
    ![discover_schedule_start.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_schedule_start.png)
    ![discover_schedule_config.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_schedule_config.png)
    ![discover_server_username.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_server_username.png)
    ![discover_server_password.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_server_password.png)
-5. Click the "Save" button and wait for the Orchestrator to run the job. This may take some time depending on the number of certificates in the store and the Orchestrator's check-in schedule.
+5. Click the "Save" button and wait for the Orchestrator to run the job. This may take some time depending on the number 
+of certificates in the store and the Orchestrator's check-in schedule.
 
 ## Certificate Inventory
 In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
-| Store Type | Valid Secret Keys                                                                             |
-|------------|-----------------------------------------------------------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`                                                                           |
-| K8SSecret  | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
-| K8SCert    | `cert`, `csr`                                                                                 |
+| Store Type | Valid Secret Keys              |
+|------------|--------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`, `ca.crt`  |
+| K8SSecret  | `tls.crt`,`tls.key`, `ca.crt`  |
+| K8SCert    | `cert`, `csr`                  |
 
 ## Certificate Management
 Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
 The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
 each type of certificate store.
 
-| Store Type | Managed Secret Keys            |
-|------------|--------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`            |
-| K8SSecret  | `certificates`, `private_keys` |
-| K8SCert    | Management not supported.      |
+| Store Type | Managed Secret Keys       | Management Behavior                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+|------------|---------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`       | `add` - When adding a certificate, the K8S secret exists in the specified namespace and the fields are not present, the fields will be added. <br> - If the fields are already present then the data contained will be **OVERWRITTEN / REPLACED** <br> `update` - If the K8S secret exists each field will have the value <strong>REPLACED</strong> with the contents of the most recent update job. <br> `remove` - If the secret exists and the keys are present, the keys will be removed. <br> `create` - If the secret does not exist in the specified K8S namespace, it will be created. |
+| K8SSecret  | `tls.crt`, `tls.key`      | `add` - When adding a certificate, the K8S secret exists in the specified namespace and the fields are not present, the fields will be added. <br> - If the fields are already present then the data contained will be **OVERWRITTEN / REPLACED** <br> `update` - If the K8S secret exists each field will have the value <strong>REPLACED</strong> with the contents of the most recent update job. <br> `remove` - If the secret exists and the keys are present, the keys will be removed. <br> `create` - If the secret does not exist in the specified K8S namespace, it will be created. |                                                                                                                                                                                                                                         
+| K8SCert    | Management not supported. | `add` - Not supported. <br> `update` - Not supported. <br> `remove` - Not supported. <br> `create` - Not supported.                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 
 ## Development

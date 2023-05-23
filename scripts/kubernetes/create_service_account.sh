@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 unset KUBECONFIG
 kubectl apply -f ./kubernetes_svc_account.yml
 

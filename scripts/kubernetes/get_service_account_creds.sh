@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 # Prompt for SA_NAME, NAMESPACE, CLUSTER_NAME, CLUSTER_API_SERVER
 read -p "Enter the name of the service account: " SA_NAME
 read -p "Enter the namespace of the service account: " NAMESPACE
