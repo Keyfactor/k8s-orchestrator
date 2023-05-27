@@ -77,7 +77,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 KubeSecretType = "namespace";
             }
 
-            switch (KubeSecretType)
+            switch (KubeSecretType.ToLower())
             {
                 case "secret":
                 case "secrets":
