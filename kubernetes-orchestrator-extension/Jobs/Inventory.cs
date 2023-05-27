@@ -266,14 +266,15 @@ public class Inventory : JobBase, IInventoryJobExtension
         var jksStore = new JKSCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
         var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
+        
 
         Dictionary<string, string> jksInventoryDict = new Dictionary<string, string>();
         // iterate through the keys in the secret and add them to the jks store
-        foreach (var jStore in k8sData)
+        foreach (var jStore in k8sData.JksInventory)
         {
             var keyName = jStore.Key;
             var keyBytes = jStore.Value;
-            var keyPassword = StorePassword;
+            var keyPassword = getK8SStorePassword(k8sData.Secret);
             var keyAlias = keyName;
             var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
@@ -699,8 +700,20 @@ public class Inventory : JobBase, IInventoryJobExtension
         {
             // Split password path into namespace and secret name
             var passwordPath = StorePasswordPath.Split("/");
-            var passwordNamespace = passwordPath[0];
-            var passwordSecretName = passwordPath[1];
+            var passwordNamespace = "";
+            var passwordSecretName = "";
+            if (passwordPath.Length == 1)
+            {
+                passwordNamespace = KubeNamespace;
+                passwordSecretName = passwordPath[0];
+            }
+            else
+            {
+                passwordNamespace = passwordPath[0];
+                passwordSecretName = passwordPath[^1];
+            }
+            
+             
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
             storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
         }

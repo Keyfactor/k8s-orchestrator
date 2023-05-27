@@ -1777,8 +1777,18 @@ public class KubeCertificateManagerClient
         return locations;
     }
 
+    public struct JksSecret
+    {
+        public string SecretPath;
+        public string SecretFieldName;
+        public V1Secret Secret;
+        public string Password;
+        public string PasswordPath;
+        public string [] AllowedKeys;
+        public Dictionary<string,byte[]> JksInventory;
+    }
 
-    public Dictionary<string,byte[]> GetJKSSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, string [] allowedKeys = null)
+    public JksSecret GetJKSSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, string[] allowedKeys = null)
     {
         Logger.LogTrace("Entered GetJKSSecret()");
         Logger.LogTrace("secretName: " + secretName);
@@ -1790,11 +1800,11 @@ public class KubeCertificateManagerClient
         // Logger.LogTrace("secret.Data: " + secret.Data);
         Logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
         Logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
-        
+
         allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
 
-        
-        Dictionary<string,byte[]> secretData = new Dictionary<string, byte[]>();
+
+        Dictionary<string, byte[]> secretData = new Dictionary<string, byte[]>();
 
         foreach (var secretFieldName in secret?.Data.Keys)
         {
@@ -1807,13 +1817,24 @@ public class KubeCertificateManagerClient
             var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
 
             if (!isJksField) continue;
-            
+
             Logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
             var data = secret.Data[secretFieldName];
             Logger.LogTrace("data: " + data);
             secretData.Add(secretFieldName, data);
         }
-        return secretData;
+        var output = new JksSecret()
+        {
+            Secret = secret,
+            SecretPath = $"{namespaceName}/secrets/{secretName}",
+            SecretFieldName = secret.Data.Keys.FirstOrDefault(),
+            Password = password,
+            PasswordPath = passwordPath,
+            AllowedKeys = allowedKeys,
+            JksInventory = secretData
+        };
+        Logger.LogTrace("Exiting GetJKSSecret()");
+        return output;
     }
     
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
