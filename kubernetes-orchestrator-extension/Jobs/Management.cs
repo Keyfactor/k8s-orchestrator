@@ -6,10 +6,12 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Logging;
@@ -19,8 +21,10 @@ using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Microsoft.VisualBasic;
+using Org.BouncyCastle.Cms;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Utilities.IO.Pem;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -340,7 +344,8 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
-    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false, bool isJks = false)
+    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false,
+        bool isJks = false)
     {
         Logger.LogTrace("Entered HandlePKCS12Secret()");
         Logger.LogTrace("certAlias: " + certAlias);
@@ -350,11 +355,10 @@ public class Management : JobBase, IManagementJobExtension
 
         try
         {
-            //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
             if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM) && !remove)
             {
                 Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
-                return creatEmptySecret("pfx");
+                return creatEmptySecret(isJks ? "jks" : "pfx");
             }
         }
         catch (Exception ex)
@@ -368,16 +372,17 @@ public class Management : JobBase, IManagementJobExtension
                 Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
             }
         }
-        
+
         var keyPems = new string[] { };
         var certPems = new string[] { };
         var caPems = new string[] { };
         var chainPems = new string[] { };
-        
+
 
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
-        var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj,
+
+        V1Secret createResponse;
+        createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(certObj,
             KubeSecretName,
             KubeNamespace,
             KubeSecretType,
@@ -387,9 +392,9 @@ public class Management : JobBase, IManagementJobExtension
             StorePasswordPath,
             PasswordIsK8SSecret,
             StorePassword,
-            Pkcs12AllowedKeys,
-            remove
-        );
+            isJks ? JksAllowedKeys : Pkcs12AllowedKeys,
+            remove);
+
         if (createResponse == null)
         {
             Logger.LogError("createResponse is null");
@@ -403,7 +408,7 @@ public class Management : JobBase, IManagementJobExtension
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;
     }
-    
+
     private V1Secret HandleTlsSecret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true)
     {
         Logger.LogTrace("Entered HandleTlsSecret()");
@@ -558,7 +563,7 @@ public class Management : JobBase, IManagementJobExtension
                 break;
             case "jks":
                 Logger.LogInformation("Secret type is 'jks', calling HandlePKCS12Secret() for certificate " + certAlias + "...");
-                _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite, false,false, true);
+                _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite, false, false, true);
                 Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
                 break;
             case "namespace":
@@ -643,13 +648,13 @@ public class Management : JobBase, IManagementJobExtension
         cert.StorePassword = config.CertificateStoreDetails.StorePassword;
         cert.PasswordIsK8SSecret = PasswordIsK8SSecret;
         cert.StorePasswordPath = StorePasswordPath;
-        
+
         if (secretType is "pkcs12")
         {
             _ = HandlePKCS12Secret(certAlias, cert, StorePassword, true, false, true);
             return SuccessJob(config.JobHistoryId);
         }
-        
+
 
         if (!string.IsNullOrEmpty(certAlias))
         {

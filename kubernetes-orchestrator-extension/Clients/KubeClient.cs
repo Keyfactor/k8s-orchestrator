@@ -37,6 +37,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities.IO.Pem;
 
+
 namespace Keyfactor.Extensions.Orchestrator.K8S;
 
 public class KubeCertificateManagerClient
@@ -721,7 +722,7 @@ public class KubeCertificateManagerClient
     }
 
     public V1Secret CreateOrUpdateCertificateStoreSecret(K8SJobCertificate jobCertificate, string secretName,
-        string namespaceName, string secretType, bool overwrite = false, string certdataFieldName = "pkcs12", string passwordFieldName = "password",
+        string namespaceName, string secretType, bool overwrite = false, string certDataFieldName = "pkcs12", string passwordFieldName = "password",
         string passwordSecretPath = "", bool passwordIsK8SSecret = false, string password = "", string[] allowedKeys = null, bool remove = false)
     {
         var storePasswd = string.IsNullOrEmpty(password) ? jobCertificate.Password : password;
@@ -732,6 +733,7 @@ public class KubeCertificateManagerClient
         {
             case "pkcs12":
             case "pfx":
+            case "jks":
                 if (remove)
                 {
                     k8SSecretData = new V1Secret();
@@ -741,7 +743,7 @@ public class KubeCertificateManagerClient
                     k8SSecretData = CreateOrUpdatePKCS12Secret(secretName,
                         namespaceName,
                         jobCertificate,
-                        certdataFieldName,
+                        certDataFieldName,
                         storePasswd,
                         passwordFieldName,
                         passwordSecretPath,
@@ -775,17 +777,18 @@ public class KubeCertificateManagerClient
                 switch (secretType)
                 {
                     case "pkcs12":
-                    case "pfx":
+                    case "pfx": 
+                    case "jks":
                         return UpdatePKCS12SecretStore(jobCertificate,
                             secretName,
                             namespaceName,
                             secretType,
-                            certdataFieldName,
+                            certDataFieldName,
                             storePasswd,
                             k8SSecretData,
                             true,
                             overwrite,
-                            false, //TODO: FIX THIS BEFORE PRODUCTION
+                            passwordIsK8SSecret,
                             passwordSecretPath,
                             passwordFieldName,
                             null,
@@ -850,35 +853,6 @@ public class KubeCertificateManagerClient
         return null;
     }
     
-    public byte[] ReadCertificatesAndKeysFromJks(byte[] jksBytes, string password)
-    {
-        var jksStore = new Pkcs12Store();
-        X509Certificate2Collection collection = new X509Certificate2Collection();
-
-        using (var jksStream = new MemoryStream(jksBytes))
-        {
-            jksStore.Load(jksStream, password.ToCharArray());
-        }
-
-        var certificatesAndKeys = new Dictionary<string, AsymmetricKeyParameter>();
-
-        // foreach (string alias in jksStore.Aliases)
-        // {
-        //     
-        //     var keyEntry = jksStore.GetKey(alias);
-        //     certificatesAndKeys.Add(alias, keyEntry.Key);
-        //
-        //     var certificateEntry = jksStore.GetCertificate(alias);
-        //     certificatesAndKeys.Add(alias, certificateEntry.Certificate.GetPublicKey());
-        // }
-        
-        //Convert jksStore to byte array
-        using (var jksStream = new MemoryStream())
-        {
-            jksStore.Save(jksStream, password.ToCharArray(), new SecureRandom());
-            return jksStream.ToArray();
-        }
-    }
     
     public Pkcs12Store CreatePKCS12Collection(byte[] pkcs12bytes, string currentPassword, string newPassword)
     {
@@ -1635,72 +1609,6 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("Exiting GetCertificateSigningRequestStatus()");
         return new[] { utfCert };
     }
-    
-    public byte[] ConvertPkcs12ToJks(byte[] pkcs12Bytes, string password)
-    {
-        var pkcs12Store = new Pkcs12StoreBuilder().Build();
-
-        using (var pkcs12Stream = new MemoryStream(pkcs12Bytes))
-        {
-            pkcs12Store.Load(pkcs12Stream, password.ToCharArray());
-        }
-
-        var jksStore = new Pkcs12Store();
-
-        foreach (string alias in pkcs12Store.Aliases)
-        {
-            if (pkcs12Store.IsKeyEntry(alias))
-            {
-                var keyEntry = pkcs12Store.GetKey(alias);
-                var certChain = pkcs12Store.GetCertificateChain(alias);
-
-                jksStore.SetKeyEntry(alias, keyEntry, certChain);
-            }
-        }
-
-        using (var jksStream = new MemoryStream())
-        {
-            jksStore.Save(jksStream, password.ToCharArray(), new SecureRandom());
-            return jksStream.ToArray();
-        }
-    }
-
-    // public byte[] CreateJKSFromPKCS12(byte[] pkcs12bytes, string password)
-    // {
-    //     // https://stackoverflow.com/questions/4926676/how-to-create-a-java-keystore-ks-from-private-key-and-certificate-files
-    //     Logger.LogTrace("Entered CreateJKSFromPKCS12()");
-    //     Logger.LogDebug("Attempting to create JKS from PKCS12...");
-    //     var store = new Pkcs12Store();
-    //     Logger.LogTrace("store: " + store);
-    //     Logger.LogTrace("Attempting to load PKCS12 bytes into store.");
-    //     store.Load(new MemoryStream(pkcs12bytes), password.ToCharArray());
-    //     Logger.LogTrace("Successfully loaded PKCS12 bytes into store.");
-    //     Logger.LogTrace("store: " + store);
-    //     Logger.LogTrace("Attempting to create JKS store.");
-    //     var jks = new MemoryStream();
-    //     Logger.LogTrace("jks: " + jks);
-    //     Logger.LogTrace("Attempting to create JKS store.");
-    //     var jksStore = new KeyStore(jks, password.ToCharArray());
-    //     Logger.LogTrace("jksStore: " + jksStore);
-    //     Logger.LogTrace("Attempting to get aliases from store.");
-    //     var aliases = store.Aliases;
-    //     Logger.LogTrace("aliases: " + aliases);
-    //     Logger.LogTrace("Entering foreach loop to add aliases to JKS store.");
-    //     foreach (string alias in aliases)
-    //     {
-    //         Logger.LogTrace("alias: " + alias);
-    //         Logger.LogTrace("Attempting to get certificate chain from store.");
-    //         var chain = store.GetCertificateChain(alias);
-    //         Logger.LogTrace("chain: " + chain);
-    //         Logger.LogTrace("Attempting to get private key from store.");
-    //         var key = store.GetKey(alias);
-    //         Logger.LogTrace("key: " + key);
-    //         Logger.LogTrace("Attempting to add certificate chain to JKS store.");
-    //         jksStore.SetCertificateEntry(alias, chain[0].Certificate);
-    //         Logger.LogTrace("Attempting to add private key to JKS store.");
-    //         jksStore.SetKeyEntry(alias, key.Key, new[] { new X509CertificateEntry(chain[0].Certificate) });
-    //     }
-    // }
 
     public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
     {
@@ -1869,6 +1777,45 @@ public class KubeCertificateManagerClient
         return locations;
     }
 
+
+    public Dictionary<string,byte[]> GetJKSSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, string [] allowedKeys = null)
+    {
+        Logger.LogTrace("Entered GetJKSSecret()");
+        Logger.LogTrace("secretName: " + secretName);
+        // Read k8s secret
+        Logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
+        var secret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
+        // Logger.LogTrace("secret: " + secret);
+        // Logger.LogTrace("secret.Data: " + secret.Data);
+        Logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
+        Logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
+        
+        allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
+
+        
+        Dictionary<string,byte[]> secretData = new Dictionary<string, byte[]>();
+
+        foreach (var secretFieldName in secret?.Data.Keys)
+        {
+            Logger.LogTrace("secretFieldName: " + secretFieldName);
+            var sField = secretFieldName;
+            if (secretFieldName.Contains('.'))
+            {
+                sField = secretFieldName.Split(".")[^1];
+            }
+            var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+
+            if (!isJksField) continue;
+            
+            Logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
+            var data = secret.Data[secretFieldName];
+            Logger.LogTrace("data: " + data);
+            secretData.Add(secretFieldName, data);
+        }
+        return secretData;
+    }
+    
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
     {
         Logger.LogTrace("Entered CreateCertificateSigningRequest()");

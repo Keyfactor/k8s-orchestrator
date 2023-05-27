@@ -908,63 +908,38 @@ public abstract class JobBase
         var pfxBytes = Convert.FromBase64String(config.JobCertificate.Contents);
         Logger.LogTrace("Loaded PFX...");
         Pkcs12Store p;
+        string alias = config.JobCertificate.Alias;
 
         Logger.LogTrace("Creating Pkcs12Store...");
-        using (var pfxBytesMemoryStream = new MemoryStream(pfxBytes))
+        // Load the PKCS12 bytes into a Pkcs12Store object
+        using (MemoryStream pkcs12Stream = new MemoryStream(pfxBytes))
         {
-            p = new Pkcs12Store(pfxBytesMemoryStream,
-                config.JobCertificate.PrivateKeyPassword.ToCharArray());
-        }
+            Pkcs12Store store = new Pkcs12StoreBuilder().Build();
 
-        Logger.LogTrace(
-            $"Created Pkcs12Store containing Alias {config.JobCertificate.Alias} Contains Alias is {p.ContainsAlias(config.JobCertificate.Alias)}");
+            store.Load(pkcs12Stream, config.JobCertificate.PrivateKeyPassword.ToCharArray());
 
-        // Extract private key
-        string alias;
-        string privateKeyString;
-
-        Logger.LogTrace("Creating MemoryStream...");
-        using (var memoryStream = new MemoryStream())
-        {
-            using (TextWriter streamWriter = new StreamWriter(memoryStream))
+            // Find the private key entry with the given alias
+            foreach (string aliasName in store.Aliases)
             {
-                Logger.LogTrace("Extracting Private Key...");
-                var pemWriter = new PemWriter(streamWriter);
-                Logger.LogTrace("Created pemWriter...");
-                alias = p.Aliases.Cast<string>().SingleOrDefault(a => p.IsKeyEntry(a));
-                Logger.LogTrace($"Alias = {alias}");
-                var publicKey = p.GetCertificate(alias).Certificate.GetPublicKey();
-                Logger.LogTrace($"publicKey = {publicKey}");
-                KeyEntry = p.GetKey(alias);
-                Logger.LogTrace($"KeyEntry = {KeyEntry}");
-                if (KeyEntry == null) throw new Exception("Unable to retrieve private key");
+                if (aliasName.Equals(alias) && store.IsKeyEntry(aliasName))
+                {
+                    AsymmetricKeyEntry keyEntry = store.GetKey(aliasName);
 
-                var privateKey = KeyEntry.Key;
-                // Logger.LogTrace($"privateKey = {privateKey}");
+                    // Convert the private key to unencrypted PEM format
+                    using (StringWriter stringWriter = new StringWriter())
+                    {
+                        PemWriter pemWriter = new PemWriter(stringWriter);
+                        pemWriter.WriteObject(keyEntry.Key);
+                        pemWriter.Writer.Flush();
 
-                Logger.LogTrace("Creating AsymmetricCipherKeyPair...");
-                var keyPair = new AsymmetricCipherKeyPair(publicKey, privateKey);
-
-                Logger.LogTrace("Writing Private Key to PEM...");
-                pemWriter.WriteObject(keyPair.Private);
-
-                Logger.LogTrace("Flush and Close PEM...");
-                streamWriter.Flush();
-
-                Logger.LogTrace("Get Private Key String...");
-                privateKeyString = Encoding.ASCII.GetString(memoryStream.GetBuffer()).Trim()
-                    .Replace("\r", "").Replace("\0", "");
-                // Logger.LogTrace($"Got Private Key String {privateKeyString}");
-
-                Logger.LogTrace("Close MemoryStream...");
-                memoryStream.Close();
-
-                Logger.LogTrace("Close StreamWriter...");
-                streamWriter.Close();
-                Logger.LogTrace("Finished Extracting Private Key...");
-                // Logger.LogTrace("privateKeyString: " + privateKeyString);
-                return privateKeyString;
+                        return stringWriter.ToString();
+                    }
+                }
             }
         }
+
+        return null; // Private key with the given alias not found
+
+
     }
 }

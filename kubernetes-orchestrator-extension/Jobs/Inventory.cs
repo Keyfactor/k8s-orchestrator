@@ -13,6 +13,8 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
+using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.RemoteFile.JKS;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -103,8 +105,9 @@ public class Inventory : JobBase, IInventoryJobExtension
                     Logger.LogInformation("Inventorying PKCS12 using " + Pkcs12AllowedKeys);
                     return HandlePkcs12Secret(config.JobHistoryId, submitInventory);
                 case "jks":
-                    Logger.LogInformation("Inventorying jks using " + JksAllowedKeys);
-                    return HandlePkcs12Secret(config.JobHistoryId, submitInventory, true);
+                    var jksInventory = HandleJKSSecret(config);
+                    
+                    return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
 
                 case "cluster":
                     var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all", false);
@@ -256,6 +259,71 @@ public class Inventory : JobBase, IInventoryJobExtension
                 FailureMessage = ex.ToString()
             };
         }
+    } 
+    private Dictionary<string,string> HandleJKSSecret(InventoryJobConfiguration config)
+    {
+        var hasPrivateKeyJks = false;
+        var jksStore = new JKSCertificateStoreSerializer(config.JobProperties?.ToString());
+        //getJksBytesFromKubeSecret
+        var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
+
+        Dictionary<string, string> jksInventoryDict = new Dictionary<string, string>();
+        // iterate through the keys in the secret and add them to the jks store
+        foreach (var jStore in k8sData)
+        {
+            var keyName = jStore.Key;
+            var keyBytes = jStore.Value;
+            var keyPassword = StorePassword;
+            var keyAlias = keyName;
+            var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            // create a list of certificate chains in PEM format
+            
+            foreach (var certAlias in jStoreDs.Aliases)
+            {
+                var certChainList = new List<string>();
+                var certChain = jStoreDs.GetCertificateChain(certAlias);
+                var certChainPem = new StringBuilder();
+                var fullAlias = keyAlias + "/" + certAlias;
+                //check if the alias is a private key
+                if (jStoreDs.IsKeyEntry(certAlias))
+                {
+                    hasPrivateKeyJks = true;
+                }
+                var pKey = jStoreDs.GetKey(certAlias);
+                if (pKey != null)
+                {
+                    hasPrivateKeyJks = true;
+                }
+               
+                var leaf = jStoreDs.GetCertificate(certAlias);
+                if (leaf != null)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                    certChainList.Add(certChainPem.ToString());
+                }
+                 
+                if (certChain == null)
+                {
+                    jksInventoryDict[fullAlias] = string.Join("", certChainList);
+                    continue;
+                }
+                
+                foreach (var cert in certChain)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                }
+                // certChainList.Add(certChainPem.ToString());
+                
+                jksInventoryDict[fullAlias] = string.Join("", certChainList);
+            }
+            // add the certificate chain to the inventory
+            // jksInventoryDict[keyAlias] = string.Join("", certChainList);
+        }
+        return jksInventoryDict;
     }
 
     private JobResult HandleCertificate(long jobId, SubmitInventoryUpdate submitInventory)
@@ -618,6 +686,41 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    private string getK8SStorePassword(V1Secret certData)
+    {
+        var storePasswordBytes = new byte[] { };
+
+        // if secret is a buddy pass
+        if (!string.IsNullOrEmpty(StorePassword))
+        {
+            storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
+        }
+        else if (!string.IsNullOrEmpty(StorePasswordPath))
+        {
+            // Split password path into namespace and secret name
+            var passwordPath = StorePasswordPath.Split("/");
+            var passwordNamespace = passwordPath[0];
+            var passwordSecretName = passwordPath[1];
+            var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
+            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
+        }
+        else if (certData.Data.TryGetValue(PasswordFieldName, out var value1))
+        {
+            storePasswordBytes = value1;
+        }
+        else
+        {
+            var passwdEx = "Store secret '"+ StorePasswordPath +"'did not contain key '" + CertificateDataFieldName + "' or '" + PasswordFieldName + "'." +
+                           "  Please provide a valid store password and try again.";
+            Logger.LogError(passwdEx);
+            throw new Exception(passwdEx);
+        }
+
+        //convert password to string
+        var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
+        return storePassword;
+    }
+
     private JobResult HandlePkcs12Secret(long jobId, SubmitInventoryUpdate submitInventory, bool isJks = false)
     {
         Logger.LogDebug("Inventory entering HandlePkcs12Secret for job id " + jobId + "...");
@@ -697,50 +800,17 @@ public class Inventory : JobBase, IInventoryJobExtension
             }
             Logger.LogTrace("storeb64: " + Encoding.UTF8.GetString(storeBytes));
 
-            var storePasswordBytes = new byte[] { };
-
-            // if secret is a buddy pass
-            if (!string.IsNullOrEmpty(StorePassword))
-            {
-                storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
-            }
-            else if (!string.IsNullOrEmpty(StorePasswordPath))
-            {
-                // Split password path into namespace and secret name
-                var passwordPath = StorePasswordPath.Split("/");
-                var passwordNamespace = passwordPath[0];
-                var passwordSecretName = passwordPath[1];
-                var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
-                storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
-            }
-            else if (certData.Data.TryGetValue(PasswordFieldName, out var value1))
-            {
-                storePasswordBytes = value1;
-            }
-            else
-            {
-                var passwdEx = "PKCS12 store did not contain key '" + CertificateDataFieldName + "for job id " + jobId + "...";
-                Logger.LogError(passwdEx);
-                throw new Exception(passwdEx);
-            }
-
-            //convert password to string
-            var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
+           
             // Logger.LogTrace("password: " + password);
 
 
             // Load the bytes into a collection of X509Certificates
             var certCollection = new X509Certificate2Collection();
 
-            if (isJks)
-            {
-                var jksCerts = KubeClient.ReadCertificatesAndKeysFromJks(storeBytes, storePassword);
-                certCollection.Import(jksCerts, storePassword, X509KeyStorageFlags.Exportable);
-            }
-            else
-            {
-                certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);    
-            }
+            var storePassword = getK8SStorePassword(certData);
+           
+            certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);    
+           
             
             
 
