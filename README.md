@@ -21,7 +21,6 @@ The Universal Orchestrator is the successor to the Windows Orchestrator. This Or
 Kubernetes Orchestrator Extension is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
 
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
-___
 
 
 
@@ -63,6 +62,11 @@ It is not necessary to use a PAM Provider for all of the secrets available above
 
 If a PAM Provider will be used for one of the fields above, start by referencing the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam). The GitHub repo for the PAM Provider to be used contains important information such as the format of the `json` needed. What follows is an example but does not reflect the `json` values for all PAM Providers as they have different "instance" and "initialization" parameter names and values.
 
+<details><summary>General PAM Provider Configuration</summary>
+<p>
+
+
+
 ### Example PAM Provider Setup
 
 To use a PAM Provider to resolve a field, in this example the __Server Password__ will be resolved by the `Hashicorp-Vault` provider, first install the PAM Provider extension from the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam) on the Universal Orchestrator.
@@ -89,6 +93,8 @@ To have the __Server Password__ field resolved by the `Hashicorp-Vault` provider
 ~~~
 
 This text would be entered in as the value for the __Server Password__, instead of entering in the actual password. The Orchestrator will attempt to use the PAM Provider to retrieve the __Server Password__. If PAM should not be used, just directly enter in the value for the field.
+</p>
+</details> 
 
 
 
@@ -467,6 +473,226 @@ kfutil store-types create --name K8STLSSecr
 ##### UI Entry Parameters Tab:
 Empty
 
+### K8SPKCS12 Store Type
+
+#### kfutil Create K8SPKCS12 Store Type
+
+The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
+
+```bash
+kfutil login
+kfutil store-types create --name K8SPKCS12
+```
+
+#### UI Configuration
+
+##### UI Basic Tab
+| Field Name              | Required  | Value                                     |
+|-------------------------|-----------|-------------------------------------------|
+| Name                    | &check;   | `K8SPKCS12`                               |
+| ShortName               | &check;   | `K8SPKCS12`                               |
+| Custom Capability       | &check;   | Checked [x] + `K8SPKCS12`                 |
+| Supported Job Types     | &check;   | Inventory, Add, Remove, Create, Discovery |
+| Needs Server            | &check;   | Checked [x]                               |
+| Blueprint Allowed       |           | Unchecked [ ]                             |
+| Uses PowerShell         |           | Unchecked [ ]                             |
+| Requires Store Password | &check;   | Checked [x]                               |
+| Supports Entry Password |           | Unchecked [ ]                             |
+
+![k8spkcs12_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_basic.png)
+
+##### UI Advanced Tab
+| Field Name            | Required | Value     |
+|-----------------------|----------|-----------|
+| Store Path Type       |          | Freeform  |
+| Supports Custom Alias |          | Forbidden |
+| Private Key Handling  |          | Optional  |
+| PFX Password Style    |          | Default   |
+
+![k8spkcs12_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_advanced.png)
+
+##### UI Custom Fields Tab
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                                                                    |
+|--------------------------|-----------------------------|--------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the PKCS12 secret lives                                                                                                          |
+| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains PKCS12 data                                                                                                  |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `pkcs12`      | This must be set to `pkcs12`.                                                                                                                  |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.p12`        | The K8S secret field name to source the PKCS12 data from. You can provide an extension `.p12` or `.pfx` for a secret with a key `example.p12`  |
+| PasswordFieldName        | Password Field Name         | String |          | `password`    | If sourcing the PKCS12 password from a K8S secret this is the field it will look for the password in.                                          |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the PKCS12 secret or a separate secret specific in `KubeSecretPasswordPath` set this to `true`                              |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the PKCS12 password on the store in Command use this.                                                                   |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source PKCS12 password from a separate K8S secret. Pattern: `namespace_name/secret_name`                                                       |
+                                                                                                   
+
+![k8spkcs12_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_custom_fields.png)
+
+##### UI Entry Parameters Tab:
+Empty
+
+### K8SJKS Store Type
+
+#### kfutil Create K8SJKS Store Type
+
+The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
+
+```bash
+kfutil login
+kfutil store-types create --name K8SJKS
+```
+
+#### UI Configuration
+
+##### UI Basic Tab
+| Field Name              | Required | Value                                     |
+|-------------------------|----------|-------------------------------------------|
+| Name                    | &check;  | `K8SJKS`                                  |
+| ShortName               | &check;  | `K8SJKS`                                  |
+| Custom Capability       | &check;  | Checked [x] + `K8SJKS`                    |
+| Supported Job Types     | &check;  | Inventory, Add, Remove, Create, Discovery |
+| Needs Server            | &check;  | Checked [x]                               |
+| Blueprint Allowed       |          | Unchecked [ ]                             |
+| Uses PowerShell         |          | Unchecked [ ]                             |
+| Requires Store Password |          | Unchecked [ ]                             |
+| Supports Entry Password |          | Unchecked [ ]                             |
+
+![k8sJKS_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_basic.png)
+
+##### UI Advanced Tab
+| Field Name            | Required | Value     |
+|-----------------------|----------|-----------|
+| Store Path Type       |          | Freeform  |
+| Supports Custom Alias |          | Forbidden |
+| Private Key Handling  |          | Optional  |
+| PFX Password Style    |          | Default   |
+
+![k8sJKS_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_advanced.png)
+
+##### UI Custom Fields Tab
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                        |
+|--------------------------|-----------------------------|--------|----------|---------------|----------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the JKS secret lives                                                                 |
+| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains JKS data                                                         |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `JKS`         |                                                                                                    |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.jks`        | The K8S secret field name to source the JKS data from                                              |
+| PasswordFieldName        | Password Field Name         | String | &check;  | `password`    | If sourcing the JKS password from a K8S secret this is the field it will look for the password in. |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the JKS secret or a separate secret specific in `` set this to `true`           |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the JKS password on the store in Command use this.                          |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`              |
+
+
+![k8sJKS_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_custom_fields.png)
+
+##### UI Entry Parameters Tab:
+Empty
+
+### K8SCluster Store Type
+
+#### Storepath Patterns
+- `cluster_name`
+
+#### Alias Patterns
+- `namespace_name/secrets/secret_type/secret_name`
+
+#### kfutil Create K8SCluster Store Type
+
+The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
+
+```bash
+kfutil login
+kfutil store-types create --name K8SCluster
+```
+
+#### UI Configuration
+
+##### UI Basic Tab
+| Field Name              | Required | Value                           |
+|-------------------------|----------|---------------------------------|
+| Name                    | &check;  | `K8SCluster`                    |
+| ShortName               | &check;  | `K8SCluster`                    |
+| Custom Capability       | &check;  | Checked [x] + `K8SCluster`      |
+| Supported Job Types     | &check;  | Inventory, Add, Remove, Create  |
+| Needs Server            | &check;  | Checked [x]                     |
+| Blueprint Allowed       |          | Unchecked [ ]                   |
+| Uses PowerShell         |          | Unchecked [ ]                   |
+| Requires Store Password |          | Unchecked [ ]                   |
+| Supports Entry Password |          | Unchecked [ ]                   |
+
+![k8scluster_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8scluster_basic.png)
+
+##### UI Advanced Tab
+| Field Name            | Required | Value    |
+|-----------------------|----------|----------|
+| Store Path Type       |          | Freeform |
+| Supports Custom Alias |          | Required |
+| Private Key Handling  |          | Optional |
+| PFX Password Style    |          | Default  |
+
+![k8scluster_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8scluster_advanced.png)
+
+
+##### UI Custom Fields Tab
+| Name           | Display Name         | Type   | Required | Default Value |
+|----------------|----------------------|--------|----------|---------------|
+| KubeNamespace  | Kube Namespace       | String |          |               |
+
+![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
+
+##### UI Entry Parameters Tab:
+Empty
+
+### K8SNS Store Type
+
+**NOTE**: This store type will only inventory K8S secrets that contain the keys `tls.crt` and `tls.key`. 
+
+#### Storepath Patterns
+- `namespace_name`
+- `cluster_name/namespace_name`
+
+#### Alias Patterns
+- `secrets/secret_type/secret_name`
+
+#### kfutil Create K8SNS Store Type
+
+The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
+
+```bash
+kfutil login
+kfutil store-types create --name K8SNS
+```
+
+#### UI Configuration
+
+##### UI Basic Tab
+| Field Name              | Required | Value                          |
+|-------------------------|----------|--------------------------------|
+| Name                    | &check;  | `K8SNS`                        |
+| ShortName               | &check;  | `K8SNS`                        |
+| Custom Capability       | &check;  | Checked [x] + `K8SNS`          |
+| Supported Job Types     | &check;  | Inventory, Add, Remove, Create |
+| Needs Server            | &check;  | Checked [x]                    |
+| Blueprint Allowed       |          | Unchecked [ ]                  |
+| Uses PowerShell         |          | Unchecked [ ]                  |
+| Requires Store Password |          | Unchecked [ ]                  |
+| Supports Entry Password |          | Unchecked [ ]                  |
+
+![k8scluster_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8scluster_basic.png)
+
+##### UI Advanced Tab
+| Field Name            | Required | Value    |
+|-----------------------|----------|----------|
+| Store Path Type       |          | Freeform |
+| Supports Custom Alias |          | Required |
+| Private Key Handling  |          | Optional |
+| PFX Password Style    |          | Default  |
+
+![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
+
+##### UI Custom Fields Tab
+None
+
+##### UI Entry Parameters Tab:
+Empty
+
 ### K8SCert Store Type
 
 The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
@@ -535,6 +761,15 @@ The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This
    ![discover_server_password.png](docs%2Fscreenshots%2Fdiscovery%2Fdiscover_server_password.png)
 5. Click the "Save" button and wait for the Orchestrator to run the job. This may take some time depending on the number of certificates in the store and the Orchestrator's check-in schedule.
 
+### K8SNS Discovery
+For discovery of K8SNS stores toy can use the following params to filter the certificates that will be discovered:
+- `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all namespaces. *This cannot be left blank.*
+
+### K8SPKCS12 and K8SJKS Discovery
+For discovery of K8SPKCS12 and K8SJKS stores toy can use the following params to filter the certificates that will be discovered:
+- `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all namespaces. *This cannot be left blank.*
+- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`jks`.
+
 ## Certificate Inventory
 In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
@@ -543,17 +778,24 @@ In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, t
 | K8STLSSecr | `tls.crt`,`tls.key`                                                                           |
 | K8SSecret  | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
 | K8SCert    | `cert`, `csr`                                                                                 |
+| K8SPKCS12  | `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`                                                         |
+| K8SJKS     | `tls.jks`,`jks`                                                                               |
+| K8SNS      | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
+| K8SCluster | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
 
 ## Certificate Management
 Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
 The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
 each type of certificate store.
 
-| Store Type | Managed Secret Keys            |
-|------------|--------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`            |
-| K8SSecret  | `certificates`, `private_keys` |
-| K8SCert    | Management not supported.      |
+| Store Type | Managed Secret Keys                       |
+|------------|-------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`                       |
+| K8SSecret  | `tls.crt`,`tls.key`                       |
+| K8SPKCS12  | Specified in custom field `KubeSecretKey` |
+| K8SJKS     | Specified in custom field `KubeSecretKey` |
+| K8SCluster | `tls.crt`,`tls.key`                       |
+| K8SNS      | `tls.crt`,`tls.key`                       |
 
 
 ## Development
