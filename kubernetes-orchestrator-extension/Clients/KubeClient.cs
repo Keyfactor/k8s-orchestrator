@@ -18,11 +18,25 @@ using k8s;
 using k8s.Autorest;
 using k8s.KubeConfigModels;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.OpenSsl;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.X509;
+using ECCurve = Org.BouncyCastle.Math.EC.ECCurve;
+using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Utilities.IO.Pem;
+
 
 namespace Keyfactor.Extensions.Orchestrator.K8S;
 
@@ -30,8 +44,11 @@ public class KubeCertificateManagerClient
 {
 
     internal protected ILogger Logger;
+
     private string ConfigJson { get; set; }
+
     private K8SConfiguration ConfigObj { get; set; }
+
     public KubeCertificateManagerClient(string kubeconfig)
     {
         Logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod().DeclaringType);
@@ -39,8 +56,9 @@ public class KubeCertificateManagerClient
         ConfigJson = kubeconfig;
         try
         {
-            ConfigObj = ParseKubeConfig(kubeconfig);    
-        } catch (Exception ex)
+            ConfigObj = ParseKubeConfig(kubeconfig);
+        }
+        catch (Exception ex)
         {
             ConfigObj = new K8SConfiguration() { };
         }
@@ -53,14 +71,15 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("Entered GetClusterName()");
         try
         {
-            return ConfigObj.Clusters.FirstOrDefault()?.Name;    
-        } catch (Exception ex)
+            return ConfigObj.Clusters.FirstOrDefault()?.Name;
+        }
+        catch (Exception ex)
         {
             return GetHost();
         }
-        
+
     }
-    
+
     public string GetHost()
     {
         Logger.LogTrace("Entered GetHost()");
@@ -229,8 +248,563 @@ public class KubeCertificateManagerClient
         return client;
     }
 
+    public byte[] createPKCS12(string pemPrivateKey, string pemCertificate)
+    {
+        AsymmetricCipherKeyPair privateKey;
+        using (TextReader privateKeyTextReader = new StringReader(pemPrivateKey))
+        {
+            var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(privateKeyTextReader);
+            privateKey = (AsymmetricCipherKeyPair)pemReader.ReadObject();
+        }
+
+        // Load the certificate
+        X509Certificate certificate;
+        using (TextReader certificateTextReader = new StringReader(pemCertificate))
+        {
+            var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(certificateTextReader);
+            certificate = (X509Certificate)pemReader.ReadObject();
+        }
+
+        // Create a PKCS12 store
+        Pkcs12Store store = new Pkcs12StoreBuilder().Build();
+        string alias = "myalias"; // Alias for the private key entry
+
+        // Add the private key and certificate to the store
+        X509CertificateEntry certificateEntry = new X509CertificateEntry(certificate);
+        store.SetCertificateEntry(alias, certificateEntry);
+        store.SetKeyEntry(alias, new AsymmetricKeyEntry(privateKey.Private), new[] { certificateEntry });
+
+        // Save the PKCS12 store to a memory stream
+        using (MemoryStream stream = new MemoryStream())
+        {
+            store.Save(stream, Array.Empty<char>(), new SecureRandom());
+
+            // Get the PKCS12 bytes
+            byte[] pkcs12Bytes = stream.ToArray();
+
+            // Use the pkcs12Bytes as desired
+            return pkcs12Bytes;
+        }
+    }
+
+    public X509Certificate2 FindCertificateByCN(X509Certificate2Collection certificates, string cn)
+    {
+        X509Certificate2 foundCertificate = certificates
+            .OfType<X509Certificate2>()
+            .FirstOrDefault(cert => cert.SubjectName.Name.Contains($"CN={cn}", StringComparison.OrdinalIgnoreCase));
+
+        return foundCertificate;
+    }
+    
+    public X509Certificate2 FindCertificateByThumbprint(X509Certificate2Collection certificates, string thumbprint)
+    {
+        X509Certificate2 foundCertificate = certificates
+            .OfType<X509Certificate2>()
+            .FirstOrDefault(cert => cert.Thumbprint == thumbprint);
+
+        return foundCertificate;
+    }
+    
+    public X509Certificate2 FindCertificateByAlias(X509Certificate2Collection certificates, string alias)
+    {
+        X509Certificate2 foundCertificate = certificates
+            .OfType<X509Certificate2>()
+            .FirstOrDefault(cert => cert.SubjectName.Name.Contains(alias));
+
+        return foundCertificate;
+    }
+
+    public V1Secret RemoveFromPKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName, string secretType, string certdataFieldName,
+        string storePasswd, V1Secret k8SSecretData,
+        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "", string passwordFieldName = "password",
+        string[] certdataFieldNames = null)
+    {
+        Logger.LogTrace("Entered UpdatePKCS12SecretStore()");
+        Logger.LogTrace("Calling GetSecret()");
+        var existingPkcs12DataObj = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        
+
+        // iterate through existingPkcs12DataObj.Data and add to existingPkcs12
+        var existingPkcs12 = new X509Certificate2Collection();
+        var newPkcs12Collection = new X509Certificate2Collection();
+        var k8sCollection = new X509Certificate2Collection();
+        byte[] storePasswordBytes = Encoding.UTF8.GetBytes("");
+
+        if (existingPkcs12DataObj?.Data == null)
+        {
+            Logger.LogTrace("existingPkcs12DataObj.Data is null");
+        }
+        else
+        {
+            Logger.LogTrace("existingPkcs12DataObj.Data is not null");
+
+            // KeyValuePair<string, byte[]> updated_data = new KeyValuePair<string, byte[]>();
+            
+            foreach (var fieldName in existingPkcs12DataObj?.Data.Keys)
+            {
+                //check if key is in certdataFieldNames
+                //if fieldname contains a . then split it and use the last part
+                var searchFieldName = fieldName;
+                certdataFieldName = fieldName;
+                if (fieldName.Contains("."))
+                {
+                    var splitFieldName = fieldName.Split(".");
+                    searchFieldName = splitFieldName[splitFieldName.Length - 1];
+                }
+                if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
+
+                Logger.LogTrace($"Adding cert '{fieldName}' to existingPkcs12");
+                if (jobCertificate.PasswordIsK8SSecret)
+                {
+                    if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
+                    {
+                        var passwordPath = jobCertificate.StorePasswordPath.Split("/");
+                        var passwordNamespace = passwordPath[0];
+                        var passwordSecretName = passwordPath[1];
+                        // Get password from k8s secre
+                        var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
+                        storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];  
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString, X509KeyStorageFlags.Exportable);        
+                    }
+                    else
+                    {
+                        storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);    
+                    }
+                }
+                else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
+                {
+                    storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                }
+                else
+                {
+                    storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                }
+            }
+            if (existingPkcs12.Count > 0)
+            {
+                // Check if overwrite is true, if so, replace existing cert with new cert
+                if (overwrite)
+                {
+                    Logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
+
+                    X509Certificate2 foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
+                    if (foundCertificate != null)
+                    {
+                        // Certificate found
+                        // replace the found certificate with the new certificate
+                        Logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
+                        existingPkcs12.Remove(foundCertificate);
+                    }
+                }
+
+                Logger.LogTrace("Importing jobCertificate.CertBytes into existingPkcs12");
+                // existingPkcs12.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
+                k8sCollection = existingPkcs12;
+            }
+        }
+        
+
+        Logger.LogTrace("Creating V1Secret object");
+
+        var p12bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
+        
+        var secret = new V1Secret
+        {
+            ApiVersion = "v1",
+            Kind = "Secret",
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretName,
+                NamespaceProperty = namespaceName
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { certdataFieldName, p12bytes }
+            }
+        };
+        switch (string.IsNullOrEmpty(storePasswd))
+        {
+            case false when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is empty
+            {
+                Logger.LogDebug("Adding password to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "password";
+                }
+                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
+                break;
+            }
+            case false when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is not empty
+            {
+                Logger.LogDebug("Adding password secret path to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "passwordSecretPath";
+                }
+                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+
+                // Lookup password secret path on cluster to see if it exists
+                Logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                var splitPasswordPath = passwordSecretPath.Split("/");
+                // Assume secret pattern is namespace/secretName
+                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                var passwordSecretNamespace = splitPasswordPath[0];
+                Logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                try
+                {
+                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                    Logger.LogDebug($"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    // Update secret
+                    Logger.LogDebug($"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
+                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret, passwordSecretName, passwordSecretNamespace);
+                    Logger.LogDebug($"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                }
+                catch (HttpOperationException e)
+                {
+                    Logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    Logger.LogError(e.Message);
+                    // Attempt to create a new secret
+                    Logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    var passwordSecretData = new V1Secret
+                    {
+                        Metadata = new V1ObjectMeta
+                        {
+                            Name = passwordSecretName,
+                            NamespaceProperty = passwordSecretNamespace
+                        },
+                        Data = new Dictionary<string, byte[]>
+                        {
+                            { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
+                        }
+                    };
+                    var createdPasswordSecret = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    Logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                }
+                break;
+            }
+        }
+
+        // Update secret on K8S
+        Logger.LogTrace("Calling UpdateSecret()");
+        var updatedSecret = Client.CoreV1.ReplaceNamespacedSecret(secret, secretName, namespaceName);
+
+        Logger.LogTrace("Finished creating V1Secret object");
+
+        Logger.LogTrace("Exiting UpdatePKCS12SecretStore()");
+        return updatedSecret;
+    }
+
+    public V1Secret UpdatePKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName, string secretType, string certdataFieldName,
+        string storePasswd, V1Secret k8SSecretData,
+        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "", string passwordFieldName = "password",
+        string[] certdataFieldNames = null, bool remove = false)
+    {
+        Logger.LogTrace("Entered UpdatePKCS12SecretStore()");
+        Logger.LogTrace("Calling GetSecret()");
+        var existingPkcs12DataObj = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        // var existingPkcs12Bytes = existingPkcs12DataObj.Data[certdataFieldName];
+        // var existingPkcs12 = new X509Certificate2Collection();
+        // existingPkcs12.Import(existingPkcs12Bytes, storePasswd, X509KeyStorageFlags.Exportable);
+
+        // iterate through existingPkcs12DataObj.Data and add to existingPkcs12
+        var existingPkcs12 = new X509Certificate2Collection();
+        var newPkcs12Collection = new X509Certificate2Collection();
+        var k8sCollection = new X509Certificate2Collection();
+        byte[] storePasswordBytes = Encoding.UTF8.GetBytes("");
+
+        if (existingPkcs12DataObj?.Data == null)
+        {
+            Logger.LogTrace("existingPkcs12DataObj.Data is null");
+        }
+        else
+        {
+            Logger.LogTrace("existingPkcs12DataObj.Data is not null");
+
+            // KeyValuePair<string, byte[]> updated_data = new KeyValuePair<string, byte[]>();
+            
+            foreach (var fieldName in existingPkcs12DataObj?.Data.Keys)
+            {
+                //check if key is in certdataFieldNames
+                //if fieldname contains a . then split it and use the last part
+                var searchFieldName = fieldName;
+                certdataFieldName = fieldName;
+                if (fieldName.Contains("."))
+                {
+                    var splitFieldName = fieldName.Split(".");
+                    searchFieldName = splitFieldName[splitFieldName.Length - 1];
+                }
+                if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
+
+                Logger.LogTrace($"Adding cert '{fieldName}' to existingPkcs12");
+                if (jobCertificate.PasswordIsK8SSecret)
+                {
+                    if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
+                    {
+                        var passwordPath = jobCertificate.StorePasswordPath.Split("/");
+                        var passwordNamespace = passwordPath[0];
+                        var passwordSecretName = passwordPath[1];
+                        // Get password from k8s secre
+                        var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
+                        storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];  
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString, X509KeyStorageFlags.Exportable);        
+                    }
+                    else
+                    {
+                        storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);    
+                    }
+                }
+                else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
+                {
+                    storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                }
+                else
+                {
+                    storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                }
+            }
+            if (existingPkcs12.Count > 0)
+            {
+                // create x509Certificate2 from jobCertificate.CertBytes
+                if (remove)
+                {
+                    X509Certificate2 foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
+                    if (foundCertificate != null)
+                    {
+                        // Certificate found
+                        // replace the found certificate with the new certificate
+                        Logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
+                        existingPkcs12.Remove(foundCertificate);
+                    }
+                }
+                else
+                {
+                    var newCert = new X509Certificate2(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
+                    var newCertCn = newCert.GetNameInfo(X509NameType.SimpleName, false);
+                    //import jobCertificate.CertBytes into existingPkcs12
+
+                    // Check if overwrite is true, if so, replace existing cert with new cert
+                    if (overwrite)
+                    {
+                        Logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
+
+                        X509Certificate2 foundCertificate = FindCertificateByCN(existingPkcs12, newCertCn);
+                        if (foundCertificate != null)
+                        {
+                            // Certificate found
+                            // replace the found certificate with the new certificate
+                            Logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
+                            existingPkcs12.Remove(foundCertificate);
+                            existingPkcs12.Add(newCert);
+                        }
+                        else
+                        {
+                            // Certificate not found
+                            // add the new certificate to the existingPkcs12
+                            var storePasswordString = Encoding.UTF8.GetString(storePasswordBytes);
+                            Logger.LogTrace("Certificate not found, adding the new certificate to the existingPkcs12");
+                            existingPkcs12.Import(jobCertificate.Pkcs12, storePasswd, X509KeyStorageFlags.Exportable);
+                        }
+                    }
+                }
+                Logger.LogTrace("Importing jobCertificate.CertBytes into existingPkcs12");
+                k8sCollection = existingPkcs12;
+            }
+            else
+            {
+                newPkcs12Collection.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
+                k8sCollection = newPkcs12Collection;
+            }
+
+        }
+
+        Logger.LogTrace("Creating V1Secret object");
+
+        var p12bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
+        
+        var secret = new V1Secret
+        {
+            ApiVersion = "v1",
+            Kind = "Secret",
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretName,
+                NamespaceProperty = namespaceName
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { certdataFieldName, p12bytes }
+            }
+        };
+        switch (string.IsNullOrEmpty(storePasswd))
+        {
+            case false when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is empty
+            {
+                Logger.LogDebug("Adding password to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "password";
+                }
+                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
+                break;
+            }
+            case false when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is not empty
+            {
+                Logger.LogDebug("Adding password secret path to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "passwordSecretPath";
+                }
+                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+
+                // Lookup password secret path on cluster to see if it exists
+                Logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                var splitPasswordPath = passwordSecretPath.Split("/");
+                // Assume secret pattern is namespace/secretName
+                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                var passwordSecretNamespace = splitPasswordPath[0];
+                Logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                try
+                {
+                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                    Logger.LogDebug($"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    // Update secret
+                    Logger.LogDebug($"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
+                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret, passwordSecretName, passwordSecretNamespace);
+                    Logger.LogDebug($"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                }
+                catch (HttpOperationException e)
+                {
+                    Logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    Logger.LogError(e.Message);
+                    // Attempt to create a new secret
+                    Logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    var passwordSecretData = new V1Secret
+                    {
+                        Metadata = new V1ObjectMeta
+                        {
+                            Name = passwordSecretName,
+                            NamespaceProperty = passwordSecretNamespace
+                        },
+                        Data = new Dictionary<string, byte[]>
+                        {
+                            { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
+                        }
+                    };
+                    var createdPasswordSecret = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    Logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                }
+                break;
+            }
+        }
+
+        // Update secret on K8S
+        Logger.LogTrace("Calling UpdateSecret()");
+        var updatedSecret = Client.CoreV1.ReplaceNamespacedSecret(secret, secretName, namespaceName);
+
+        Logger.LogTrace("Finished creating V1Secret object");
+
+        Logger.LogTrace("Exiting UpdatePKCS12SecretStore()");
+        return updatedSecret;
+    }
+
+    public V1Secret CreateOrUpdateCertificateStoreSecret(K8SJobCertificate jobCertificate, string secretName,
+        string namespaceName, string secretType, bool overwrite = false, string certDataFieldName = "pkcs12", string passwordFieldName = "password",
+        string passwordSecretPath = "", bool passwordIsK8SSecret = false, string password = "", string[] allowedKeys = null, bool remove = false)
+    {
+        var storePasswd = string.IsNullOrEmpty(password) ? jobCertificate.Password : password;
+        Logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
+        Logger.LogTrace("Calling CreateNewSecret()");
+        V1Secret k8SSecretData;
+        switch (secretType)
+        {
+            case "pkcs12":
+            case "pfx":
+            case "jks":
+                if (remove)
+                {
+                    k8SSecretData = new V1Secret();
+                }
+                else
+                {
+                    k8SSecretData = CreateOrUpdatePKCS12Secret(secretName,
+                        namespaceName,
+                        jobCertificate,
+                        certDataFieldName,
+                        storePasswd,
+                        passwordFieldName,
+                        passwordSecretPath,
+                        allowedKeys);    
+                }
+                break;
+            default:
+                k8SSecretData = new V1Secret();
+                break;
+        }
+
+        Logger.LogTrace("Finished calling CreateNewSecret()");
+
+        Logger.LogTrace("Entering try/catch block to create secret...");
+        try
+        {
+            Logger.LogDebug("Calling CreateNamespacedSecret()");
+            var secretResponse = Client.CoreV1.CreateNamespacedSecret(k8SSecretData, namespaceName);
+            Logger.LogDebug("Finished calling CreateNamespacedSecret()");
+            Logger.LogTrace(secretResponse.ToString());
+            Logger.LogTrace("Exiting CreateOrUpdateCertificateStoreSecret()");
+            return secretResponse;
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogWarning("Error while attempting to create secret: " + e.Message);
+            if (e.Message.Contains("Conflict") || e.Message.Contains("Unprocessable"))
+            {
+                Logger.LogDebug($"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
+                Logger.LogTrace("Calling UpdateSecretStore()");
+                switch (secretType)
+                {
+                    case "pkcs12":
+                    case "pfx": 
+                    case "jks":
+                        return UpdatePKCS12SecretStore(jobCertificate,
+                            secretName,
+                            namespaceName,
+                            secretType,
+                            certDataFieldName,
+                            storePasswd,
+                            k8SSecretData,
+                            true,
+                            overwrite,
+                            passwordIsK8SSecret,
+                            passwordSecretPath,
+                            passwordFieldName,
+                            null,
+                            remove);
+                    default:
+                        return UpdateSecretStore(secretName, namespaceName, secretType, "", "", k8SSecretData, false, overwrite);
+                }
+
+            }
+        }
+        Logger.LogError("Unable to create secret for unknown reason.");
+        return k8SSecretData;
+    }
+
     public V1Secret CreateOrUpdateCertificateStoreSecret(string[] keyPems, string[] certPems, string[] caCertPems, string[] chainPems, string secretName,
-        string namespaceName, string secretType, bool append = false, bool overwrite = false)
+        string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove=false)
     {
         Logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
 
@@ -278,6 +852,296 @@ public class KubeCertificateManagerClient
         Logger.LogError("Unable to create secret for unknown reason.");
         return null;
     }
+    
+    
+    public Pkcs12Store CreatePKCS12Collection(byte[] pkcs12bytes, string currentPassword, string newPassword)
+    {
+            try
+            {
+                
+                Pkcs12StoreBuilder storeBuilder = new Pkcs12StoreBuilder();
+                Pkcs12Store certs = storeBuilder.Build();
+
+                byte[] newCertBytes = pkcs12bytes;
+
+                Pkcs12Store newEntry = storeBuilder.Build();
+
+                X509Certificate2 cert = new X509Certificate2(newCertBytes, currentPassword, X509KeyStorageFlags.Exportable);
+                byte[] binaryCert = cert.Export(X509ContentType.Pkcs12, currentPassword);
+
+                using (MemoryStream ms = new MemoryStream(string.IsNullOrEmpty(currentPassword) ? binaryCert : newCertBytes))
+                {
+                    newEntry.Load(ms, string.IsNullOrEmpty(currentPassword) ? new char[0] : currentPassword.ToCharArray());
+                }
+                
+                string checkAliasExists = string.Empty;
+                string alias = cert.Thumbprint;
+                foreach (string newEntryAlias in newEntry.Aliases)
+                {
+                    if (!newEntry.IsKeyEntry(newEntryAlias))
+                        continue;
+
+                    checkAliasExists = newEntryAlias;
+
+                    if (certs.ContainsAlias(alias))
+                    {
+                        certs.DeleteEntry(alias);
+                    }
+                    certs.SetKeyEntry(alias, newEntry.GetKey(newEntryAlias), newEntry.GetCertificateChain(newEntryAlias));
+                }
+
+                if (string.IsNullOrEmpty(checkAliasExists))
+                {
+                    Org.BouncyCastle.X509.X509Certificate bcCert = DotNetUtilities.FromX509Certificate(cert);
+                    X509CertificateEntry bcEntry = new X509CertificateEntry(bcCert);
+                    if (certs.ContainsAlias(alias))
+                    {
+                        certs.DeleteEntry(alias);
+                    }
+                    certs.SetCertificateEntry(alias, bcEntry);
+                }
+
+                using (MemoryStream outStream = new MemoryStream())
+                {
+                    certs.Save(outStream, string.IsNullOrEmpty(newPassword) ? new char[0] : newPassword.ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+                }
+                return certs; 
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Error attempting to add certficate for store path=StorePath, file name=StoreFileName.", ex);
+            }
+
+    }
+    
+    public X509Certificate2Collection CreatePKCS12Collection(X509Certificate2Collection  certificateCollection, string currentPassword, string newPassword)
+    {
+        // Iterate over the certificates in the collection
+        foreach (X509Certificate2 certificate in certificateCollection)
+        {
+            // Export the private key to a byte array
+            byte[] privateKeyBytes = certificate.Export(X509ContentType.Pkcs12, currentPassword);
+
+            // Import the private key with the new password
+            X509Certificate2 newCertificate = new X509Certificate2(privateKeyBytes, newPassword, X509KeyStorageFlags.Exportable);
+
+            // Replace the certificate in the collection with the new certificate
+            int index = certificateCollection.IndexOf(certificate);
+            certificateCollection.RemoveAt(index);
+            certificateCollection.Insert(index, newCertificate);
+        }
+        return certificateCollection;
+    }
+
+    private V1Secret CreateOrUpdatePKCS12Secret(string secretName, string namespaceName, K8SJobCertificate certObj, string secretFieldName, string password,
+        string passwordFieldName, string passwordSecretPath = "", string[] allowedKeys = null)
+    {
+        Logger.LogTrace("Entered CreateOrUpdatePKCS12Secret()");
+
+        Logger.LogDebug("Attempting to read existing k8s secret...");
+        var existingSecret = new V1Secret();
+        try
+        {
+            existingSecret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogDebug("Error while attempting to read existing secret: " + e.Message);
+            if (e.Message.Contains("Not Found"))
+            {
+                Logger.LogDebug("No existing secret found.");
+            }
+            existingSecret = null;
+        }
+
+        Logger.LogDebug("Finished reading existing k8s secret.");
+
+        if (existingSecret != null)
+        {
+            Logger.LogDebug("Existing secret found, attempting to update...");
+            return UpdatePKCS12SecretStore(certObj,
+                secretName,
+                namespaceName,
+                "pkcs12",
+                secretFieldName,
+                password,
+                existingSecret,
+                false,
+                true,
+                false,
+                passwordSecretPath,
+                passwordFieldName,
+                allowedKeys); //todo: fix overwrite and isk8ssecret params
+        }
+
+        Logger.LogDebug("Attempting to create new secret...");
+
+        //convert cert obj pkcs12 to base64
+        Logger.LogDebug("Converting certificate to base64...");
+
+        Logger.LogDebug("Creating X509Certificate2 from certificate object...");
+
+        var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
+        
+        var pkcs12Data = CreatePKCS12Collection(certObj.Pkcs12, password, passwordToWrite);
+
+        byte[] p12Bytes;
+        using (MemoryStream stream = new MemoryStream())
+        {
+            pkcs12Data.Save(stream, passwordToWrite.ToCharArray(), new SecureRandom());
+
+            // Get the PKCS12 bytes
+            p12Bytes = stream.ToArray();
+
+            // Use the pkcs12Bytes as desired
+        }
+
+        if (string.IsNullOrEmpty(secretFieldName))
+        {
+            secretFieldName = "pkcs12";
+        }
+        var k8SSecretData = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretName,
+                NamespaceProperty = namespaceName
+            },
+            Data = new Dictionary<string, byte[]>
+            {
+                { secretFieldName, p12Bytes }
+            }
+        };
+
+        switch (string.IsNullOrEmpty(password))
+        {
+            case false when certObj.PasswordIsK8SSecret && string.IsNullOrEmpty(certObj.StorePasswordPath): // This means the password is expected to be on the secret so add it
+            {
+                Logger.LogDebug("Adding password to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "password";
+                }
+
+                // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
+                
+                k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite));
+                break;
+            }
+            case false when !string.IsNullOrEmpty(passwordSecretPath):
+            {
+                Logger.LogDebug("Adding password secret path to secret...");
+                if (string.IsNullOrEmpty(passwordFieldName))
+                {
+                    passwordFieldName = "password";
+                }
+                // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+
+                // Lookup password secret path on cluster to see if it exists
+                Logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                var splitPasswordPath = passwordSecretPath.Split("/");
+                // Assume secret pattern is namespace/secretName
+                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                var passwordSecretNamespace = splitPasswordPath[0];
+                Logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                try
+                {
+                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    password = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                }
+                catch (HttpOperationException e)
+                {
+                    Logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    Logger.LogError(e.Message);
+                    // Attempt to create a new secret
+                    Logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
+                    var passwordSecretData = new V1Secret
+                    {
+                        Metadata = new V1ObjectMeta
+                        {
+                            Name = passwordSecretName,
+                            NamespaceProperty = passwordSecretNamespace
+                        },
+                        Data = new Dictionary<string, byte[]>
+                        {
+                            { passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite) }
+                        }
+                    };
+                    Logger.LogDebug("Calling CreateNamespacedSecret()");
+                    var passwordSecretResponse = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    Logger.LogDebug("Finished calling CreateNamespacedSecret()");
+                    Logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                }
+                break;
+            }
+        }
+        Logger.LogTrace("Exiting CreateNewSecret()");
+        return k8SSecretData;
+
+    }
+
+    public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
+    {
+
+        // Lookup password secret path on cluster to see if it exists
+        Logger.LogDebug("Attempting to lookup password secret path on cluster...");
+        var splitPasswordPath = passwordSecretPath.Split("/");
+        // Assume secret pattern is namespace/secretName
+        var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+        var passwordSecretNamespace = splitPasswordPath[0];
+        Logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        var passwordSecretResponse = Client.CoreV1.ReadNamespacedSecret(secretName, passwordSecretNamespace);
+        return passwordSecretResponse;
+    }
+
+    public V1Secret CreateOrUpdateBuddyPass(string secretName, string passwordFieldName, string passwordSecretPath, string password)
+    {
+        Logger.LogDebug("Adding password secret path to secret...");
+        if (string.IsNullOrEmpty(passwordFieldName))
+        {
+            passwordFieldName = "password";
+        }
+        // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+
+        // Lookup password secret path on cluster to see if it exists
+        Logger.LogDebug("Attempting to lookup password secret path on cluster...");
+        var splitPasswordPath = passwordSecretPath.Split("/");
+        // Assume secret pattern is namespace/secretName
+        var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+        var passwordSecretNamespace = splitPasswordPath[0];
+        Logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        var passwordSecretData = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = passwordSecretName,
+                NamespaceProperty = passwordSecretNamespace
+            },
+            Data = new Dictionary<string, byte[]>
+            {
+                { passwordFieldName, Encoding.UTF8.GetBytes(password) }
+            }
+        };
+        try
+        {
+            var passwordSecretResponse = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+            return passwordSecretResponse;
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+            Logger.LogError(e.Message);
+            // Attempt to create a new secret
+            Logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+
+            Logger.LogDebug("Calling CreateNamespacedSecret()");
+            var passwordSecretResponse = Client.CoreV1.ReplaceNamespacedSecret(passwordSecretData, secretName, passwordSecretNamespace);
+            Logger.LogDebug("Finished calling CreateNamespacedSecret()");
+            Logger.LogDebug("Successfully created secret " + passwordSecretPath);
+            return passwordSecretResponse;
+        }
+    }
 
     private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem, string caCertPem, string chainPem, string secretType)
     {
@@ -294,6 +1158,11 @@ public class KubeCertificateManagerClient
             case "tls_secret":
             case "tls":
                 secretType = "tls_secret";
+                break;
+            case "pfx":
+            case "pkcs12":
+                secretType = "pkcs12";
+
                 break;
             default:
                 Logger.LogError("Unknown secret type: " + secretType);
@@ -338,9 +1207,9 @@ public class KubeCertificateManagerClient
         };
         Logger.LogTrace("Exiting CreateNewSecret()");
         return k8SSecretData;
-        
+
     }
-    
+
     private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
     {
         Logger.LogTrace("Entered UpdateOpaqueSecret()");
@@ -569,13 +1438,14 @@ public class KubeCertificateManagerClient
                 var sCert = new X509Certificate2();
                 try
                 {
-                    sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));    
-                } catch (Exception e)
+                    sCert = new X509Certificate2(Encoding.UTF8.GetBytes(cer));
+                }
+                catch (Exception e)
                 {
                     Logger.LogWarning($"Unable to create X509Certificate2 from string in '{sKey}' field. Skipping. Error: {e.Message}");
                     continue;
                 }
-                
+
                 Logger.LogDebug("sCert.Thumbprint: " + sCert.Thumbprint);
 
                 if (sCert.Thumbprint == alias)
@@ -611,9 +1481,9 @@ public class KubeCertificateManagerClient
             }
             catch (Exception)
             {
-                Logger.LogWarning("Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");    
+                Logger.LogWarning("Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");
             } //TODO: Make this configurable.
-            
+
 
             // Update Kubernetes secret
             Logger.LogDebug($"Updating secret {secretName} in namespace {namespaceName} on {GetHost()} with new certificate data.");
@@ -634,13 +1504,20 @@ public class KubeCertificateManagerClient
         switch (storeType)
         {
             case "secret":
+            case "opaque":
                 // check the current inventory and only remove the cert if it is found else throw not found exception
                 Logger.LogDebug($"Attempting to delete certificate from opaque secret {secretName} in namespace {namespaceName} on {GetHost()}");
                 Logger.LogTrace("Calling DeleteCertificateStoreSecret()");
-                _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
-                Logger.LogTrace("Finished calling DeleteCertificateStoreSecret()");
-                return new V1Status("v1", 0, status: "Success");
+                // _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
+                return Client.CoreV1.DeleteNamespacedSecret(
+                    secretName,
+                    namespaceName,
+                    new V1DeleteOptions()
+                );
+            // Logger.LogTrace("Finished calling DeleteCertificateStoreSecret()");
+            // return new V1Status("v1", 0, status: "Success");
             case "tls_secret":
+            case "tls":
                 Logger.LogDebug($"Deleting TLS secret {secretName} in namespace {namespaceName} on {GetHost()}");
                 Logger.LogTrace("Calling DeleteNamespacedSecret()");
                 return Client.CoreV1.DeleteNamespacedSecret(
@@ -675,7 +1552,7 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("csr.Items.Count: " + csr.Items.Count);
 
         Logger.LogTrace("Entering foreach loop to add certificate locations to list.");
-        var clusterName = GetClusterName(); 
+        var clusterName = GetClusterName();
         foreach (var cr in csr)
         {
             Logger.LogTrace("cr.Metadata.Name: " + cr.Metadata.Name);
@@ -733,23 +1610,34 @@ public class KubeCertificateManagerClient
         return new[] { utfCert };
     }
 
-    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default")
+    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
     {
         // Get a list of all namespaces
         Logger.LogTrace("Entered DiscoverSecrets()");
         V1NamespaceList namespaces;
-        Logger.LogDebug("Attempting to list k8s namespaces from " + GetHost());
+        var clusterName = GetClusterName() ?? GetHost();
+
         var nsList = new string[] { };
 
         var locations = new List<string>();
+
+        if (secType == "cluster")
+        {
+            Logger.LogTrace("Discovering K8S cluster secrets from k8s cluster resources and returning only a single location.");
+            locations.Add($"{clusterName}");
+            return locations;
+        }
+
+
+        Logger.LogDebug("Attempting to list k8s namespaces from " + clusterName);
+        namespaces = Client.CoreV1.ListNamespace();
+        Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
+        Logger.LogTrace("namespaces.Items: " + namespaces.Items);
+
         nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
         foreach (var nsLI in nsList)
         {
             var secretsList = new List<string>();
-            namespaces = Client.CoreV1.ListNamespace();
-            Logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
-            Logger.LogTrace("namespaces.Items: " + namespaces.Items);
-
             Logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
             foreach (var nsObj in namespaces.Items)
             {
@@ -758,6 +1646,7 @@ public class KubeCertificateManagerClient
                     Logger.LogWarning("Skipping namespace " + nsObj.Metadata.Name + " because it does not match the namespace filter.");
                     continue;
                 }
+
                 Logger.LogDebug("Attempting to list secrets in namespace " + nsObj.Metadata.Name);
                 // Get a list of all secrets in the namespace
                 Logger.LogTrace("Calling CoreV1.ListNamespacedSecret()");
@@ -766,9 +1655,19 @@ public class KubeCertificateManagerClient
 
                 Logger.LogDebug("Attempting to read each secret in namespace " + nsObj.Metadata.Name);
                 Logger.LogTrace("Entering foreach loop to read each secret in namespace " + nsObj.Metadata.Name);
+
+                if (secType == "namespace")
+                {
+                    Logger.LogDebug("Discovering K8S secrets at the namespace level");
+                    var nsLocation = $"{clusterName}/namespace/{nsObj.Metadata.Name}";
+                    locations.Add(nsLocation);
+                    Logger.LogTrace("Added namespace location " + nsLocation + " to list of locations.");
+                    continue;
+                }
+
                 foreach (var secret in secrets.Items)
                 {
-                    if (secret.Type is "kubernetes.io/tls" or "Opaque")
+                    if (secret.Type is "kubernetes.io/tls" or "Opaque" or "pkcs12" or "p12" or "pfx" or "jks")
                     {
                         Logger.LogTrace("secret.Type: " + secret.Type);
                         Logger.LogTrace("secret.Metadata.Name: " + secret.Metadata.Name);
@@ -777,13 +1676,11 @@ public class KubeCertificateManagerClient
                         Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
                         // Logger.LogTrace("secretData: " + secretData);
                         Logger.LogTrace("Entering switch statement to check secret type.");
-                        
-                        var clusterName = GetClusterName() ?? GetHost();
-                        
+
                         switch (secret.Type)
                         {
                             case "kubernetes.io/tls":
-                                if (secType != "kubernetes.io/tls")
+                                if (secType != "kubernetes.io/tls" && secType != "tls")
                                 {
                                     Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
                                     continue;
@@ -796,46 +1693,66 @@ public class KubeCertificateManagerClient
                                 var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
 
                                 Logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
-                                _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
-                                
+                                // _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
+
                                 var cLocation = $"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
                                 Logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
                                 locations.Add(cLocation);
                                 secretsList.Add(certData);
                                 break;
                             case "Opaque":
-                                if (secType != "Opaque")
+                                if (secType != "Opaque" && secType != "pkcs12" && secType != "p12" && secType != "pfx" && secType != "jks")
                                 {
                                     Logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
                                     continue;
                                 }
+
                                 // Check if a 'certificates' key exists
                                 Logger.LogDebug("Attempting to parse certificate from opaque secret");
-                                Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
-                                foreach (var allowedKey in allowedKeys)
+                                if (secretData.Data == null || secret.Data.Keys == null)
                                 {
-                                    Logger.LogTrace("allowedKey: " + allowedKey);
+                                    Logger.LogWarning("secretData.Data is null for secret '" + secret.Metadata.Name + "'. Skipping secret.");
+                                    continue;
+                                }
+                                Logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
+                                foreach (var dataKey in secretData.Data.Keys)
+                                {
+                                    Logger.LogDebug("Checking if secret key " + dataKey + " is in list of allowed keys" + allowedKeys);
+                                    Logger.LogTrace("dataKey: " + dataKey);
                                     try
                                     {
-                                        if (secretData.Data == null || !secretData.Data.ContainsKey(allowedKey)) continue;
-
-                                        Logger.LogDebug("Attempting to parse certificate from opaque secret");
-                                        var certs = Encoding.UTF8.GetString(secretData.Data[allowedKey]);
+                                        // split dataKey by '.' and take the last element
+                                        var dataKeyArray = dataKey.Split(".");
+                                        var extension = dataKeyArray[^1];
+                                        
+                                        Logger.LogDebug("Checking if key " + extension + " is in list of allowed keys" + allowedKeys);
+                                        Logger.LogTrace("extension: " + extension);
+                                        
+                                        
+                                        if (!allowedKeys.Contains(extension))
+                                        {
+                                            Logger.LogTrace("Extension " + extension + " is not in list of allowed keys" + allowedKeys);
+                                            if(!allowedKeys.Contains(dataKey))
+                                            {
+                                                Logger.LogDebug("Skipping secret field" + dataKey + " because it is not in the list of allowed keys" + allowedKeys);
+                                                continue;
+                                            }
+                                        }
+                                        Logger.LogDebug("Secret field '" + dataKey + "' is an allowed key.");
+                                        Logger.LogDebug("Attempting to parse certificate from opaque secret data");
+                                        var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
                                         Logger.LogTrace("certs: " + certs);
                                         // var keys = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
                                         Logger.LogTrace("Splitting certs into array by ','.");
                                         var certsArray = certs.Split(",");
                                         // var keysArray = keys.Split(",");
-                                        var index = 0;
                                         foreach (var cer in certsArray)
                                         {
                                             Logger.LogTrace("cer: " + cer);
                                             Logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
-                                            _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
-
+                                            // _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
                                             Logger.LogDebug("Adding certificate to list of discovered certificates");
                                             secretsList.Append(cer);
-                                            index++;
                                         }
                                         locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
                                     }
@@ -860,6 +1777,45 @@ public class KubeCertificateManagerClient
         return locations;
     }
 
+
+    public Dictionary<string,byte[]> GetJKSSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, string [] allowedKeys = null)
+    {
+        Logger.LogTrace("Entered GetJKSSecret()");
+        Logger.LogTrace("secretName: " + secretName);
+        // Read k8s secret
+        Logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
+        var secret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
+        // Logger.LogTrace("secret: " + secret);
+        // Logger.LogTrace("secret.Data: " + secret.Data);
+        Logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
+        Logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
+        
+        allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
+
+        
+        Dictionary<string,byte[]> secretData = new Dictionary<string, byte[]>();
+
+        foreach (var secretFieldName in secret?.Data.Keys)
+        {
+            Logger.LogTrace("secretFieldName: " + secretFieldName);
+            var sField = secretFieldName;
+            if (secretFieldName.Contains('.'))
+            {
+                sField = secretFieldName.Split(".")[^1];
+            }
+            var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+
+            if (!isJksField) continue;
+            
+            Logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
+            var data = secret.Data[secretFieldName];
+            Logger.LogTrace("data: " + data);
+            secretData.Add(secretFieldName, data);
+        }
+        return secretData;
+    }
+    
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
     {
         Logger.LogTrace("Entered CreateCertificateSigningRequest()");
