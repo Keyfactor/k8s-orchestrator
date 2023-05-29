@@ -1794,47 +1794,69 @@ public class KubeCertificateManagerClient
         Logger.LogTrace("secretName: " + secretName);
         // Read k8s secret
         Logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
-        var secret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
-        Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
-        // Logger.LogTrace("secret: " + secret);
-        // Logger.LogTrace("secret.Data: " + secret.Data);
-        Logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
-        Logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
-
-        allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
-
-
-        Dictionary<string, byte[]> secretData = new Dictionary<string, byte[]>();
-
-        foreach (var secretFieldName in secret?.Data.Keys)
+        try
         {
-            Logger.LogTrace("secretFieldName: " + secretFieldName);
-            var sField = secretFieldName;
-            if (secretFieldName.Contains('.'))
+            var secret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+            Logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
+            // Logger.LogTrace("secret: " + secret);
+            // Logger.LogTrace("secret.Data: " + secret.Data);
+            Logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
+            Logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
+
+            allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
+
+
+            Dictionary<string, byte[]> secretData = new Dictionary<string, byte[]>();
+
+            foreach (var secretFieldName in secret?.Data.Keys)
             {
-                sField = secretFieldName.Split(".")[^1];
+                Logger.LogTrace("secretFieldName: " + secretFieldName);
+                var sField = secretFieldName;
+                if (secretFieldName.Contains('.'))
+                {
+                    sField = secretFieldName.Split(".")[^1];
+                }
+                var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+
+                if (!isJksField) continue;
+
+                Logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
+                var data = secret.Data[secretFieldName];
+                Logger.LogTrace("data: " + data);
+                secretData.Add(secretFieldName, data);
             }
-            var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
-
-            if (!isJksField) continue;
-
-            Logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
-            var data = secret.Data[secretFieldName];
-            Logger.LogTrace("data: " + data);
-            secretData.Add(secretFieldName, data);
+            var output = new JksSecret()
+            {
+                Secret = secret,
+                SecretPath = $"{namespaceName}/secrets/{secretName}",
+                SecretFieldName = secret.Data.Keys.FirstOrDefault(),
+                Password = password,
+                PasswordPath = passwordPath,
+                AllowedKeys = allowedKeys,
+                JksInventory = secretData
+            };
+            Logger.LogTrace("Exiting GetJKSSecret()");
+            return output;
         }
-        var output = new JksSecret()
+        catch (HttpOperationException e)
         {
-            Secret = secret,
-            SecretPath = $"{namespaceName}/secrets/{secretName}",
-            SecretFieldName = secret.Data.Keys.FirstOrDefault(),
-            Password = password,
-            PasswordPath = passwordPath,
-            AllowedKeys = allowedKeys,
-            JksInventory = secretData
-        };
-        Logger.LogTrace("Exiting GetJKSSecret()");
-        return output;
+            if (e.Response.StatusCode == HttpStatusCode.NotFound)
+            {
+                var output = new JksSecret()
+                {
+                    Secret = new V1Secret(),
+                    SecretPath = $"{namespaceName}/secrets/{secretName}",
+                    SecretFieldName = "jks",
+                    Password = password,
+                    PasswordPath = passwordPath,
+                    AllowedKeys = allowedKeys,
+                    JksInventory = new Dictionary<string, byte[]>()
+                };
+                Logger.LogTrace("Exiting GetJKSSecret()");
+                return output;
+            }
+        }
+        return new JksSecret();
     }
     
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
@@ -1937,5 +1959,38 @@ public class KubeCertificateManagerClient
         public string Csr;
         public string PrivateKey;
         public string PublicKey;
+    }
+
+    public V1Secret CreateOrUpdateJksSecret(JksSecret k8SData, string kubeSecretName, string kubeNamespace)
+    {
+        // Create V1Secret object and replace existing secret
+        var s1 = new V1Secret
+        {
+            ApiVersion = "v1",
+            Kind = "Secret",
+            Type = "Opaque",
+            Metadata = new V1ObjectMeta
+            {
+                Name = kubeSecretName,
+                NamespaceProperty = kubeNamespace
+            },
+            Data = k8SData.JksInventory
+        };
+        
+        // Create secret if it doesn't exist
+        try
+        {
+            Client.CoreV1.ReadNamespacedSecret(kubeSecretName, kubeNamespace);
+        }
+        catch (HttpOperationException e)
+        {
+            if (e.Response.StatusCode == HttpStatusCode.NotFound)
+            {
+                return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
+            }
+        }
+        
+        // Replace existing secret
+        return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
     }
 }

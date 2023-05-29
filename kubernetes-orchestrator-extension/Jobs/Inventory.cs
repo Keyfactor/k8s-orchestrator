@@ -14,7 +14,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.RemoteFile.JKS;
+using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -263,7 +263,7 @@ public class Inventory : JobBase, IInventoryJobExtension
     private Dictionary<string,string> HandleJKSSecret(InventoryJobConfiguration config)
     {
         var hasPrivateKeyJks = false;
-        var jksStore = new JKSCertificateStoreSerializer(config.JobProperties?.ToString());
+        var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
         var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
         
@@ -687,52 +687,7 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private string getK8SStorePassword(V1Secret certData)
-    {
-        var storePasswordBytes = new byte[] { };
-
-        // if secret is a buddy pass
-        if (!string.IsNullOrEmpty(StorePassword))
-        {
-            storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
-        }
-        else if (!string.IsNullOrEmpty(StorePasswordPath))
-        {
-            // Split password path into namespace and secret name
-            var passwordPath = StorePasswordPath.Split("/");
-            var passwordNamespace = "";
-            var passwordSecretName = "";
-            if (passwordPath.Length == 1)
-            {
-                passwordNamespace = KubeNamespace;
-                passwordSecretName = passwordPath[0];
-            }
-            else
-            {
-                passwordNamespace = passwordPath[0];
-                passwordSecretName = passwordPath[^1];
-            }
-            
-             
-            var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
-            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
-        }
-        else if (certData.Data.TryGetValue(PasswordFieldName, out var value1))
-        {
-            storePasswordBytes = value1;
-        }
-        else
-        {
-            var passwdEx = "Store secret '"+ StorePasswordPath +"'did not contain key '" + CertificateDataFieldName + "' or '" + PasswordFieldName + "'." +
-                           "  Please provide a valid store password and try again.";
-            Logger.LogError(passwdEx);
-            throw new Exception(passwdEx);
-        }
-
-        //convert password to string
-        var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
-        return storePassword;
-    }
+    
 
     private JobResult HandlePkcs12Secret(long jobId, SubmitInventoryUpdate submitInventory, bool isJks = false)
     {

@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Common.Logging;
+using k8s.Models;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -75,11 +76,11 @@ public class K8SJobCertificate
     public byte[] PrivateKeyBytes { get; set; }
 
     public string Password { get; set; } = "";
-    
+
     public bool PasswordIsK8SSecret { get; set; } = false;
-    
+
     public string StorePassword { get; set; } = "";
-    
+
     public string StorePasswordPath { get; set; } = "";
 
     public bool hasPrivateKey { get; set; } = false;
@@ -894,7 +895,7 @@ public abstract class JobBase
         {
             Result = OrchestratorJobStatusJobResult.Success,
             JobHistoryId = jobHistoryId,
-            
+
         };
     }
 
@@ -941,5 +942,75 @@ public abstract class JobBase
         return null; // Private key with the given alias not found
 
 
+    }
+
+    protected string getK8SStorePassword(V1Secret certData)
+    {
+        Logger.LogDebug("Attempting to get store password from K8S secret.");
+        var storePasswordBytes = new byte[] { };
+
+        // if secret is a buddy pass
+        if (!string.IsNullOrEmpty(StorePassword))
+        {
+            Logger.LogDebug("Store password is not null or empty, using it.");
+            storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
+            // Logger.LogDebug("Store password bytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
+        }
+        else if (!string.IsNullOrEmpty(StorePasswordPath))
+        {
+            // Split password path into namespace and secret name
+            Logger.LogDebug("Store password is null or empty, using StorePasswordPath.");
+            var passwordPath = StorePasswordPath.Split("/");
+            var passwordNamespace = "";
+            var passwordSecretName = "";
+            if (passwordPath.Length == 1)
+            {
+                Logger.LogDebug("Password path length is 1, using KubeNamespace.");
+                passwordNamespace = KubeNamespace;
+                passwordSecretName = passwordPath[0];
+            }
+            else
+            {
+                Logger.LogDebug("Password path length is not 1, using passwordPath[0] and passwordPath[^1].");
+                passwordNamespace = passwordPath[0];
+                passwordSecretName = passwordPath[^1];
+            }
+
+            Logger.LogDebug("Password secret name: " + passwordSecretName);
+            Logger.LogDebug("Password namespace: " + passwordNamespace);
+
+            Logger.LogDebug("Attempting to read K8S buddy secret.");
+            var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
+            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
+            Logger.LogDebug("K8S buddy secret read successfully.");
+            // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
+        }
+        else if (certData != null && certData.Data.TryGetValue(PasswordFieldName, out var value1))
+        {
+            Logger.LogDebug("Attempting to read password from PasswordFieldName.");
+            storePasswordBytes = value1;
+            Logger.LogDebug("Password read successfully.");
+            // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
+        }
+        else
+        {
+            Logger.LogDebug("No password found.");
+            var passwdEx = "";
+            if (!string.IsNullOrEmpty(StorePasswordPath))
+            {
+                passwdEx = "Store secret '" + StorePasswordPath + "'did not contain key '" + CertificateDataFieldName + "' or '" + PasswordFieldName + "'." +
+                           "  Please provide a valid store password and try again.";
+            }
+            else
+            {
+                passwdEx = "Invalid store password.  Please provide a valid store password and try again.";
+            }
+            Logger.LogError(passwdEx);
+            throw new Exception(passwdEx);
+        }
+
+        //convert password to string
+        var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
+        return storePassword;
     }
 }

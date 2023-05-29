@@ -14,6 +14,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -344,6 +345,130 @@ public class Management : JobBase, IManagementJobExtension
         }
     }
 
+    private V1Secret HandleJKSSecret(ManagementJobConfiguration config, bool remove = false)
+    {
+        Logger.LogDebug("Entering HandleJKSSecret()...");
+        // get the jks store from the secret
+        var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
+        //getJksBytesFromKubeSecret
+        var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
+        // get newCert bytes from config.JobCertificate.Contents
+        var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
+
+        var alias = config.JobCertificate.Alias;
+        Logger.LogDebug("alias: " + alias);
+        var existingDataFieldName = "jks";
+        // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
+        if (alias.Contains('/'))
+        {
+            Logger.LogDebug("alias contains a '/' so splitting on '/'...");
+            var aliasParts = alias.Split("/");
+            existingDataFieldName = aliasParts[0];
+            alias = aliasParts[1];
+        }
+        
+        Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
+        Logger.LogDebug("alias: " + alias);
+        byte[] existingData = null;
+        if (k8sData.Secret.Data != null)
+        {
+            existingData = k8sData.Secret.Data.TryGetValue(existingDataFieldName, out var value) ? value : null;
+        }
+
+        if (!string.IsNullOrEmpty(config.CertificateStoreDetails.StorePassword))
+        {
+            StorePassword = config.CertificateStoreDetails.StorePassword;
+        }
+        Logger.LogDebug("Getting store password");
+        var sPass = getK8SStorePassword(k8sData.Secret);
+        // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
+        Logger.LogDebug("Calling CreateOrUpdateJks()...");
+        var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
+        if (k8sData.JksInventory == null || k8sData.JksInventory.Count == 0)
+        {
+            Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
+            k8sData.JksInventory = new Dictionary<string, byte[]>();
+            k8sData.JksInventory.Add(existingDataFieldName, newJksStore);
+        }
+        else
+        {
+            Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
+            k8sData.JksInventory[existingDataFieldName] = newJksStore;
+        }
+        // update the secret
+        Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
+        var updateResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
+        Logger.LogDebug("Exiting HandleJKSSecret()...");
+        return updateResponse;
+    }
+
+    private Dictionary<string,string> HandleJKSSecret(InventoryJobConfiguration config)
+    {
+        var hasPrivateKeyJks = false;
+        var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
+        //getJksBytesFromKubeSecret
+        var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
+        
+
+        Dictionary<string, string> jksInventoryDict = new Dictionary<string, string>();
+        // iterate through the keys in the secret and add them to the jks store
+        foreach (var jStore in k8sData.JksInventory)
+        {
+            var keyName = jStore.Key;
+            var keyBytes = jStore.Value;
+            var keyPassword = getK8SStorePassword(k8sData.Secret);
+            var keyAlias = keyName;
+            var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            // create a list of certificate chains in PEM format
+            
+            foreach (var certAlias in jStoreDs.Aliases)
+            {
+                var certChainList = new List<string>();
+                var certChain = jStoreDs.GetCertificateChain(certAlias);
+                var certChainPem = new StringBuilder();
+                var fullAlias = keyAlias + "/" + certAlias;
+                //check if the alias is a private key
+                if (jStoreDs.IsKeyEntry(certAlias))
+                {
+                    hasPrivateKeyJks = true;
+                }
+                var pKey = jStoreDs.GetKey(certAlias);
+                if (pKey != null)
+                {
+                    hasPrivateKeyJks = true;
+                }
+               
+                var leaf = jStoreDs.GetCertificate(certAlias);
+                if (leaf != null)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                    certChainList.Add(certChainPem.ToString());
+                }
+                 
+                if (certChain == null)
+                {
+                    jksInventoryDict[fullAlias] = string.Join("", certChainList);
+                    continue;
+                }
+                
+                foreach (var cert in certChain)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                }
+                // certChainList.Add(certChainPem.ToString());
+                
+                jksInventoryDict[fullAlias] = string.Join("", certChainList);
+            }
+            // add the certificate chain to the inventory
+            // jksInventoryDict[keyAlias] = string.Join("", certChainList);
+        }
+        return jksInventoryDict;
+    }
+
     private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false,
         bool isJks = false)
     {
@@ -562,9 +687,8 @@ public class Management : JobBase, IManagementJobExtension
                 Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
                 break;
             case "jks":
-                Logger.LogInformation("Secret type is 'jks', calling HandlePKCS12Secret() for certificate " + certAlias + "...");
-                _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite, false, false, true);
-                Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
+                _ = HandleJKSSecret(config);
+                Logger.LogInformation("Successfully called HandleJKSSecret() for certificate " + certAlias + ".");
                 break;
             case "namespace":
                 jobCertObj.Alias = config.JobCertificate.Alias;
@@ -635,6 +759,8 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
         return SuccessJob(config.JobHistoryId);
     }
+    
+    
 
     private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
@@ -649,10 +775,14 @@ public class Management : JobBase, IManagementJobExtension
         cert.PasswordIsK8SSecret = PasswordIsK8SSecret;
         cert.StorePasswordPath = StorePasswordPath;
 
-        if (secretType is "pkcs12")
+        switch (secretType)
         {
-            _ = HandlePKCS12Secret(certAlias, cert, StorePassword, true, false, true);
-            return SuccessJob(config.JobHistoryId);
+            case "pkcs12":
+                _ = HandlePKCS12Secret(certAlias, cert, StorePassword, true, false, true);
+                return SuccessJob(config.JobHistoryId);
+            case "jks":
+                _ = HandleJKSSecret(config, true);
+                return SuccessJob(config.JobHistoryId);
         }
 
 
