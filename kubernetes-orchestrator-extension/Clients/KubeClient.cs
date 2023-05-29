@@ -1667,7 +1667,7 @@ public class KubeCertificateManagerClient
 
                 foreach (var secret in secrets.Items)
                 {
-                    if (secret.Type.ToLower() is "kubernetes.io/tls" or "Opaque" or "pkcs12" or "p12" or "pfx" or "jks")
+                    if (secret.Type.ToLower() is "kubernetes.io/tls" or "opaque" or "pkcs12" or "p12" or "pfx" or "jks")
                     {
                         Logger.LogTrace("secret.Type: " + secret.Type);
                         Logger.LogTrace("secret.Metadata.Name: " + secret.Metadata.Name);

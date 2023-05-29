@@ -46,17 +46,18 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 
         KubeSvcCreds = ServerPassword;
         KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
-        var namespaces = config.JobProperties["dirs"].ToString().Split(',');
-        if (namespaces.Length == 0)
+        
+        var namespaces = config.JobProperties["dirs"].ToString()?.Split(',');
+        if (namespaces is { Length: 0 })
         {
             namespaces = new[] { "default" };
         }
         Logger.LogDebug("Namespaces: " + string.Join(",", namespaces));
 
-        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString().Split(',');
+        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString()?.Split(',');
         Logger.LogDebug("Ignored Namespaces: " + string.Join(",", ignoreNamespace));
 
-        var secretAllowedKeys = config.JobProperties["patterns"].ToString().Split(',');
+        var secretAllowedKeys = config.JobProperties["patterns"].ToString()?.Split(',');
         Logger.LogDebug("Secret Allowed Keys: " + string.Join(",", secretAllowedKeys));
 
         Logger.LogTrace("Discovery entering switch block based on capability: " + config.Capability);
