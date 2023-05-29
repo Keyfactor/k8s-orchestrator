@@ -103,71 +103,103 @@ This text would be entered in as the value for the __Server Password__, instead 
 
 
 ## Table of Contents
-- [Kubernetes Orchestrator Extension](#kubernetes-orchestrator-extension)
-    * [About the Keyfactor Universal Orchestrator Capability](#about-the-keyfactor-universal-orchestrator-capability)
-    * [Support for Kubernetes Orchestrator Extension](#support-for-kubernetes-orchestrator-extension)
-    * [Keyfactor Version Supported](#keyfactor-version-supported)
-    * [Platform Specific Notes](#platform-specific-notes)
-    * [PAM Integration](#pam-integration)
-        + [Example PAM Provider Setup](#example-pam-provider-setup)
-        + [Use the PAM Provider](#use-the-pam-provider)
-    * [Table of Contents](#table-of-contents)
-    * [Keyfactor Version Supported](#keyfactor-version-supported-1)
-    * [Platform Specific Notes](#platform-specific-notes-1)
-    * [PAM Integration](#pam-integration-1)
-    * [Overview](#overview)
-        + [K8SCert](#k8scert)
-        + [K8SSecret](#k8ssecret)
-        + [K8STLSSecret](#k8stlssecret)
-    * [Versioning](#versioning)
-    * [Security Considerations](#security-considerations)
-        + [Service Account Setup](#service-account-setup)
-    * [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
-    * [Certificate Store Types](#certificate-store-types)
-        + [Configuration Information](#configuration-information)
-            - [Store Path](#note-about-storepath)
-            - [Common Values](#common-values)
-                * [UI Basic Tab](#ui-basic-tab)
-                * [UI Advanced Tab](#ui-advanced-tab)
-                * [Custom Fields Tab](#custom-fields-tab)
-                * [Kube Secret Types](#kube-secret-types)
-                * [Entry Parameters Tab:](#entry-parameters-tab-)
-        + [K8SSecret Store Type](#k8ssecret-store-type)
-            - [kfutil Create K8SSecret Store Type](#kfutil-create-k8ssecret-store-type)
-            - [UI Configuration](#ui-configuration)
-                * [UI Basic Tab](#ui-basic-tab-1)
-                * [UI Advanced Tab](#ui-advanced-tab-1)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab-)
-        + [K8STLSSecr Store Type](#k8stlssecr-store-type)
-            - [kfutil Create K8STLSSecr Store Type](#kfutil-create-k8stlssecr-store-type)
-            - [UI Configuration](#ui-configuration-1)
-                * [UI Basic Tab](#ui-basic-tab-2)
-                * [UI Advanced Tab](#ui-advanced-tab-2)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab-1)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--1)
-        + [K8SCert Store Type](#k8scert-store-type)
-            - [UI Configuration](#ui-configuration-2)
-                * [UI Basic Tab](#ui-basic-tab-3)
-                * [UI Advanced Tab](#ui-advanced-tab-3)
-                * [UI Custom Fields Tab](#ui-custom-fields-tab-2)
-                * [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
-    * [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
-    * [Certificate Discovery](#certificate-discovery)
-    * [Certificate Management](#certificate-management)
-    * [Development](#development)
-    * [License](#license)
+- [Keyfactor Version Supported](#keyfactor-version-supported)
+- [Platform Specific Notes](#platform-specific-notes)
+- [PAM Integration](#pam-integration)
+- [Overview](#overview)
+    * [K8SCert](#k8scert)
+    * [K8SSecret](#k8ssecret)
+    * [K8STLSSecret](#k8stlssecret)
+    * [K8SJKS](#k8sjks)
+- [Versioning](#versioning)
+- [Security Considerations](#security-considerations)
+    * [Service Account Setup](#service-account-setup)
+- [Kubernetes Orchestrator Extension Installation](#kubernetes-orchestrator-extension-installation)
+- [Certificate Store Types](#certificate-store-types)
+    * [Configuration Information](#configuration-information)
+        + [Note about StorePath](#note-about-storepath)
+        + [Common Values](#common-values)
+            - [UI Basic Tab](#ui-basic-tab)
+            - [UI Advanced Tab](#ui-advanced-tab)
+            - [Custom Fields Tab](#custom-fields-tab)
+            - [Kube Secret Types](#kube-secret-types)
+            - [Entry Parameters Tab:](#entry-parameters-tab-)
+    * [K8SSecret Store Type](#k8ssecret-store-type)
+        + [kfutil Create K8SSecret Store Type](#kfutil-create-k8ssecret-store-type)
+        + [UI Configuration](#ui-configuration)
+            - [UI Basic Tab](#ui-basic-tab-1)
+            - [UI Advanced Tab](#ui-advanced-tab-1)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab-)
+    * [K8STLSSecr Store Type](#k8stlssecr-store-type)
+        + [kfutil Create K8STLSSecr Store Type](#kfutil-create-k8stlssecr-store-type)
+        + [UI Configuration](#ui-configuration-1)
+            - [UI Basic Tab](#ui-basic-tab-2)
+            - [UI Advanced Tab](#ui-advanced-tab-2)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-1)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--1)
+    * [K8SPKCS12 Store Type](#k8spkcs12-store-type)
+        + [kfutil Create K8SPKCS12 Store Type](#kfutil-create-k8spkcs12-store-type)
+        + [UI Configuration](#ui-configuration-2)
+            - [UI Basic Tab](#ui-basic-tab-3)
+            - [UI Advanced Tab](#ui-advanced-tab-3)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-2)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--2)
+    * [K8SJKS Store Type](#k8sjks-store-type)
+        + [Storepath Patterns](#storepath-patterns)
+        + [Alias Patterns](#alias-patterns)
+        + [kfutil Create K8SJKS Store Type](#kfutil-create-k8sjks-store-type)
+        + [UI Configuration](#ui-configuration-3)
+            - [UI Basic Tab](#ui-basic-tab-4)
+            - [UI Advanced Tab](#ui-advanced-tab-4)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-3)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--3)
+    * [K8SCluster Store Type](#k8scluster-store-type)
+        + [Storepath Patterns](#storepath-patterns-1)
+        + [Alias Patterns](#alias-patterns-1)
+        + [kfutil Create K8SCluster Store Type](#kfutil-create-k8scluster-store-type)
+        + [UI Configuration](#ui-configuration-4)
+            - [UI Basic Tab](#ui-basic-tab-5)
+            - [UI Advanced Tab](#ui-advanced-tab-5)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-4)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--4)
+    * [K8SNS Store Type](#k8sns-store-type)
+        + [Storepath Patterns](#storepath-patterns-2)
+        + [Alias Patterns](#alias-patterns-2)
+        + [kfutil Create K8SNS Store Type](#kfutil-create-k8sns-store-type)
+        + [UI Configuration](#ui-configuration-5)
+            - [UI Basic Tab](#ui-basic-tab-6)
+            - [UI Advanced Tab](#ui-advanced-tab-6)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-5)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--5)
+    * [K8SCert Store Type](#k8scert-store-type)
+        + [UI Configuration](#ui-configuration-6)
+            - [UI Basic Tab](#ui-basic-tab-7)
+            - [UI Advanced Tab](#ui-advanced-tab-7)
+            - [UI Custom Fields Tab](#ui-custom-fields-tab-6)
+            - [UI Entry Parameters Tab:](#ui-entry-parameters-tab--6)
+- [Creating Certificate Stores and Scheduling Discovery Jobs](#creating-certificate-stores-and-scheduling-discovery-jobs)
+- [Certificate Discovery](#certificate-discovery)
+    * [K8SNS Discovery](#k8sns-discovery)
+    * [K8SPKCS12 and K8SJKS Discovery](#k8spkcs12-and-k8sjks-discovery)
+- [Certificate Inventory](#certificate-inventory)
+- [Certificate Management](#certificate-management)
+    * [K8SJKS](#k8sjks-1)
+- [Development](#development)
+- [License](#license)
+
 
 ## Keyfactor Version Supported
 
 The minimum version of the Keyfactor Universal Orchestrator Framework needed to run this version of the extension is 10.1
 
-| Keyfactor Version | Universal Orchestrator Framework Version   | Supported    |
-|-------------------|--------------------------------------------|--------------|
-| 10.1.1            | 10.1                                       | &check;      |
-| 10.0.0            | 10.1                                       | &check;      |
-| 9.10.1            | Not supported on KF 9.X.X                  | x            |
-| 9.5.0             | Not supported on KF 9.X.X                  | x            |
+| Keyfactor Version | Universal Orchestrator Framework Version | Supported    |
+|-------------------|------------------------------------------|--------------|
+| 10.2.1            | 10.1, 10.2                               | &check;      |
+| 10.1.1            | 10.1, 10.2                               | &check;      |
+| 10.0.0            | 10.1, 10.2                               | &check;      |
+| 9.10.1            | Not supported on KF 9.X.X                | x            |
+| 9.5.0             | Not supported on KF 9.X.X                | x            |
 
 ## Platform Specific Notes
 
@@ -232,6 +264,13 @@ secret.  Any other fields will be ignored.
 ### K8STLSSecret
 The K8STLSSecret store type is used to manage Kubernetes secrets of type `kubernetes.io/tls`.  These secrets
 must have the `tls.crt` and `tls.key` fields and may only contain a single key and single certificate.
+
+### K8SJKS
+The K8SJKS store type is used to manage Kubernetes secrets of type `Opaque`.  These secrets
+must have a field that ends in `.jks`. The orchestrator will inventory and manage using a *custom alias* of the following
+pattern: `<k8s_secret_field_name>/<keystore_alias>`.  For example, if the secret has a field named `mykeystore.jks` and
+the keystore contains a certificate with an alias of `mycert`, the orchestrator will manage the certificate using the
+alias `mykeystore.jks/mycert`.
 
 ## Versioning
 
@@ -452,12 +491,12 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_basic.png)
 
 ##### UI Advanced Tab
-| Field Name            | Required | Value     |
-|-----------------------|----------|-----------|
-| Store Path Type       |          | Freeform  |
-| Supports Custom Alias |          | Forbidden |
-| Private Key Handling  |          | Optional  |
-| PFX Password Style    |          | Default   |
+| Field Name            | Required | Value     | Comments                                            |
+|-----------------------|----------|-----------|-----------------------------------------------------|
+| Store Path Type       |          | Freeform  |                                                     |
+| Supports Custom Alias |          | Forbidden | pattern: `<k8s_secret_field_name>/<keystore_alias>` |
+| Private Key Handling  |          | Optional  |                                                     |
+| PFX Password Style    |          | Default   |                                                     |
 
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
@@ -531,6 +570,14 @@ Empty
 
 ### K8SJKS Store Type
 
+#### Storepath Patterns
+- `namespace_name/secret_name`
+- `namespace_name/secrets/secret_name`
+- `cluster_name/namespace_name/secrets/secret_name`
+
+#### Alias Patterns
+- `k8s_secret_field_name/keystore_alias`
+
 #### kfutil Create K8SJKS Store Type
 
 The following commands can be used with [kfutil](https://github.com/Keyfactor/kfutil). Please refer to the kfutil documentation for more information on how to use the tool to interact w/ Keyfactor Command.
@@ -555,17 +602,17 @@ kfutil store-types create --name K8SJKS
 | Requires Store Password |          | Unchecked [ ]                             |
 | Supports Entry Password |          | Unchecked [ ]                             |
 
-![k8sJKS_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_basic.png)
+![k8sjks_basic.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_basic.png)
 
 ##### UI Advanced Tab
-| Field Name            | Required | Value     |
-|-----------------------|----------|-----------|
-| Store Path Type       |          | Freeform  |
-| Supports Custom Alias |          | Forbidden |
-| Private Key Handling  |          | Optional  |
-| PFX Password Style    |          | Default   |
+| Field Name            | Required | Value    |
+|-----------------------|----------|----------|
+| Store Path Type       |          | Freeform |
+| Supports Custom Alias | &check;  | Required |
+| Private Key Handling  |          | Optional |
+| PFX Password Style    |          | Default  |
 
-![k8sJKS_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_advanced.png)
+![k8sjks_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_advanced.png)
 
 ##### UI Custom Fields Tab
 | Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                        |
@@ -580,7 +627,7 @@ kfutil store-types create --name K8SJKS
 | StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`              |
 
 
-![k8sJKS_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sJKS_custom_fields.png)
+![k8sjks_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
@@ -797,6 +844,20 @@ each type of certificate store.
 | K8SCluster | `tls.crt`,`tls.key`                       |
 | K8SNS      | `tls.crt`,`tls.key`                       |
 
+
+### K8SJKS
+
+The K8SJKS store type is a Java Key Store (JKS) that is stored in a Kubernetes Secret. The secret can contain multiple
+JKS files. The orchestrator will attempt to manage the JKS files found in the secret that match the `allowed_keys` or
+`CertificateDataFieldName` custom field values. 
+
+Alias pattern: `<k8s_secret_field_name>/<keystore_alias>`.
+
+Example of secret containing 2 JKS stores:
+![k8sjks_multi.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_multi.png)
+
+Here's what this looks like in the UI:
+![k8sjks_inventory_ui.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_inventory_ui.png)
 
 ## Development
 
