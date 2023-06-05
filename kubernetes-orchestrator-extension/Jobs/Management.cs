@@ -352,7 +352,7 @@ public class Management : JobBase, IManagementJobExtension
         // get the jks store from the secret
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
-        var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
+        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
         // get newCert bytes from config.JobCertificate.Contents
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
@@ -367,7 +367,7 @@ public class Management : JobBase, IManagementJobExtension
             existingDataFieldName = aliasParts[0];
             alias = aliasParts[1];
         }
-        
+
         Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
         Logger.LogDebug("alias: " + alias);
         byte[] existingData = null;
@@ -385,16 +385,16 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
-        if (k8sData.JksInventory == null || k8sData.JksInventory.Count == 0)
+        if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
             Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
-            k8sData.JksInventory = new Dictionary<string, byte[]>();
-            k8sData.JksInventory.Add(existingDataFieldName, newJksStore);
+            k8sData.Inventory = new Dictionary<string, byte[]>();
+            k8sData.Inventory.Add(existingDataFieldName, newJksStore);
         }
         else
         {
             Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
-            k8sData.JksInventory[existingDataFieldName] = newJksStore;
+            k8sData.Inventory[existingDataFieldName] = newJksStore;
         }
         // update the secret
         Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
@@ -405,17 +405,17 @@ public class Management : JobBase, IManagementJobExtension
     
     private V1Secret HandlePkcs12Secret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.LogDebug("Entering HandleJKSSecret()...");
-        // get the jks store from the secret
+        Logger.LogDebug("Entering HandlePkcs12Secret()...");
+        // get the pkcs12 store from the secret
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
-        //getJksBytesFromKubeSecret
-        var k8sData = KubeClient.GetPKCS12Secret(KubeSecretName, KubeNamespace);
+        //getPkcs12BytesFromKubeSecret
+        var k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace);
         // get newCert bytes from config.JobCertificate.Contents
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
         var alias = config.JobCertificate.Alias;
         Logger.LogDebug("alias: " + alias);
-        var existingDataFieldName = "jks";
+        var existingDataFieldName = "pkcs12";
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
         if (alias.Contains('/'))
         {
@@ -424,7 +424,7 @@ public class Management : JobBase, IManagementJobExtension
             existingDataFieldName = aliasParts[0];
             alias = aliasParts[1];
         }
-        
+
         Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
         Logger.LogDebug("alias: " + alias);
         byte[] existingData = null;
@@ -440,90 +440,77 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Getting store password");
         var sPass = getK8SStorePassword(k8sData.Secret);
         // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
-        Logger.LogDebug("Calling CreateOrUpdateJks()...");
+        Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
-        if (k8sData.Pkcs12Inventory == null || k8sData.Pkcs12Inventory.Count == 0)
+        if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
-            Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
-            k8sData.Pkcs12Inventory = new Dictionary<string, byte[]>();
-            k8sData.Pkcs12Inventory.Add(existingDataFieldName, newPkcs12Store);
+            Logger.LogDebug("k8sData.Pkcs12Inventory is null or empty so creating new Dictionary...");
+            k8sData.Inventory = new Dictionary<string, byte[]>();
+            k8sData.Inventory.Add(existingDataFieldName, newPkcs12Store);
         }
         else
         {
-            Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
-            k8sData.Pkcs12Inventory[existingDataFieldName] = newPkcs12Store;
+            Logger.LogDebug("k8sData.Pkcs12Inventory is not null or empty so updating existing Dictionary...");
+            k8sData.Inventory[existingDataFieldName] = newPkcs12Store;
         }
         // update the secret
-        Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
+        Logger.LogDebug("Calling CreateOrUpdatePkcs12Secret()...");
         var updateResponse = KubeClient.CreateOrUpdatePkcs12Secret(k8sData, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Exiting HandleJKSSecret()...");
+        Logger.LogDebug("Exiting HandlePKCS12Secret()...");
         return updateResponse;
     }
-    
-    private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false,
-        bool isJks = false)
-    {
-        Logger.LogTrace("Entered HandlePKCS12Secret()");
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
 
-        try
-        {
-            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM) && !remove)
-            {
-                Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
-                return creatEmptySecret(isJks ? "jks" : "pfx");
-            }
-        }
-        catch (Exception ex)
-        {
-            if (!string.IsNullOrEmpty(certAlias))
-            {
-                Logger.LogWarning("This is fine");
-            }
-            else
-            {
-                Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
-            }
-        }
-
-        var keyPems = new string[] { };
-        var certPems = new string[] { };
-        var caPems = new string[] { };
-        var chainPems = new string[] { };
-
-
-        Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
-
-        V1Secret createResponse;
-        createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(certObj,
-            KubeSecretName,
-            KubeNamespace,
-            KubeSecretType,
-            overwrite,
-            CertificateDataFieldName,
-            PasswordFieldName,
-            StorePasswordPath,
-            PasswordIsK8SSecret,
-            StorePassword,
-            isJks ? JksAllowedKeys : Pkcs12AllowedKeys,
-            remove);
-
-        if (createResponse == null)
-        {
-            Logger.LogError("createResponse is null");
-        }
-        else
-        {
-            Logger.LogTrace(createResponse.ToString());
-        }
-
-        Logger.LogInformation(
-            $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
-        return createResponse;
-    }
+    // private V1Secret HandlePKCS12Secret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true, bool remove = false)
+    // {
+    //     Logger.LogTrace("Entered HandlePKCS12Secret()");
+    //     Logger.LogTrace("certAlias: " + certAlias);
+    //     // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
+    //     Logger.LogTrace("overwrite: " + overwrite);
+    //     Logger.LogTrace("append: " + append);
+    //
+    //     try
+    //     {
+    //         if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM) && !remove)
+    //         {
+    //             Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
+    //             return creatEmptySecret("pfx");
+    //         }
+    //     }
+    //     catch (Exception ex)
+    //     {
+    //         if (!string.IsNullOrEmpty(certAlias))
+    //         {
+    //             Logger.LogWarning("This is fine");
+    //         }
+    //         else
+    //         {
+    //             Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
+    //         }
+    //     }
+    //
+    //     var keyPems = new string[] { };
+    //     var certPems = new string[] { };
+    //     var caPems = new string[] { };
+    //     var chainPems = new string[] { };
+    //
+    //
+    //     Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
+    //
+    //     var createResponse = KubeClient.CreateOrUpdatePkcs12Secret(default, null, null);
+    //
+    //     if (createResponse == null)
+    //     {
+    //         Logger.LogError("createResponse is null");
+    //     }
+    //     else
+    //     {
+    //         Logger.LogTrace(createResponse.ToString());
+    //     }
+    //
+    //     Logger.LogInformation(
+    //         $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+    //     return createResponse;
+    // }
 
     private V1Secret HandleTlsSecret(string certAlias, K8SJobCertificate certObj, string certPassword, bool overwrite = false, bool append = true)
     {
@@ -674,7 +661,7 @@ public class Management : JobBase, IManagementJobExtension
             case "pfx":
             case "pkcs12":
                 Logger.LogInformation("Secret type is 'pkcs12', calling HandlePKCS12Secret() for certificate " + certAlias + "...");
-                _ = HandlePKCS12Secret(certAlias, jobCertObj, certPassword, overwrite);
+                _ = HandlePkcs12Secret(config);
                 Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
                 break;
             case "jks":
@@ -750,8 +737,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
         return SuccessJob(config.JobHistoryId);
     }
-    
-    
+
 
     private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
@@ -769,7 +755,7 @@ public class Management : JobBase, IManagementJobExtension
         switch (secretType)
         {
             case "pkcs12":
-                _ = HandlePKCS12Secret(certAlias, cert, StorePassword, true, false, true);
+                _ = HandlePkcs12Secret(config);
                 return SuccessJob(config.JobHistoryId);
             case "jks":
                 _ = HandleJksSecret(config, true);
@@ -818,7 +804,7 @@ public class Management : JobBase, IManagementJobExtension
                     $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'. Assuming empty inventory.";
                 return new JobResult
                 {
-                    Result = OrchestratorJobStatusJobResult.Success,
+                    Result = OrchestratorJobStatusJobResult.Failure,
                     JobHistoryId = config.JobHistoryId,
                     FailureMessage = certDataErrorMsg
                 };

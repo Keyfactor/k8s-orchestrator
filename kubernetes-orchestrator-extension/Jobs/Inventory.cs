@@ -263,12 +263,11 @@ public class Inventory : JobBase, IInventoryJobExtension
         var hasPrivateKeyJks = false;
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
-        var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
-
-
+        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
+        
         Dictionary<string, string> jksInventoryDict = new Dictionary<string, string>();
         // iterate through the keys in the secret and add them to the jks store
-        foreach (var jStore in k8sData.JksInventory)
+        foreach (var jStore in k8sData.Inventory)
         {
             var keyName = jStore.Key;
             var keyBytes = jStore.Value;
@@ -859,41 +858,37 @@ public class Inventory : JobBase, IInventoryJobExtension
             };
         }
     }
-    
+
     private Dictionary<string, string> HandlePkcs12Secret(InventoryJobConfiguration config)
     {
         var hasPrivateKey = false;
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
-        //getJksBytesFromKubeSecret
-        var k8sData = KubeClient.GetPKCS12Secret(KubeSecretName, KubeNamespace);
-
-
+        var k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace);
         var pkcs12InventoryDict = new Dictionary<string, string>();
-        // iterate through the keys in the secret and add them to the jks store
-        foreach (var (keyName, keyBytes) in k8sData.Pkcs12Inventory)
+        // iterate through the keys in the secret and add them to the pkcs12 store
+        foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
             var keyPassword = getK8SStorePassword(k8sData.Secret);
-            var jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            var pStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
-
-            foreach (var certAlias in jStoreDs.Aliases)
+            foreach (var certAlias in pStoreDs.Aliases)
             {
                 var certChainList = new List<string>();
-                var certChain = jStoreDs.GetCertificateChain(certAlias);
+                var certChain = pStoreDs.GetCertificateChain(certAlias);
                 var certChainPem = new StringBuilder();
                 var fullAlias = keyName + "/" + certAlias;
                 //check if the alias is a private key
-                if (jStoreDs.IsKeyEntry(certAlias))
+                if (pStoreDs.IsKeyEntry(certAlias))
                 {
                     hasPrivateKey = true;
                 }
-                var pKey = jStoreDs.GetKey(certAlias);
+                var pKey = pStoreDs.GetKey(certAlias);
                 if (pKey != null)
                 {
                     hasPrivateKey = true;
                 }
-                
-                var leaf = jStoreDs.GetCertificate(certAlias);
+
+                var leaf = pStoreDs.GetCertificate(certAlias);
                 if (leaf != null)
                 {
                     certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
@@ -921,8 +916,6 @@ public class Inventory : JobBase, IInventoryJobExtension
 
                 pkcs12InventoryDict[fullAlias] = string.Join("", certChainList);
             }
-            // add the certificate chain to the inventory
-            // jksInventoryDict[keyAlias] = string.Join("", certChainList);
         }
         return pkcs12InventoryDict;
     }

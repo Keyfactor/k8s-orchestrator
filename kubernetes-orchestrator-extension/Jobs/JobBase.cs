@@ -13,6 +13,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Common.Logging;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -435,7 +436,7 @@ public abstract class JobBase
                 var kH = sPathParts[0];
                 var kN = sPathParts[1];
                 var kS = sPathParts[2];
-                if (kN == "secret" || kN == "tls" || kN == "certificate" || kN == "namespace")
+                if (kN is "secret" or "tls" or "certificate" or "namespace")
                 {
                     Logger.LogTrace("Store path is 3 parts and the second part is a secret type. Assuming that it is the namespace/secret name");
                     kN = sPathParts[0];
@@ -1012,5 +1013,39 @@ public abstract class JobBase
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
         return storePassword;
+    }
+}
+
+public class StoreNotFoundException : Exception
+{
+    public StoreNotFoundException()
+    {
+    }
+
+    public StoreNotFoundException(string message)
+        : base(message)
+    {
+    }
+
+    public StoreNotFoundException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+public class InvalidK8SSecretException : Exception
+{
+    public InvalidK8SSecretException()
+    {
+    }
+
+    public InvalidK8SSecretException(string message)
+        : base(message)
+    {
+    }
+
+    public InvalidK8SSecretException(string message, Exception innerException)
+        : base(message, innerException)
+    {
     }
 }
