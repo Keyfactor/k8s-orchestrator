@@ -7,23 +7,20 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
-using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
+using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
-using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Asn1.Pkcs;
-using Org.BouncyCastle.Asn1.X509;
-using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -103,10 +100,11 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "p12":
                 case "pfx":
                     Logger.LogInformation("Inventorying PKCS12 using " + Pkcs12AllowedKeys);
-                    return HandlePkcs12Secret(config.JobHistoryId, submitInventory);
+                    var pkcs12Inventory = HandlePkcs12Secret(config);
+                    return PushInventory(pkcs12Inventory, config.JobHistoryId, submitInventory, true);
                 case "jks":
+                    Logger.LogInformation("Inventorying JKS using " + JksAllowedKeys);
                     var jksInventory = HandleJKSSecret(config);
-                    
                     return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
 
                 case "cluster":
@@ -114,7 +112,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all", false);
                     var errors = new List<string>();
 
-                    Dictionary<string, string> clusterInventoryDict = new Dictionary<string, string>();
+                    var clusterInventoryDict = new Dictionary<string, string>();
                     foreach (var opaqueSecret in clusterOpaqueSecrets)
                     {
                         KubeSecretName = "";
@@ -259,14 +257,14 @@ public class Inventory : JobBase, IInventoryJobExtension
                 FailureMessage = ex.ToString()
             };
         }
-    } 
-    private Dictionary<string,string> HandleJKSSecret(InventoryJobConfiguration config)
+    }
+    private Dictionary<string, string> HandleJKSSecret(InventoryJobConfiguration config)
     {
         var hasPrivateKeyJks = false;
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
         var k8sData = KubeClient.GetJKSSecret(KubeSecretName, KubeNamespace);
-        
+
 
         Dictionary<string, string> jksInventoryDict = new Dictionary<string, string>();
         // iterate through the keys in the secret and add them to the jks store
@@ -278,7 +276,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             var keyAlias = keyName;
             var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
-            
+
             foreach (var certAlias in jStoreDs.Aliases)
             {
                 var certChainList = new List<string>();
@@ -295,7 +293,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 {
                     hasPrivateKeyJks = true;
                 }
-               
+
                 var leaf = jStoreDs.GetCertificate(certAlias);
                 if (leaf != null)
                 {
@@ -304,13 +302,13 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certChainPem.AppendLine("-----END CERTIFICATE-----");
                     certChainList.Add(certChainPem.ToString());
                 }
-                 
+
                 if (certChain == null)
                 {
                     jksInventoryDict[fullAlias] = string.Join("", certChainList);
                     continue;
                 }
-                
+
                 foreach (var cert in certChain)
                 {
                     certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
@@ -318,7 +316,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certChainPem.AppendLine("-----END CERTIFICATE-----");
                 }
                 // certChainList.Add(certChainPem.ToString());
-                
+
                 jksInventoryDict[fullAlias] = string.Join("", certChainList);
             }
             // add the certificate chain to the inventory
@@ -687,7 +685,6 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    
 
     private JobResult HandlePkcs12Secret(long jobId, SubmitInventoryUpdate submitInventory, bool isJks = false)
     {
@@ -745,7 +742,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             // KeyValuePair<string, byte[]> pkcsStores = new KeyValuePair<string, byte[]>();
 
             var allowedKeys = isJks ? JksAllowedKeys : Pkcs12AllowedKeys;
-            
+
             foreach (var key in certData.Data.Keys)
             {
                 // split key on '.' and take the last element
@@ -768,7 +765,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             }
             Logger.LogTrace("storeb64: " + Encoding.UTF8.GetString(storeBytes));
 
-           
+
             // Logger.LogTrace("password: " + password);
 
 
@@ -776,11 +773,9 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certCollection = new X509Certificate2Collection();
 
             var storePassword = getK8SStorePassword(certData);
-           
-            certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);    
-           
-            
-            
+
+            certCollection.Import(storeBytes, storePassword, X509KeyStorageFlags.Exportable);
+
 
             // Extract the private key and certificate for each certificate in the collection
 
@@ -863,5 +858,72 @@ public class Inventory : JobBase, IInventoryJobExtension
                 FailureMessage = certDataErrorMsg
             };
         }
+    }
+    
+    private Dictionary<string, string> HandlePkcs12Secret(InventoryJobConfiguration config)
+    {
+        var hasPrivateKey = false;
+        var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+        //getJksBytesFromKubeSecret
+        var k8sData = KubeClient.GetPKCS12Secret(KubeSecretName, KubeNamespace);
+
+
+        var pkcs12InventoryDict = new Dictionary<string, string>();
+        // iterate through the keys in the secret and add them to the jks store
+        foreach (var (keyName, keyBytes) in k8sData.Pkcs12Inventory)
+        {
+            var keyPassword = getK8SStorePassword(k8sData.Secret);
+            var jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            // create a list of certificate chains in PEM format
+
+            foreach (var certAlias in jStoreDs.Aliases)
+            {
+                var certChainList = new List<string>();
+                var certChain = jStoreDs.GetCertificateChain(certAlias);
+                var certChainPem = new StringBuilder();
+                var fullAlias = keyName + "/" + certAlias;
+                //check if the alias is a private key
+                if (jStoreDs.IsKeyEntry(certAlias))
+                {
+                    hasPrivateKey = true;
+                }
+                var pKey = jStoreDs.GetKey(certAlias);
+                if (pKey != null)
+                {
+                    hasPrivateKey = true;
+                }
+                
+                var leaf = jStoreDs.GetCertificate(certAlias);
+                if (leaf != null)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                    certChainList.Add(certChainPem.ToString());
+                    var certificate = new X509Certificate2(leaf.Certificate.GetEncoded());
+                    var cn = certificate.GetNameInfo(X509NameType.SimpleName, false);
+                    fullAlias = keyName + "/" + cn;
+                }
+
+                if (certChain == null)
+                {
+                    pkcs12InventoryDict[fullAlias] = string.Join("", certChainList);
+                    continue;
+                }
+
+                foreach (var cert in certChain)
+                {
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                }
+                // certChainList.Add(certChainPem.ToString());
+
+                pkcs12InventoryDict[fullAlias] = string.Join("", certChainList);
+            }
+            // add the certificate chain to the inventory
+            // jksInventoryDict[keyAlias] = string.Join("", certChainList);
+        }
+        return pkcs12InventoryDict;
     }
 }

@@ -1,4 +1,4 @@
-// Copyright 2021 Keyfactor
+// Copyright 2023 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,7 +18,6 @@ using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
