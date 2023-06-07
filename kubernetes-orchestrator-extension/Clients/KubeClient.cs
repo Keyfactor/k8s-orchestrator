@@ -2057,8 +2057,14 @@ public class KubeCertificateManagerClient
                 Name = kubeSecretName,
                 NamespaceProperty = kubeNamespace
             },
-            Data = k8SData.Inventory
+            Data = k8SData.Secret.Data //This preserves any existing data/fields we didn't modify
         };
+        
+        // Update the fields/data we did modify
+        foreach (var inventoryItem in k8SData.Inventory)
+        {
+            s1.Data[inventoryItem.Key] = inventoryItem.Value;
+        }
 
         // Create secret if it doesn't exist
         try
