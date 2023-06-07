@@ -353,7 +353,23 @@ public class Management : JobBase, IManagementJobExtension
         // get the jks store from the secret
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
-        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
+        var k8sData = new KubeCertificateManagerClient.JksSecret();
+        if (config.OperationType is CertStoreOperationType.Add or CertStoreOperationType.Remove)
+        {
+            try
+            {
+                k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
+            }
+            catch (StoreNotFoundException)
+            {
+                if (config.OperationType == CertStoreOperationType.Remove)
+                {
+                    Logger.LogWarning("Secret {Name} not found in Kubernetes so nothing to remove...", KubeSecretName);
+                    return null;
+                }
+                Logger.LogWarning("Secret {Name} not found in Kubernetes so creating new secret...", KubeSecretName);
+            }
+        }
         // get newCert bytes from config.JobCertificate.Contents
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
@@ -372,7 +388,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
         Logger.LogDebug("alias: " + alias);
         byte[] existingData = null;
-        if (k8sData.Secret.Data != null)
+        if (k8sData.Secret?.Data != null)
         {
             existingData = k8sData.Secret.Data.TryGetValue(existingDataFieldName, out var value) ? value : null;
         }

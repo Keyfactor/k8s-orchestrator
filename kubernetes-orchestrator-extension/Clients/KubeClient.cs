@@ -2057,10 +2057,12 @@ public class KubeCertificateManagerClient
                 Name = kubeSecretName,
                 NamespaceProperty = kubeNamespace
             },
-            Data = k8SData.Secret.Data //This preserves any existing data/fields we didn't modify
+            Data = k8SData.Secret?.Data //This preserves any existing data/fields we didn't modify
         };
         
+        
         // Update the fields/data we did modify
+        s1.Data ??= new Dictionary<string, byte[]>();
         foreach (var inventoryItem in k8SData.Inventory)
         {
             s1.Data[inventoryItem.Key] = inventoryItem.Value;
@@ -2096,9 +2098,10 @@ public class KubeCertificateManagerClient
                 Name = kubeSecretName,
                 NamespaceProperty = kubeNamespace
             },
-            Data = k8SData.Secret.Data
+            Data = k8SData.Secret?.Data
         };
 
+        s1.Data ??= new Dictionary<string, byte[]>();
         foreach (var inventoryItem in k8SData.Inventory)
         {
             s1.Data[inventoryItem.Key] = inventoryItem.Value;
