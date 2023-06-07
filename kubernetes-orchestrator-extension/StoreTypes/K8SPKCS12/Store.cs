@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.RegularExpressions;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
@@ -18,6 +19,7 @@ using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
+using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 
@@ -33,13 +35,11 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     {
         _logger.MethodEntry(LogLevel.Debug);
 
-        Pkcs12StoreBuilder storeBuilder = new Pkcs12StoreBuilder();
-        Pkcs12Store store = storeBuilder.Build();
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var store = storeBuilder.Build();
 
-        using (MemoryStream ms = new MemoryStream(storeContents))
-        {
-            store.Load(ms, string.IsNullOrEmpty(storePassword) ? new char[0] : storePassword.ToCharArray());
-        }
+        using var ms = new MemoryStream(storeContents);
+        store.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
 
         return store;
     }
@@ -70,7 +70,7 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         }
         return sb.ToString();
     }
-    
+
     public byte[] CreateOrUpdatePkcs12(byte[] newPkcs12Bytes, string newCertPassword, string alias, byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false)
     {
@@ -104,7 +104,9 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             {
                 // If alias does not exist and remove is true, return existingStore
                 using var existingPkcs12StoreMs = new MemoryStream();
-                existingPkcs12Store.Save(existingPkcs12StoreMs, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(), new SecureRandom());
+                existingPkcs12Store.Save(existingPkcs12StoreMs,
+                    string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
+                    new SecureRandom());
                 return existingPkcs12StoreMs.ToArray();
             }
         }
@@ -127,7 +129,7 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             // Convert to byte array in PEM format
             var pemBytes = Encoding.UTF8.GetBytes(pemString);
         }
-        
+
         var newCert = storeBuilder.Build();
 
         try

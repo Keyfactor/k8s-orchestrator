@@ -1898,7 +1898,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
             _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
 
-            allowedKeys ??= new[] { "pkcs12", "p12", "P12", "PKCS12" };
+            allowedKeys ??= new[] { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
 
 
             var secretData = new Dictionary<string, byte[]>();
@@ -1936,21 +1936,7 @@ public class KubeCertificateManagerClient
         catch (HttpOperationException e)
         {
             _logger.LogError("K8S secret not found {NamespaceName}/secrets/{SecretName}", namespaceName, secretName);
-            // if (e.Response.StatusCode == HttpStatusCode.NotFound)
-            // {
-            //     Pkcs12Secret output = new Pkcs12Secret()
-            //     {
-            //         Secret = new V1Secret(),
-            //         SecretPath = $"{namespaceName}/secrets/{secretName}",
-            //         SecretFieldName = "pkcs12",
-            //         Password = password,
-            //         PasswordPath = passwordPath,
-            //         AllowedKeys = allowedKeys,
-            //         Inventory = new Dictionary<string, byte[]>()
-            //     };
-            //     _logger.LogTrace("Exiting GetPKCS12Secret()");
-            //     return output;
-            // }
+            if (e.Response.StatusCode != HttpStatusCode.NotFound) throw e;
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
         return new Pkcs12Secret();
@@ -2104,8 +2090,13 @@ public class KubeCertificateManagerClient
                 Name = kubeSecretName,
                 NamespaceProperty = kubeNamespace
             },
-            Data = k8SData.Inventory
+            Data = k8SData.Secret.Data
         };
+
+        foreach (var inventoryItem in k8SData.Inventory)
+        {
+            s1.Data[inventoryItem.Key] = inventoryItem.Value;
+        }
 
         // Create secret if it doesn't exist
         try

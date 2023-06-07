@@ -106,8 +106,9 @@ public abstract class JobBase
     static protected readonly string DefaultPFXSecretFieldName = "pfx";
     static protected readonly string DefaultJKSSecretFieldName = "jks";
     static protected readonly string DefaultPFXPasswordSecretFieldName = "password";
-
-
+    
+    internal protected string OperationType { get; set; }
+    
     static protected string CertChainSeparator = ",";
     internal protected KubeCertificateManagerClient KubeClient;
 

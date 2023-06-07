@@ -897,7 +897,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certChainList.Add(certChainPem.ToString());
                     var certificate = new X509Certificate2(leaf.Certificate.GetEncoded());
                     var cn = certificate.GetNameInfo(X509NameType.SimpleName, false);
-                    fullAlias = keyName + "/" + cn;
+                    // fullAlias = keyName + "/" + cn;
                 }
 
                 if (certChain == null)

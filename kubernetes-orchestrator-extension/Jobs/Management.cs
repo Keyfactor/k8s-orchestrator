@@ -14,6 +14,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Logging;
@@ -36,7 +37,7 @@ public class Management : JobBase, IManagementJobExtension
     {
         Resolver = resolver;
     }
-
+    
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)
     {
@@ -409,7 +410,24 @@ public class Management : JobBase, IManagementJobExtension
         // get the pkcs12 store from the secret
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
         //getPkcs12BytesFromKubeSecret
-        var k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace);
+        var k8sData = new KubeCertificateManagerClient.Pkcs12Secret();
+        if (config.OperationType is CertStoreOperationType.Add or CertStoreOperationType.Remove)
+        {
+            try
+            {
+                k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace);
+            }
+            catch (StoreNotFoundException)
+            {
+                if (config.OperationType == CertStoreOperationType.Remove)
+                {
+                    Logger.LogWarning("Secret {Name} not found in Kubernetes so nothing to remove...", KubeSecretName);
+                    return null;
+                }
+                Logger.LogWarning("Secret {Name} not found in Kubernetes so creating new secret...", KubeSecretName);
+            }
+        }
+        
         // get newCert bytes from config.JobCertificate.Contents
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
@@ -428,7 +446,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
         Logger.LogDebug("alias: " + alias);
         byte[] existingData = null;
-        if (k8sData.Secret.Data != null)
+        if (k8sData.Secret?.Data != null)
         {
             existingData = k8sData.Secret.Data.TryGetValue(existingDataFieldName, out var value) ? value : null;
         }
@@ -755,7 +773,7 @@ public class Management : JobBase, IManagementJobExtension
         switch (secretType)
         {
             case "pkcs12":
-                _ = HandlePkcs12Secret(config);
+                _ = HandlePkcs12Secret(config, true);
                 return SuccessJob(config.JobHistoryId);
             case "jks":
                 _ = HandleJksSecret(config, true);
