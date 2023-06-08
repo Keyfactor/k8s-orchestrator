@@ -112,7 +112,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all", false);
                     var errors = new List<string>();
 
-                    var clusterInventoryDict = new Dictionary<string, string>();
+                    var clusterInventoryDict = new Dictionary<string, List<string>>();
                     foreach (var opaqueSecret in clusterOpaqueSecrets)
                     {
                         KubeSecretName = "";
@@ -129,7 +129,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var opaqueObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
-                            clusterInventoryDict[StorePath] = opaqueObj[0]; //todo: fix this    
+                            clusterInventoryDict[StorePath] = opaqueObj; //todo: fix this    
                         }
                         catch (Exception ex)
                         {
@@ -155,7 +155,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var tlsObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
-                            clusterInventoryDict[StorePath] = tlsObj[0]; //todo: fix this  
+                            clusterInventoryDict[StorePath] = tlsObj; //todo: fix this  
                         }
                         catch (Exception ex)
                         {
@@ -703,15 +703,88 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certificatesBytes = certData.Data["tls.crt"]; //TODO: Make these KubeSecretKey
             Logger.LogTrace("certificatesBytes: " + certificatesBytes);
             var privateKeyBytes = certData.Data["tls.key"]; //TODO: Make these KubeSecretKey
-            Logger.LogTrace("privateKeyBytes: " + privateKeyBytes);
+            byte [] caBytes = null;
+            var certsList = new List<string>();
+            
+            var certPem = Encoding.UTF8.GetString(certificatesBytes);
+            Logger.LogTrace("certPem: " + certPem);
+            var certObj = KubeClient.ReadPemCertificate(certPem);
+            if (certObj == null)
+            {
+                Logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                // Attempt to read data as DER
+                certObj = KubeClient.ReadDerCertificate(certPem);
+                if (certObj != null)
+                {
+                    certPem = KubeClient.ConvertToPem(certObj);
+                    Logger.LogTrace("certPem: " + certPem);
+                }
+                else
+                {
+                    certPem = KubeClient.ConvertToPem(certObj);
+                }
+                Logger.LogTrace("certPem: " + certPem);
+            }
+            else
+            {
+                certPem = KubeClient.ConvertToPem(certObj);
+                Logger.LogTrace("certPem: " + certPem);
+            }
+            if (!string.IsNullOrEmpty(certPem))
+            {
+                certsList.Add(certPem);
+            }
+            
+            var caPem = "";
+            if (certData.Data.TryGetValue("ca.crt", out var value))
+            {
+                caBytes = value;
+                Logger.LogTrace("caBytes: " + caBytes);
+                var caObj = KubeClient.ReadPemCertificate(Encoding.UTF8.GetString(caBytes));
+                if (caObj == null)
+                {
+                    Logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                    // Attempt to read data as DER
+                    caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(caBytes));
+                    if (caObj != null)
+                    {
+                        caPem = KubeClient.ConvertToPem(caObj);
+                        Logger.LogTrace("caPem: " + caPem);
+                    }
+                }
+                else
+                {
+                    caPem = KubeClient.ConvertToPem(caObj);
+                }
+                
+                Logger.LogTrace("caPem: " + caPem);
+                if (!string.IsNullOrEmpty(caPem))
+                {
+                    certsList.Add(caPem);
+                }
+            }
+            else
+            {
+                // Determine if chain is present in tls.crt
+                var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(certificatesBytes));
+                if (certChain != null && certChain.Count > 1)
+                {
+                    certsList.Clear();
+                    Logger.LogDebug("Certificate chain detected in tls.crt.  Attempting to parse chain...");
+                    foreach (var cert in certChain)
+                    {
+                        Logger.LogTrace("cert: " + cert);
+                        certsList.Add(KubeClient.ConvertToPem(cert));
+                    }
+                }
+            }
+            // Logger.LogTrace("privateKeyBytes: " + privateKeyBytes);
             if (privateKeyBytes == null)
             {
                 Logger.LogDebug("privateKeyBytes was null.  Setting hasPrivateKey to false for job id " + jobId + "...");
                 hasPrivateKey = false;
             }
-            var certificates = Encoding.UTF8.GetString(certificatesBytes);
-            Logger.LogTrace("certificates: " + certificates);
-            var certsList = certificates.Split(CertChainSeparator);
+            
             Logger.LogTrace("certsList: " + certsList);
             Logger.LogDebug("Submitting inventoryItems to Keyfactor Command for job id " + jobId + "...");
             // return PushInventory(certsList, jobId, submitInventory, hasPrivateKey);

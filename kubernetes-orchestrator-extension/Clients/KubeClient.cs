@@ -27,6 +27,8 @@ using Newtonsoft.Json.Linq;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Utilities.IO.Pem;
+using Org.BouncyCastle.X509;
 using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
@@ -1614,6 +1616,55 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Exiting GetCertificateSigningRequestStatus()");
         return new[] { utfCert };
     }
+    
+    public X509Certificate ReadDerCertificate(string derString)
+    {
+        var derData = Convert.FromBase64String(derString);
+        var certificateParser = new X509CertificateParser();
+        return certificateParser.ReadCertificate(derData);
+    }
+    public X509Certificate ReadPemCertificate(string pemString)
+    {
+        using var reader = new StringReader(pemString);
+        var pemReader = new PemReader(reader);
+        var pemObject = pemReader.ReadPemObject();
+        if (pemObject is not { Type: "CERTIFICATE" }) return null;
+
+        var certificateBytes = pemObject.Content;
+        var certificateParser = new X509CertificateParser();
+        return certificateParser.ReadCertificate(certificateBytes);
+
+    }
+    
+    public List<X509Certificate> LoadCertificateChain(string pemData)
+    {
+        var pemReader = new PemReader(new StringReader(pemData));
+        var certificates = new List<X509Certificate>();
+
+        PemObject pemObject;
+        while ((pemObject = pemReader.ReadPemObject()) != null)
+        {
+            if (pemObject.Type == "CERTIFICATE")
+            {
+                var certificateParser = new X509CertificateParser();
+                var certificate = certificateParser.ReadCertificate(pemObject.Content);
+                certificates.Add(certificate);
+            }
+        }
+
+        return certificates;
+    }
+    
+    public string ConvertToPem(X509Certificate certificate)
+    {
+        var pemObject = new PemObject("CERTIFICATE", certificate.GetEncoded());
+        using var stringWriter = new StringWriter();
+        var pemWriter = new PemWriter(stringWriter);
+        pemWriter.WriteObject(pemObject);
+        pemWriter.Writer.Flush();
+        return stringWriter.ToString();
+
+    }
 
     public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
     {
@@ -1734,7 +1785,7 @@ public class KubeCertificateManagerClient
                                         _logger.LogTrace("extension: " + extension);
 
 
-                                        if (!allowedKeys.Contains(extension))
+                                        if (!allowedKeys.Contains(extension) && !allowedKeys.Contains(dataKey))
                                         {
                                             _logger.LogTrace("Extension " + extension + " is not in list of allowed keys" + allowedKeys);
                                             if (!allowedKeys.Contains(dataKey))
@@ -1747,19 +1798,23 @@ public class KubeCertificateManagerClient
                                         _logger.LogDebug("Attempting to parse certificate from opaque secret data");
                                         var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
                                         _logger.LogTrace("certs: " + certs);
-                                        // var keys = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
-                                        _logger.LogTrace("Splitting certs into array by ','.");
-                                        var certsArray = certs.Split(",");
-                                        // var keysArray = keys.Split(",");
-                                        foreach (var cer in certsArray)
+                                        
+                                        // Attempt to read data as PEM
+                                        var certObj = ReadPemCertificate(certs);
+                                        if (certObj == null)
                                         {
-                                            _logger.LogTrace("cer: " + cer);
-                                            _logger.LogDebug("Attempting to convert certificate to X509Certificate2 object");
-                                            // _ = new X509Certificate2(Encoding.UTF8.GetBytes(cer)); // Check if cert is valid
-                                            _logger.LogDebug("Adding certificate to list of discovered certificates");
-                                            secretsList.Append(cer);
+                                            _logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                                            // Attempt to read data as DER
+                                            certObj = ReadDerCertificate(certs);
+                                            if (certObj == null)
+                                            {
+                                                _logger.LogDebug("Failed to parse certificate from opaque secret data as DER. Skipping secret {Name}", secret?.Metadata?.Name);
+                                                continue;
+                                            }
                                         }
+                                        
                                         locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
+                                        
                                     }
                                     catch (Exception e)
                                     {

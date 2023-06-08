@@ -6,6 +6,7 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -18,12 +19,15 @@ using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
+using Keyfactor.PKI.Extensions;
 using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using Org.BouncyCastle.Crypto;
-using Org.BouncyCastle.OpenSsl;
+using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Utilities.IO.Pem;
+using Org.BouncyCastle.X509;
+using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -62,9 +66,9 @@ public class K8SJobCertificate
 {
     public string Alias { get; set; } = "";
 
-    public string Certb64 { get; set; } = "";
+    public string CertB64 { get; set; } = "";
 
-    public string CertPEM { get; set; } = "";
+    public string CertPem { get; set; } = "";
 
     public string CertThumbprint { get; set; } = "";
 
@@ -72,7 +76,7 @@ public class K8SJobCertificate
 
     public string PrivateKeyB64 { get; set; } = "";
 
-    public string PrivateKeyPEM { get; set; } = "";
+    public string PrivateKeyPem { get; set; } = "";
 
     public byte[] PrivateKeyBytes { get; set; }
 
@@ -84,9 +88,9 @@ public class K8SJobCertificate
 
     public string StorePasswordPath { get; set; } = "";
 
-    public bool hasPrivateKey { get; set; } = false;
+    public bool HasPrivateKey { get; set; } = false;
 
-    public bool hasPassword { get; set; } = false;
+    public bool HasPassword { get; set; } = false;
 
     public byte[] Pkcs12 { get; set; }
 }
@@ -106,9 +110,9 @@ public abstract class JobBase
     static protected readonly string DefaultPFXSecretFieldName = "pfx";
     static protected readonly string DefaultJKSSecretFieldName = "jks";
     static protected readonly string DefaultPFXPasswordSecretFieldName = "password";
-    
+
     internal protected string OperationType { get; set; }
-    
+
     static protected string CertChainSeparator = ",";
     internal protected KubeCertificateManagerClient KubeClient;
 
@@ -229,8 +233,33 @@ public abstract class JobBase
         Logger.LogTrace($"Overwrite: {Overwrite.ToString()}");
     }
 
+    private static string InsertLineBreaks(string input, int lineLength)
+    {
+        var sb = new StringBuilder();
+        var i = 0;
+        while (i < input.Length)
+        {
+            sb.Append(input.AsSpan(i, Math.Min(lineLength, input.Length - i)));
+            sb.AppendLine();
+            i += lineLength;
+        }
+        return sb.ToString();
+    }
+    string ConvertToPEM(Asn1Object asn1Object)
+    {
+        const string header = "-----BEGIN CERTIFICATE-----";
+        const string footer = "-----END CERTIFICATE-----";
 
-    public K8SJobCertificate InitJobCertificate(dynamic config)
+        var derData = asn1Object.GetEncoded();
+        var base64Data = Convert.ToBase64String(derData);
+        var pemData = header + Environment.NewLine;
+        pemData += InsertLineBreaks(base64Data, 64);
+        pemData += Environment.NewLine + footer;
+
+        return pemData;
+    }
+
+    protected K8SJobCertificate InitJobCertificate(dynamic config)
     {
         Logger.LogTrace("Entered InitJobCertificate()");
         Logger.LogTrace("Creating new K8SJobCertificate object");
@@ -241,20 +270,23 @@ public abstract class JobBase
         Logger.LogTrace($"pKeyPassword: {pKeyPassword}");
         jobCertObject.Password = pKeyPassword;
 
-        if (string.IsNullOrEmpty(pKeyPassword))
+        if (!string.IsNullOrEmpty(pKeyPassword))
         {
             Logger.LogDebug($"Certificate {jobCertObject.CertThumbprint} does not have a password");
             Logger.LogTrace("Attempting to create certificate without password");
             byte[] rawData = null;
+            //Attempt to load as Pkcs12Store if fail then try to load from DER format
             try
             {
-                var x509Obj = new X509Certificate2(config.JobCertificate.Contents, pKeyPassword, X509KeyStorageFlags.Exportable);
-                Logger.LogTrace("Created certificate without password");
-                Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
-                rawData = x509Obj.Export(X509ContentType.Cert);
-                jobCertObject.CertThumbprint = x509Obj.Thumbprint;
-                var pkcs12data = x509Obj.Export(X509ContentType.Pkcs12, pKeyPassword);
-                jobCertObject.Pkcs12 = pkcs12data;
+                Pkcs12Store pkcs12Store = loadPkcs12Store(config.JobCertificate.Contents, pKeyPassword);
+
+                //Get the first certificate from the store
+                var alias = pkcs12Store.Aliases.FirstOrDefault(pkcs12Store.IsKeyEntry);
+                var key = pkcs12Store.GetKey(alias);
+                var x509Obj = pkcs12Store.GetCertificate(alias);
+
+                jobCertObject.CertThumbprint = x509Obj.Certificate.Thumbprint();
+                rawData = jobCertObject.Pkcs12 = config.JobCertificate.Contents;
             }
             catch (Exception e)
             {
@@ -273,11 +305,9 @@ public abstract class JobBase
             Logger.LogTrace($"Created PEM formatted string from raw data\n{pemCert}");
 
             // CA certificate, put contents directly in PEM armor
-            jobCertObject.CertPEM = pemCert;
-            jobCertObject.Certb64 = config.JobCertificate.Contents;
-            jobCertObject.PrivateKeyB64 = "";
-            jobCertObject.PrivateKeyPEM = "";
-            jobCertObject.PrivateKeyBytes = new byte[] { };
+            jobCertObject.CertPem = pemCert;
+            jobCertObject.PrivateKeyPem = "";
+            jobCertObject.PrivateKeyBytes = Array.Empty<byte>();
 
         }
         else
@@ -303,8 +333,7 @@ public abstract class JobBase
 
             Logger.LogDebug($"Attempting to create PEM formatted string from PrivateKeyConverter object for {jobCertObject.CertThumbprint}");
             var certB64 = Convert.ToBase64String(x509.RawData);
-            jobCertObject.CertPEM = pemCert;
-            jobCertObject.Certb64 = certB64;
+            jobCertObject.CertPem = pemCert;
             jobCertObject.CertBytes = x509.RawData;
             jobCertObject.CertThumbprint = x509.Thumbprint;
             jobCertObject.Pkcs12 = certBytes;
@@ -323,8 +352,7 @@ public abstract class JobBase
                 Logger.LogTrace("Private key type is " + keyType);
                 Logger.LogDebug($"Attempting to export private key for {jobCertObject.CertThumbprint} to PKCS8 blob");
                 var pKeyB64 = Convert.ToBase64String(pkey.ToPkcs8BlobUnencrypted(), Base64FormattingOptions.InsertLineBreaks);
-                jobCertObject.PrivateKeyPEM = $"-----BEGIN {keyType} PRIVATE KEY-----\n{pKeyB64}\n-----END {keyType} PRIVATE KEY-----";
-                jobCertObject.PrivateKeyB64 = pKeyB64;
+                jobCertObject.PrivateKeyPem = $"-----BEGIN {keyType} PRIVATE KEY-----\n{pKeyB64}\n-----END {keyType} PRIVATE KEY-----";
                 Logger.LogTrace("Private key exported to PKCS8 blob");
             }
             catch (ArgumentException)
@@ -1014,6 +1042,93 @@ public abstract class JobBase
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
         return storePassword;
+    }
+
+    protected Pkcs12Store loadPkcs12Store(byte[] pkcs12Data, string password)
+    {
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var store = storeBuilder.Build();
+
+        using var pkcs12Stream = new MemoryStream(pkcs12Data);
+        if (password != null) store.Load(pkcs12Stream, password.ToCharArray());
+
+        return store;
+    }
+
+    protected string getCertificatePem(Pkcs12Store store, string password, string alias = "")
+    {
+        if (string.IsNullOrEmpty(alias))
+        {
+            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+        }
+        var cert = store.GetCertificate(alias).Certificate;
+
+        using var stringWriter = new StringWriter();
+        var pemWriter = new PemWriter(stringWriter);
+        pemWriter.WriteObject(cert);
+        pemWriter.Writer.Flush();
+
+        return stringWriter.ToString();
+    }
+    protected string getPrivateKeyPem(Pkcs12Store store, string password, string alias = "")
+    {
+        if (string.IsNullOrEmpty(alias))
+        {
+            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+        }
+        var privateKey = store.GetKey(alias).Key;
+
+        using var stringWriter = new StringWriter();
+        var pemWriter = new PemWriter(stringWriter);
+        pemWriter.WriteObject(privateKey);
+        pemWriter.Writer.Flush();
+
+        return stringWriter.ToString();
+    }
+
+    protected List<string> getCertChain(Pkcs12Store store, string password, string alias = "")
+    {
+        if (string.IsNullOrEmpty(alias))
+        {
+            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+        }
+        var chain = new List<string>();
+        var chainCerts = store.GetCertificateChain(alias);
+        foreach (var chainCert in chainCerts)
+        {
+            using var stringWriter = new StringWriter();
+            var pemWriter = new PemWriter(stringWriter);
+            pemWriter.WriteObject(chainCert.Certificate);
+            pemWriter.Writer.Flush();
+            chain.Add(stringWriter.ToString());
+        }
+
+        return chain;
+    }
+    
+    public static bool IsDerFormat(byte[] data)
+    {
+        try
+        {
+            var cert = new X509CertificateParser().ReadCertificate(data);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static string ConvertDerToPem(byte[] data)
+    {
+        var pemObject = new PemObject("CERTIFICATE", data);
+        using (var stringWriter = new StringWriter())
+        {
+            var pemWriter = new PemWriter(stringWriter);
+            pemWriter.WriteObject(pemObject);
+            pemWriter.Writer.Flush();
+            return stringWriter.ToString();
+        }
     }
 }
 

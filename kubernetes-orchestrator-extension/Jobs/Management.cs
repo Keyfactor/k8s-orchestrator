@@ -160,7 +160,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("append: " + append);
 
         Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
-        var pemString = certObj.CertPEM;
+        var pemString = certObj.CertPem;
         Logger.LogTrace("pemString: " + pemString);
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
         var certPems = pemString.Split(";");
@@ -183,7 +183,7 @@ public class Management : JobBase, IManagementJobExtension
         if (keyBytes != null)
         {
             Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-            var kemPem = certObj.PrivateKeyPEM;
+            var kemPem = certObj.PrivateKeyPem;
             keyPems = new[] { kemPem };
             Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
         }
@@ -557,7 +557,7 @@ public class Management : JobBase, IManagementJobExtension
         try
         {
             //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
-            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPEM))
+            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPem))
             {
                 Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
                 return creatEmptySecret("tls");
@@ -574,7 +574,7 @@ public class Management : JobBase, IManagementJobExtension
                 Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
             }
         }
-        var pemString = certObj.CertPEM;
+        var pemString = certObj.CertPem;
         Logger.LogTrace("pemString: " + pemString);
 
         Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
@@ -596,7 +596,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
         var keyBytes = certObj.PrivateKeyBytes;
 
-        var keyPem = certObj.PrivateKeyPEM;
+        var keyPem = certObj.PrivateKeyPem;
         if (!string.IsNullOrEmpty(keyPem))
         {
             keyPems = new[] { keyPem };

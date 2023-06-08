@@ -9,17 +9,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Text.RegularExpressions;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
-using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
-using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 
@@ -44,57 +39,30 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         return store;
     }
 
-    string ConvertToPem(Asn1Object asn1Object)
-    {
-        string header = "-----BEGIN CERTIFICATE-----";
-        string footer = "-----END CERTIFICATE-----";
-
-        byte[] derData = asn1Object.GetEncoded();
-        string base64Data = Convert.ToBase64String(derData);
-        string pemData = header + Environment.NewLine;
-        pemData += InsertLineBreaks(base64Data, 64);
-        pemData += Environment.NewLine + footer;
-
-        return pemData;
-    }
-
-    string InsertLineBreaks(string input, int lineLength)
-    {
-        StringBuilder sb = new StringBuilder();
-        int i = 0;
-        while (i < input.Length)
-        {
-            sb.Append(input.Substring(i, Math.Min(lineLength, input.Length - i)));
-            sb.AppendLine();
-            i += lineLength;
-        }
-        return sb.ToString();
-    }
-
     public byte[] CreateOrUpdatePkcs12(byte[] newPkcs12Bytes, string newCertPassword, string alias, byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false)
     {
         _logger.MethodEntry(LogLevel.Debug);
 
-        _logger.LogDebug("Creating or updating JKS store");
+        _logger.LogDebug("Creating or updating PKCS12 store");
         // If existingStore is null, create a new store
         var storeBuilder = new Pkcs12StoreBuilder();
         var existingPkcs12Store = storeBuilder.Build();
         var pkcs12StoreNew = storeBuilder.Build();
         var createdNewStore = false;
 
-        // If existingStore is not null, load it into jksStore
+        // If existingStore is not null, load it into pkcs12Store
         if (existingStore != null)
         {
             using var ms = new MemoryStream(existingStore);
             existingPkcs12Store.Load(ms, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray());
             if (existingPkcs12Store.ContainsAlias(alias))
             {
-                // If alias exists, delete it from existingJksStore
+                // If alias exists, delete it from existingPkcs12Store
                 existingPkcs12Store.DeleteEntry(alias);
                 if (remove)
                 {
-                    // If remove is true, save existingJksStore and return
+                    // If remove is true, save existingPkcs12Store and return
                     using var mms = new MemoryStream();
                     existingPkcs12Store.Save(mms, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(), new SecureRandom());
                     return mms.ToArray();
@@ -113,21 +81,6 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         else
         {
             createdNewStore = true;
-        }
-
-        // check if pkcs12 bytes are der encoded
-        var pemData = Encoding.UTF8.GetString(newPkcs12Bytes);
-
-        var isPemFormat = Regex.IsMatch(pemData, @"-----BEGIN ([\w ]+)-----\r?\n([A-Za-z0-9+/=\r\n]+)\r?\n-----END \1-----");
-
-        if (isPemFormat)
-        {
-            // Print as string in PEM format
-            var pemString = Encoding.UTF8.GetString(newPkcs12Bytes);
-            // Convert to byte array in DER format
-            var derBytes = Convert.FromBase64String(pemString);
-            // Convert to byte array in PEM format
-            var pemBytes = Encoding.UTF8.GetBytes(pemString);
         }
 
         var newCert = storeBuilder.Build();
@@ -156,26 +109,22 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             {
                 var keyEntry = newCert.GetKey(al);
                 var certificateChain = newCert.GetCertificateChain(al);
-
-                var certificates = certificateChain.Select(certificateEntry => certificateEntry.Certificate).ToList();
-
                 if (createdNewStore)
                 {
                     // If createdNewStore is true, create a new store
                     pkcs12StoreNew.SetKeyEntry(
                         alias,
                         keyEntry,
-                        // string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
                         certificateChain
                     );
                 }
                 else
                 {
-                    // If createdNewStore is false, add to existingJksStore
-                    // check if alias exists in existingJksStore
+                    // If createdNewStore is false, add to existingPkcs12Store
+                    // check if alias exists in existingPkcs12Store
                     if (existingPkcs12Store.ContainsAlias(alias))
                     {
-                        // If alias exists, delete it from existingJksStore
+                        // If alias exists, delete it from existingPkcs12Store
                         existingPkcs12Store.DeleteEntry(alias);
                     }
 
@@ -210,7 +159,7 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         {
             existingPkcs12Store.Save(outStream, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(), new SecureRandom());
         }
-        // Return existingJksStore as byte[]
+        // Return existingPkcs12Store as byte[]
         return outStream.ToArray();
     }
 
@@ -218,31 +167,24 @@ class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     {
         _logger.MethodEntry(LogLevel.Debug);
 
-        JksStore jksStore = new JksStore();
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var pkcs12Store = storeBuilder.Build();
 
         foreach (var alias in certificateStore.Aliases)
         {
             var keyEntry = certificateStore.GetKey(alias);
             if (certificateStore.IsKeyEntry(alias))
             {
-                var certificateChain = certificateStore.GetCertificateChain(alias);
-
-                var certificates = new List<X509Certificate>();
-                foreach (X509CertificateEntry certificateEntry in certificateChain)
-                {
-                    certificates.Add(certificateEntry.Certificate);
-                }
-
-                jksStore.SetKeyEntry(alias, keyEntry.Key, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray(), certificates.ToArray());
+                pkcs12Store.SetKeyEntry(alias, keyEntry, certificateStore.GetCertificateChain(alias));
             }
             else
             {
-                jksStore.SetCertificateEntry(alias, certificateStore.GetCertificate(alias).Certificate);
+                pkcs12Store.SetCertificateEntry(alias, certificateStore.GetCertificate(alias));
             }
         }
 
         using var outStream = new MemoryStream();
-        jksStore.Save(outStream, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
+        pkcs12Store.Save(outStream, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray(), new SecureRandom());
 
         var storeInfo = new List<SerializedStoreInfo>();
         storeInfo.Add(new SerializedStoreInfo() { FilePath = storePath + storeFileName, Contents = outStream.ToArray() });
