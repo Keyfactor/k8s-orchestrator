@@ -820,17 +820,18 @@ For discovery of K8SPKCS12 and K8SJKS stores toy can use the following params to
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`jks`.
 
 ## Certificate Inventory
-In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
+In order for certificates to be inventoried by the Keyfactor k8s-orchestrator, they must have specific keys and values 
+in the Kubernetes Secret.  The following table shows the required keys and values for each type of certificate store.
 
-| Store Type | Valid Secret Keys                                                                             |
-|------------|-----------------------------------------------------------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`                                                                           |
-| K8SSecret  | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
-| K8SCert    | `cert`, `csr`                                                                                 |
-| K8SPKCS12  | `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`                                                         |
-| K8SJKS     | `tls.jks`,`jks`                                                                               |
-| K8SNS      | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
-| K8SCluster | `tls.crt`,`tls.crts`, `cert`, `certs`, `certificate`, `certificates`, `crt`, `crts`, `ca.crt` |
+| Store Type | Valid Secret Keys              |
+|------------|--------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`, `ca.crt`  |
+| K8SSecret  | `tls.crt`,`tls.crts`, `ca.crt` |
+| K8SCert    | `cert`, `csr`                  |
+| K8SPKCS12  | `*.pfx`,`*.pkcs12`, `*.p12`    |
+| K8SJKS     | `*.jks`                        |
+| K8SNS      | `tls.crt`,`tls.crts`, `ca.crt` |
+| K8SCluster | `tls.crt`,`tls.crts`, `ca.crt` |
 
 ## Certificate Management
 Management add/remove/create operations will attempt to write back to the Kubernetes Secret. 
@@ -839,15 +840,23 @@ each type of certificate store.
 
 | Store Type | Managed Secret Keys                       |
 |------------|-------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`                       |
-| K8SSecret  | `tls.crt`,`tls.key`                       |
+| K8STLSSecr | `tls.crt`,`tls.key`, `ca.crt`             |
+| K8SSecret  | `tls.crt`,`tls.key`, `ca.crt`             |
 | K8SPKCS12  | Specified in custom field `KubeSecretKey` |
 | K8SJKS     | Specified in custom field `KubeSecretKey` |
 | K8SCluster | `tls.crt`,`tls.key`                       |
 | K8SNS      | `tls.crt`,`tls.key`                       |
 
+### K8STLSSecr & K8SSecret
+These store types are virtually the same, they only differ in what K8S secret type they create. Both store types allow
+for **ONLY** a single certificate to be stored in the secret. This means any `add` job will **overwrite** the existing 
+`tls.crt`, `tls.key`, and `ca.crt` values in the secret. If a secret does not exist, the orchestrator will create one
+with the fields `tls.crt`, `tls.key`, and `ca.crt` populated with the certificate data. 
 
-### K8SJKS
+**NOTE:** If a secret already exists and does not contain the field `ca.crt`, the orchestrator will **NOT** add the field
+`ca.crt` to the secret, and instead will deploy a full certificate chain to the `tls.crt` field.
+
+### K8SJKS & K8SPKCS12
 
 The K8SJKS store type is a Java Key Store (JKS) that is stored in a Kubernetes Secret. The secret can contain multiple
 JKS files. The orchestrator will attempt to manage the JKS files found in the secret that match the `allowed_keys` or
