@@ -1788,7 +1788,7 @@ public class KubeCertificateManagerClient
                                         _logger.LogTrace("extension: " + extension);
 
 
-                                        if (!allowedKeys.Contains(extension) && !allowedKeys.Contains(dataKey))
+                                        if (!allowedKeys.Contains(extension))
                                         {
                                             _logger.LogTrace("Extension " + extension + " is not in list of allowed keys" + allowedKeys);
                                             if (!allowedKeys.Contains(dataKey))
@@ -1797,24 +1797,33 @@ public class KubeCertificateManagerClient
                                                 continue;
                                             }
                                         }
+                                        
                                         _logger.LogDebug("Secret field '" + dataKey + "' is an allowed key.");
                                         _logger.LogDebug("Attempting to parse certificate from opaque secret data");
-                                        var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
-                                        _logger.LogTrace("certs: " + certs);
-
                                         // Attempt to read data as PEM
-                                        var certObj = ReadPemCertificate(certs);
-                                        if (certObj == null)
+                                        if (secType != "pkcs12" && secType != "jks")
                                         {
-                                            _logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
-                                            // Attempt to read data as DER
-                                            certObj = ReadDerCertificate(certs);
+                                            
+                                            var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
+                                            _logger.LogTrace("certs: " + certs);
+                                            var certObj = ReadPemCertificate(certs);
                                             if (certObj == null)
                                             {
-                                                _logger.LogDebug("Failed to parse certificate from opaque secret data as DER. Skipping secret {Name}", secret?.Metadata?.Name);
-                                                continue;
-                                            }
+                                                _logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                                                // Attempt to read data as DER
+                                                certObj = ReadDerCertificate(certs);
+                                                if (certObj == null)
+                                                {
+                                                    _logger.LogDebug("Failed to parse certificate from opaque secret data as DER. Skipping secret {Name}", secret?.Metadata?.Name);
+                                                    continue;
+                                                }
+                                            }    
                                         }
+                                        else if (secType == "pkcs12" || secType == "jks")
+                                        {
+                                            _logger.LogDebug("Discovery does not support store password for pkcs12 or jks secrets. Assuming secret '{Name}' with matching key '{Key} is valid ", secret?.Metadata?.Name, dataKey);
+                                        }
+                                        
 
                                         locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
 
