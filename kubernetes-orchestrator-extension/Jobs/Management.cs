@@ -7,11 +7,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Security.Cryptography.Pkcs;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
@@ -23,11 +19,6 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
-using Microsoft.VisualBasic;
-using Org.BouncyCastle.Cms;
-using Org.BouncyCastle.Pkcs;
-using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Utilities.IO.Pem;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -37,7 +28,7 @@ public class Management : JobBase, IManagementJobExtension
     {
         Resolver = resolver;
     }
-    
+
     //Job Entry Point
     public JobResult ProcessJob(ManagementJobConfiguration config)
     {
@@ -135,10 +126,9 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogWarning("Certificate object and certificate alias are both null or empty.  Assuming this is a 'create_store' action and populating an empty store.");
         var emptyStrArray = Array.Empty<string>();
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            emptyStrArray,
-            emptyStrArray,
-            emptyStrArray,
-            emptyStrArray,
+            "",
+            "",
+            new List<string>(),
             KubeSecretName,
             KubeNamespace,
             secretType,
@@ -158,46 +148,12 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
-
-        Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
-        var pemString = certObj.CertPem;
-        Logger.LogTrace("pemString: " + pemString);
-        Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
-        var certPems = pemString.Split(";");
-        Logger.LogTrace("certPems: " + certPems);
-
-        Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
-        var caPems = "".Split(";");
-        Logger.LogTrace("caPems: " + caPems);
-
-        Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
-        var chainPems = "".Split(";");
-        Logger.LogTrace("chainPems: " + chainPems);
-
-        string[] keyPems = { "" };
-
-        Logger.LogInformation($"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
-
-        Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
-        var keyBytes = certObj.CertBytes;
-        if (keyBytes != null)
-        {
-            Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-            var kemPem = certObj.PrivateKeyPem;
-            keyPems = new[] { kemPem };
-            Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
-        }
-        else
-        {
-            Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
-        }
-
+        
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            keyPems,
-            certPems,
-            caPems,
-            chainPems,
+            certObj.PrivateKeyPem,
+            certObj.CertPem,
+            certObj.ChainPem,
             KubeSecretName,
             KubeNamespace,
             "secret",
@@ -218,135 +174,7 @@ public class Management : JobBase, IManagementJobExtension
         return createResponse;
 
     }
-
-    private V1Secret HandleOpaqueSecretMultiCert(string certAlias, X509Certificate2 certObj, string keyPasswordStr = "", bool overwrite = false, bool append = false)
-    {
-        Logger.LogTrace("Entered HandleOpaqueSecret()");
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
-
-        try
-        {
-            if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
-            {
-                return creatEmptySecret("opaque");
-            }
-        }
-        catch (Exception ex)
-        {
-            if (!string.IsNullOrEmpty(certAlias))
-            {
-                Logger.LogWarning("This is fine");
-            }
-            else
-            {
-                Logger.LogError(ex, "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
-            }
-        }
-
-        Logger.LogDebug("Secret type is 'opaque', so extracting private key from certificate...");
-        try
-        {
-            Logger.LogDebug($"Converting certificate '{certAlias}' in DER format to PEM format...");
-            var pemString = PemUtilities.DERToPEM(certObj.RawData, PemUtilities.PemObjectType.Certificate);
-            Logger.LogTrace("pemString: " + pemString);
-            Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
-            var certPems = pemString.Split(";");
-            Logger.LogTrace("certPems: " + certPems);
-
-            Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
-            var caPems = "".Split(";");
-            Logger.LogTrace("caPems: " + caPems);
-
-            Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
-            var chainPems = "".Split(";");
-            Logger.LogTrace("chainPems: " + chainPems);
-
-            string[] keyPems = { "" };
-
-            Logger.LogInformation($"Secret type is 'opaque', so extracting private key from certificate '{certAlias}'...");
-            Logger.LogTrace("certObj: " + certObj);
-            var pkey = certObj.GetRSAPrivateKey();
-            Logger.LogInformation(pkey != null
-                ? $"Certificate '{certAlias}' contains a private key, so extracting private key from certificate..."
-                : $"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
-            // Logger.LogTrace("pkey: " + pkey);
-
-            var keyBytes = new byte[] { };
-
-            if (pkey != null)
-            {
-                Logger.LogTrace("Entering try block to extract private key from certificate " + certAlias);
-                try
-                {
-                    keyBytes = pkey?.ExportRSAPrivateKey();
-                    if (keyBytes != null)
-                    {
-                        Logger.LogDebug("Converting private key to PEM format...");
-                        var pem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
-                        Logger.LogDebug(string.IsNullOrEmpty(pem)
-                            ? "Failed to convert private key to PEM format for certificate " + certAlias
-                            : "Successfully converted private key to PEM format for certificate" + certAlias);
-                        keyPems = new[] { pem };
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning("Error extracting private key from certificate " + certAlias + ".  Will try to extract private key from ManagementConfig...");
-                    Logger.LogTrace("Attempting to extract private key from ManagementConfig...");
-                    var pem = ParseJobPrivateKey(ManagementConfig);
-                    // Logger.LogTrace("pem: " + pem);
-                    Logger.LogTrace("Successfully extracted private key from ManagementConfig for certificate " + certAlias);
-                    // Add to keyPems
-                    keyPems = new[] { pem };
-
-                    Logger.LogDebug(string.IsNullOrEmpty(pem)
-                        ? "Failed to extract private key from ManagementConfig for certificate " + certAlias
-                        : "Successfully extracted private key from ManagementConfig for certificate " + certAlias);
-                }
-            }
-            else
-            {
-                keyBytes = GetKeyBytes(certObj, keyPasswordStr);
-                if (keyBytes != null)
-                {
-                    Logger.LogDebug($"Converting key '{certAlias}' to PEM format...");
-                    var kemPem = PemUtilities.DERToPEM(keyBytes, PemUtilities.PemObjectType.PrivateKey);
-                    keyPems = new[] { kemPem };
-                    Logger.LogDebug($"Key '{certAlias}' converted to PEM format.");
-                }
-                else
-                {
-                    Logger.LogWarning($"Certificate '{certAlias}' does not contain a private key, so no private key will be added to secret...");
-                }
-            }
-
-            Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
-            var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-                keyPems,
-                certPems,
-                caPems,
-                chainPems,
-                KubeSecretName,
-                KubeNamespace,
-                "secret",
-                append,
-                overwrite
-            );
-            Logger.LogTrace(createResponse.ToString());
-            Logger.LogInformation(
-                $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
-            return createResponse;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, $"Error converting certificate '{certAlias}' to PEM format.");
-            throw;
-        }
-    }
-
+    
     private V1Secret HandleJksSecret(ManagementJobConfiguration config, bool remove = false)
     {
         Logger.LogDebug("Entering HandleJKSSecret()...");
@@ -419,7 +247,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Exiting HandleJKSSecret()...");
         return updateResponse;
     }
-    
+
     private V1Secret HandlePkcs12Secret(ManagementJobConfiguration config, bool remove = false)
     {
         Logger.LogDebug("Entering HandlePkcs12Secret()...");
@@ -443,7 +271,7 @@ public class Management : JobBase, IManagementJobExtension
                 Logger.LogWarning("Secret {Name} not found in Kubernetes so creating new secret...", KubeSecretName);
             }
         }
-        
+
         // get newCert bytes from config.JobCertificate.Contents
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
@@ -604,10 +432,9 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            keyPems,
-            certPems,
-            caPems,
-            chainPems,
+            certObj.PrivateKeyPem,
+            certObj.CertPem,
+            certObj.ChainPem,
             KubeSecretName,
             KubeNamespace,
             "tls_secret",
@@ -832,18 +659,16 @@ public class Management : JobBase, IManagementJobExtension
         }
         catch (HttpOperationException rErr)
         {
-            if (rErr.Message.Contains("NotFound"))
+            if (!rErr.Message.Contains("NotFound")) return FailJob(rErr.Message, config.JobHistoryId);
+
+            var certDataErrorMsg =
+                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'. Delete not necessary.";
+            return new JobResult
             {
-                var certDataErrorMsg =
-                    $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'. Assuming empty inventory.";
-                return new JobResult
-                {
-                    Result = OrchestratorJobStatusJobResult.Failure,
-                    JobHistoryId = config.JobHistoryId,
-                    FailureMessage = certDataErrorMsg
-                };
-            }
-            return FailJob(rErr.Message, config.JobHistoryId);
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = config.JobHistoryId,
+                FailureMessage = certDataErrorMsg
+            };
         }
         catch (Exception e)
         {

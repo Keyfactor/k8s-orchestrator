@@ -28,6 +28,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
+using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -92,7 +93,14 @@ public class K8SJobCertificate
 
     public bool HasPassword { get; set; } = false;
 
+    public X509CertificateEntry CertificateEntry { get; set; }
+
+    public X509CertificateEntry[] CertificateEntryChain { get; set; }
+
+
     public byte[] Pkcs12 { get; set; }
+
+    public List<string> ChainPem { get; set; }
 }
 
 public abstract class JobBase
@@ -245,7 +253,7 @@ public abstract class JobBase
         }
         return sb.ToString();
     }
-    string ConvertToPEM(Asn1Object asn1Object)
+    string ConvertToPEM(Asn1Encodable asn1Object)
     {
         const string header = "-----BEGIN CERTIFICATE-----";
         const string footer = "-----END CERTIFICATE-----";
@@ -278,15 +286,31 @@ public abstract class JobBase
             //Attempt to load as Pkcs12Store if fail then try to load from DER format
             try
             {
-                Pkcs12Store pkcs12Store = loadPkcs12Store(config.JobCertificate.Contents, pKeyPassword);
+                Pkcs12Store pkcs12Store = loadPkcs12Store(Convert.FromBase64String(config.JobCertificate.Contents), pKeyPassword);
 
                 //Get the first certificate from the store
                 var alias = pkcs12Store.Aliases.FirstOrDefault(pkcs12Store.IsKeyEntry);
                 var key = pkcs12Store.GetKey(alias);
-                var x509Obj = pkcs12Store.GetCertificate(alias);
 
+                //if if not null then extract the private key unencrypted in PEM format
+                if (key != null)
+                {
+                    var pKeyPem = KubeClient.ExtractPrivateKeyAsPem(pkcs12Store, pKeyPassword);
+                    jobCertObject.PrivateKeyPem = pKeyPem;
+                }
+
+                var x509Obj = pkcs12Store.GetCertificate(alias);
+                var chain = pkcs12Store.GetCertificateChain(alias);
+                
+                var chainList = chain.Select(c => KubeClient.ConvertToPem(c.Certificate)).ToList();
+
+                jobCertObject.CertificateEntry = x509Obj;
+                jobCertObject.CertificateEntryChain = chain;
                 jobCertObject.CertThumbprint = x509Obj.Certificate.Thumbprint();
-                rawData = jobCertObject.Pkcs12 = config.JobCertificate.Contents;
+                jobCertObject.ChainPem = chainList;
+                rawData = Convert.FromBase64String(config.JobCertificate.Contents);
+                jobCertObject.CertPem = KubeClient.ConvertToPem(x509Obj.Certificate);
+
             }
             catch (Exception e)
             {
@@ -295,23 +319,10 @@ public abstract class JobBase
                 rawData = Convert.FromBase64String(config.JobCertificate.Contents);
                 jobCertObject.CertThumbprint = config.JobCertificate.Thumbprint;
             }
-
-            Logger.LogTrace($"Exported certificate obj to raw data {rawData}");
-
-            Logger.LogDebug("Attempting to create PEM formatted string from raw data");
-            var pemCert = "-----BEGIN CERTIFICATE-----\n" +
-                          Convert.ToBase64String(rawData, Base64FormattingOptions.InsertLineBreaks) +
-                          "\n-----END CERTIFICATE-----";
-            Logger.LogTrace($"Created PEM formatted string from raw data\n{pemCert}");
-
-            // CA certificate, put contents directly in PEM armor
-            jobCertObject.CertPem = pemCert;
-            jobCertObject.PrivateKeyPem = "";
-            jobCertObject.PrivateKeyBytes = Array.Empty<byte>();
-
         }
         else
         {
+            pKeyPassword = "";
             // App or Controller certificate, process with X509Certificate2 and Private Key Converter
             Logger.LogDebug($"Certificate {jobCertObject.CertThumbprint} does have a password");
             Logger.LogTrace("Attempting to create certificate with password");
@@ -319,6 +330,12 @@ public abstract class JobBase
             Logger.LogTrace("Created certificate with password");
 
             Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
+            //check if certBytes are null or empty
+            if (certBytes.Length == 0)
+            {
+                return jobCertObject;
+            }
+            
             var x509 = new X509Certificate2(certBytes, pKeyPassword);
 
             Logger.LogDebug($"Attempting to export certificate obj {jobCertObject.CertThumbprint} to raw data");
@@ -362,7 +379,7 @@ public abstract class JobBase
 
                 var pkeyErr = "Unable to unpack private key from " + refStr + ", invalid password";
                 Logger.LogError(pkeyErr);
-                throw new Exception(pkeyErr);
+                // throw new Exception(pkeyErr);
             }
         }
 
@@ -1105,7 +1122,7 @@ public abstract class JobBase
 
         return chain;
     }
-    
+
     public static bool IsDerFormat(byte[] data)
     {
         try

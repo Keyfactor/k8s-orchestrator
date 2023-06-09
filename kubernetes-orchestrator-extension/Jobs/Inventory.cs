@@ -80,13 +80,14 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "secrets":
                 case "opaque":
                     Logger.LogInformation("Inventorying opaque secrets using " + OpaqueAllowedKeys);
-                    return HandleOpaqueSecret(config.JobHistoryId, submitInventory, OpaqueAllowedKeys);
+                    var opaqueInventory = HandleTlsSecret(config.JobHistoryId);
+                    return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, true);
                 case "tls_secret":
                 case "tls":
                 case "tlssecret":
                 case "tls_secrets":
                     Logger.LogInformation("Inventorying TLS secrets using " + TLSAllowedKeys);
-                    var tlsCertsInv = HandleTlsSecret(config.JobHistoryId, submitInventory);
+                    var tlsCertsInv = HandleTlsSecret(config.JobHistoryId);
                     return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
                 case "certificate":
                 case "cert":
@@ -128,8 +129,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
-                            clusterInventoryDict[StorePath] = opaqueObj; //todo: fix this    
+                            var opaqueObj = HandleTlsSecret(config.JobHistoryId);
+                            clusterInventoryDict[StorePath] = opaqueObj;    
                         }
                         catch (Exception ex)
                         {
@@ -154,7 +155,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
 
-                            var tlsObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
+                            var tlsObj = HandleTlsSecret(config.JobHistoryId);
                             clusterInventoryDict[StorePath] = tlsObj; //todo: fix this  
                         }
                         catch (Exception ex)
@@ -188,7 +189,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
+                            var opaqueObj = HandleTlsSecret(config.JobHistoryId);
                             namespaceInventoryDict[StorePath] = opaqueObj[0]; //todo: fix this    
                         }
                         catch (Exception ex)
@@ -217,7 +218,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
 
-                            var tlsObj = HandleTlsSecret(config.JobHistoryId, submitInventory);
+                            var tlsObj = HandleTlsSecret(config.JobHistoryId);
                             namespaceInventoryDict[StorePath] = tlsObj[0]; //todo: fix this  
                         }
                         catch (Exception ex)
@@ -404,8 +405,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
                 return FailJob(e.Message, jobId);
             }
-
-            var certs = new[] { cert };
+            
             Logger.LogDebug("Adding cert to inventoryItems...");
             inventoryItems.Add(new CurrentInventoryItem
             {
@@ -417,8 +417,9 @@ public class Inventory : JobBase, IInventoryJobExtension
                 UseChainLevel =
                     true, //true if Certificates will contain > 1 certificate, main cert => intermediate CA cert => root CA cert.  false if Certificates will contain an array of 1 certificate
                 Certificates =
-                    certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
+                    certsList //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
             });
+            break;
         }
         try
         {
@@ -598,24 +599,23 @@ public class Inventory : JobBase, IInventoryJobExtension
             foreach (var managedKey in secretManagedKeys)
             {
                 Logger.LogDebug("Checking if certData contains key " + managedKey + "...");
-                if (certData.Data.ContainsKey(managedKey))
-                {
-                    Logger.LogDebug("certData contains key " + managedKey + ".");
-                    Logger.LogTrace("Getting cert data for key " + managedKey + "...");
-                    var certificatesBytes = certData.Data[managedKey];
-                    Logger.LogTrace("certificatesBytes: " + certificatesBytes);
-                    var certificates = Encoding.UTF8.GetString(certificatesBytes);
-                    Logger.LogTrace("certificates: " + certificates);
-                    Logger.LogDebug("Splitting certificates by separator " + CertChainSeparator + "...");
-                    //split the certificates by the separator
-                    var splitCerts = certificates.Split(CertChainSeparator);
-                    Logger.LogTrace("splitCerts: " + splitCerts);
-                    //add the split certs to the list
-                    Logger.LogDebug("Adding split certs to certsList...");
-                    certsList = certsList.Concat(splitCerts).ToArray();
-                    Logger.LogTrace("certsList: " + certsList);
-                    // certsList.Concat(certificates.Split(CertChainSeparator));
-                }
+                if (!certData.Data.ContainsKey(managedKey)) continue;
+
+                Logger.LogDebug("certData contains key " + managedKey + ".");
+                Logger.LogTrace("Getting cert data for key " + managedKey + "...");
+                var certificatesBytes = certData.Data[managedKey];
+                Logger.LogTrace("certificatesBytes: " + certificatesBytes);
+                var certificates = Encoding.UTF8.GetString(certificatesBytes);
+                Logger.LogTrace("certificates: " + certificates);
+                Logger.LogDebug("Splitting certificates by separator " + CertChainSeparator + "...");
+                //split the certificates by the separator
+                var splitCerts = certificates.Split(CertChainSeparator);
+                Logger.LogTrace("splitCerts: " + splitCerts);
+                //add the split certs to the list
+                Logger.LogDebug("Adding split certs to certsList...");
+                certsList = certsList.Concat(splitCerts).ToArray();
+                Logger.LogTrace("certsList: " + certsList);
+                // certsList.Concat(certificates.Split(CertChainSeparator));
             }
             Logger.LogInformation("Submitting inventoryItems to Keyfactor Command for job id " + jobId + "...");
             return PushInventory(certsList, jobId, submitInventory, hasPrivateKey);
@@ -652,7 +652,7 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
 
-    private List<string> HandleTlsSecret(long jobId, SubmitInventoryUpdate submitInventory)
+    private List<string> HandleTlsSecret(long jobId)
     {
         Logger.LogDebug("Inventory entering HandleTlsSecret for job id " + jobId + "...");
         Logger.LogTrace("KubeNamespace: " + KubeNamespace);
