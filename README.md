@@ -186,7 +186,11 @@ This text would be entered in as the value for the __Server Password__, instead 
     * [K8SPKCS12 and K8SJKS Discovery](#k8spkcs12-and-k8sjks-discovery)
 - [Certificate Inventory](#certificate-inventory)
 - [Certificate Management](#certificate-management)
-    * [K8SJKS](#k8sjks-1)
+    * [K8STLSSecr & K8SSecret](#k8stlssecr---k8ssecret)
+        + [Opaque & tls secret w/o ca.crt](#opaque---tls-secret-w-o-cacrt)
+        + [Opaque & tls secret w/ ca.crt](#opaque---tls-secret-w--cacrt)
+        + [Opaque & tls secret w/o private key](#opaque---tls-secret-w-o-private-key)
+    * [K8SJKS & K8SPKCS12](#k8sjks---k8spkcs12)
 - [Development](#development)
 - [License](#license)
 
@@ -398,11 +402,12 @@ A Keyfactor Command certificate store `StorePath` for the K8S orchestrator exten
 | PFX Password Style    |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value | Description                                                                                                 |
-|----------------|----------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     | The Kubernetes namespace the store will reside. This will override the value parsed from `storepath`.       |
-| KubeSecretName | Kube Secret Name     | String |          | none          | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                 |
-| KubeSecretType | Kube Secret Type     | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
+| Name               | Display Name                | Type   | Required | Default Value  | Description                                                                                                 |
+|--------------------|-----------------------------|--------|----------|----------------|-------------------------------------------------------------------------------------------------------------|
+| KubeNamespace      | Kube Namespace              | String |          | `default`      | The Kubernetes namespace the store will reside. This will override the value parsed from `storepath`.       |
+| KubeSecretName     | Kube Secret Name            | String |          | none           | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                 |
+| KubeSecretType     | Kube Secret Type            | String | &check;  | none           | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types). |
+| IncludeCertChain   | Include Certificate Chain   | Bool   |          | `true`         | Will default to `true` if not set. Set this to `false` if you do not want certificate chains deployed.      |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -453,11 +458,12 @@ kfutil store-types create --name K8SSecret
 ![k8ssecret_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value |
-|----------------|----------------------|--------|----------|---------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     |
-| KubeSecretName | Kube Secret Name     | String | &check;  |               |
-| KubeSecretType | Kube Secret Type     | String | &check;  | `secret`      |
+| Name             | Display Name              | Type   | Required | Default Value |
+|------------------|---------------------------|--------|----------|---------------|
+| KubeNamespace    | Kube Namespace            | String |          | `default`     |
+| KubeSecretName   | Kube Secret Name          | String | &check;  |               |
+| KubeSecretType   | Kube Secret Type          | String | &check;  | `secret`      |
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        |
 
 ![k8ssecret_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_custom_fields.png)
 
@@ -503,11 +509,13 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value |
-|----------------|----------------------|--------|----------|---------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     |
-| KubeSecretName | Kube Secret Name     | String | &check;  |               |
-| KubeSecretType | Kube Secret Type     | String | &check;  | `tls_secret`  |
+| Name             | Display Name               | Type   | Required | Default Value |
+|------------------|----------------------------|--------|----------|---------------|
+| KubeNamespace    | Kube Namespace             | String |          | `default`     |
+| KubeSecretName   | Kube Secret Name           | String | &check;  |               |
+| KubeSecretType   | Kube Secret Type           | String | &check;  | `tls_secret`  |
+| IncludeCertChain | Include Certificate Chain  | Bool   |          | `true`        |
+
 
 ![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
 
@@ -680,9 +688,10 @@ kfutil store-types create --name K8SCluster
 
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value |
-|----------------|----------------------|--------|----------|---------------|
-| KubeNamespace  | Kube Namespace       | String |          |               |
+| Name             | Display Name              | Type   | Required | Default Value  |
+|------------------|---------------------------|--------|----------|----------------|
+| KubeNamespace    | Kube Namespace            | String |          |                |
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`         |
 
 ![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
 
@@ -779,11 +788,12 @@ kfutil store-types create --name K8SCert
 ![k8scert_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name           | Display Name         | Type   | Required | Default Value |
-|----------------|----------------------|--------|----------|---------------|
-| KubeNamespace  | Kube Namespace       | String |          | `default`     |
-| KubeSecretName | Kube Secret Name     | String | &check;  |               |
-| KubeSecretType | Kube Secret Type     | String | &check;  | `cert`        |
+| Name               | Display Name              | Type   | Required | Default Value |
+|--------------------|---------------------------|--------|----------|---------------|
+| KubeNamespace      | Kube Namespace            | String |          | `default`     |
+| KubeSecretName     | Kube Secret Name          | String | &check;  |               |
+| KubeSecretType     | Kube Secret Type          | String | &check;  | `cert`        |
+| IncludeCertChain   | Include Certificate Chain | Bool   |          | `true`        |
 
 ![k8scert_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_custom_fields.png)
 
@@ -856,18 +866,32 @@ with the fields `tls.crt`, `tls.key`, and `ca.crt` populated with the certificat
 **NOTE:** If a secret already exists and does not contain the field `ca.crt`, the orchestrator will **NOT** add the field
 `ca.crt` to the secret, and instead will deploy a full certificate chain to the `tls.crt` field.
 
+#### Opaque & tls secret w/o ca.crt
+Here's what an `Opaque` secret looks like in the UI when it does not contain the `ca.crt` field **NOTE** the chain is
+included in the `tls.crt` field:
+![opaque_no_cacrt_field.png](docs%2Fscreenshots%2Fmanagement%2Fopaque_no_cacrt_field.png)
+
+#### Opaque & tls secret w/ ca.crt
+Here's what an `Opaque` secret looks like in the UI when it does contain the `ca.crt` field:  
+![opaque_cacrt.png](docs%2Fscreenshots%2Fmanagement%2Fopaque_cacrt.png)
+
+#### Opaque & tls secret w/o private key
+It is possible to deploy a certificate without the private key from Command, and this is how it will look in the UI
+**NOTE** the chain will only be included if Command has inventoried it:  
+![opaque_no_private_key.png](docs%2Fscreenshots%2Fmanagement%2Fopaque_no_private_key.png)
+
 ### K8SJKS & K8SPKCS12
 
 The K8SJKS store type is a Java Key Store (JKS) that is stored in a Kubernetes Secret. The secret can contain multiple
 JKS files. The orchestrator will attempt to manage the JKS files found in the secret that match the `allowed_keys` or
-`CertificateDataFieldName` custom field values. 
+`CertificateDataFieldName` custom field values.   
 
-Alias pattern: `<k8s_secret_field_name>/<keystore_alias>`.
+Alias pattern: `<k8s_secret_field_name>/<keystore_alias>`.  
 
-Example of secret containing 2 JKS stores:
+Example of secret containing 2 JKS stores:  
 ![k8sjks_multi.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_multi.png)
 
-Here's what this looks like in the UI:
+Here's what this looks like in the UI:  
 ![k8sjks_inventory_ui.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_inventory_ui.png)
 
 ## Development
