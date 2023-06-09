@@ -5,7 +5,7 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keyfactor.Orchestrators.K8S", "kubernetes-orchestrator-extension\Keyfactor.Orchestrators.K8S.csproj", "{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestConsole", "TestConsole\TestConsole.csproj", "{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestConsole", "TestConsole\TestConsole.csproj", "{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
