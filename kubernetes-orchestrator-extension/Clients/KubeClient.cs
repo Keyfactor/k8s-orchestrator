@@ -2115,6 +2115,9 @@ public class KubeCertificateManagerClient
     public V1Secret CreateOrUpdateJksSecret(JksSecret k8SData, string kubeSecretName, string kubeNamespace)
     {
         // Create V1Secret object and replace existing secret
+        _logger.LogDebug("Entered CreateOrUpdateJksSecret()");
+        _logger.LogTrace("kubeSecretName: {Name}", kubeSecretName);
+        _logger.LogTrace("kubeNamespace: {Namespace}", kubeNamespace);
         var s1 = new V1Secret
         {
             ApiVersion = "v1",
@@ -2133,12 +2136,15 @@ public class KubeCertificateManagerClient
         s1.Data ??= new Dictionary<string, byte[]>();
         foreach (var inventoryItem in k8SData.Inventory)
         {
+            _logger.LogTrace("Adding inventory item {Key} to secret", inventoryItem.Key);
             s1.Data[inventoryItem.Key] = inventoryItem.Value;
         }
 
         // Create secret if it doesn't exist
         try
         {
+            _logger.LogDebug("Checking if secret {Name} exists in namespace {Namespace}", kubeSecretName,
+                kubeNamespace);
             Client.CoreV1.ReadNamespacedSecret(kubeSecretName, kubeNamespace);
         }
         catch (HttpOperationException e)
@@ -2147,9 +2153,12 @@ public class KubeCertificateManagerClient
             {
                 return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
             }
+            _logger.LogError("Error checking if secret {Name} exists in namespace {Namespace}: {Message}",
+                kubeSecretName, kubeNamespace, e.Message);
         }
 
         // Replace existing secret
+        _logger.LogDebug("Replacing secret {Name} in namespace {Namespace}", kubeSecretName, kubeNamespace);
         return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
     }
 

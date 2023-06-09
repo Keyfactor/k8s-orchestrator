@@ -18,9 +18,8 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
-using Org.BouncyCastle.Asn1;
-using Org.BouncyCastle.Asn1.Pkcs;
-using Org.BouncyCastle.X509;
+using System.Security.Cryptography;
+
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -261,26 +260,40 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
     private Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config)
     {
+        Logger.LogDebug("Enter HandleJKSSecret()");
         var hasPrivateKeyJks = false;
+        Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
+        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
         var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
         
         var jksInventoryDict = new Dictionary<string, List<string>>();
         // iterate through the keys in the secret and add them to the jks store
+        Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
+            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " + KubeNamespace + " and key " + keyName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
+            var passwordHash = GetSHA256Hash(keyPassword);
+            Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
             var keyAlias = keyName;
+            Logger.LogTrace("Key alias: {Alias}", keyAlias);
+            Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
             var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
 
+            Logger.LogDebug("Iterating through aliases in JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
             foreach (var certAlias in jStoreDs.Aliases)
             {
+                Logger.LogTrace("Certificate alias: {Alias}", certAlias);
                 var certChainList = new List<string>();
+                
+                Logger.LogDebug("Attempting to get certificate chain for alias '{Alias}'", certAlias);
                 var certChain = jStoreDs.GetCertificateChain(certAlias);
                 
                 var fullAlias = keyAlias + "/" + certAlias;
+                Logger.LogTrace("Full alias: {Alias}", fullAlias);
                 //check if the alias is a private key
                 if (jStoreDs.IsKeyEntry(certAlias))
                 {
@@ -289,12 +302,16 @@ public class Inventory : JobBase, IInventoryJobExtension
                 var pKey = jStoreDs.GetKey(certAlias);
                 if (pKey != null)
                 {
+                    Logger.LogDebug("Found private key for alias '{Alias}'", certAlias);
                     hasPrivateKeyJks = true;
                 }
 
                 StringBuilder certChainPem;
-                
+
                 if (certChain != null)
+                {
+                    Logger.LogDebug("Certificate chain found for alias '{Alias}'", certAlias);
+                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain", certAlias);
                     foreach (var cert in certChain)
                     {
                         certChainPem = new StringBuilder();
@@ -303,21 +320,28 @@ public class Inventory : JobBase, IInventoryJobExtension
                         certChainPem.AppendLine("-----END CERTIFICATE-----");
                         certChainList.Add(certChainPem.ToString());
                     }
-
+                    Logger.LogTrace("Certificate chain for alias '{Alias}': {Chain}", certAlias, certChainList);
+                }
+                
                 if (certChainList.Count != 0)
                 {
+                    Logger.LogDebug("Adding certificate chain for alias '{Alias}' to inventory", certAlias);
                     jksInventoryDict[fullAlias] = certChainList;
                     continue;
                 }
+                
+                Logger.LogDebug("Attempting to get leaf certificate for alias '{Alias}'", certAlias);
                 var leaf = jStoreDs.GetCertificate(certAlias);
                 if (leaf != null)
                 {
+                    Logger.LogDebug("Leaf certificate found for alias '{Alias}'", certAlias);
                     certChainPem = new StringBuilder();
                     certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
                     certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
                     certChainPem.AppendLine("-----END CERTIFICATE-----");
                     certChainList.Add(certChainPem.ToString());
                 }
+                Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
                 jksInventoryDict[fullAlias] = certChainList;
             }
         }

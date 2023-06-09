@@ -179,30 +179,34 @@ public class Management : JobBase, IManagementJobExtension
     {
         Logger.LogDebug("Entering HandleJKSSecret()...");
         // get the jks store from the secret
+        Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
         var k8sData = new KubeCertificateManagerClient.JksSecret();
         if (config.OperationType is CertStoreOperationType.Add or CertStoreOperationType.Remove)
         {
+            Logger.LogTrace("OperationType is: {OperationType}", config.OperationType.GetType());
             try
             {
+                Logger.LogDebug("Attempting to get JKS store from Kubernetes secret {Name} in namespace {Namespace}", KubeSecretName, KubeNamespace);
                 k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace);
             }
             catch (StoreNotFoundException)
             {
                 if (config.OperationType == CertStoreOperationType.Remove)
                 {
-                    Logger.LogWarning("Secret {Name} not found in Kubernetes so nothing to remove...", KubeSecretName);
+                    Logger.LogWarning("Secret '{Name}' not found in Kubernetes namespace '{Ns}' so nothing to remove...", KubeSecretName, KubeNamespace);
                     return null;
                 }
-                Logger.LogWarning("Secret {Name} not found in Kubernetes so creating new secret...", KubeSecretName);
+                Logger.LogWarning("Secret '{Name}' not found in Kubernetes namespace '{Ns}' so creating new secret...", KubeSecretName, KubeNamespace);
             }
         }
         // get newCert bytes from config.JobCertificate.Contents
+        Logger.LogDebug("Attempting to get newCert bytes from config.JobCertificate.Contents");
         var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
 
         var alias = config.JobCertificate.Alias;
-        Logger.LogDebug("alias: " + alias);
+        Logger.LogTrace("alias: " + alias);
         var existingDataFieldName = "jks";
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
         if (alias.Contains('/'))
@@ -212,22 +216,27 @@ public class Management : JobBase, IManagementJobExtension
             existingDataFieldName = aliasParts[0];
             alias = aliasParts[1];
         }
-
-        Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
-        Logger.LogDebug("alias: " + alias);
+        Logger.LogTrace("existingDataFieldName: {Name}", existingDataFieldName);
+        Logger.LogTrace("alias: {Alias}", alias);
         byte[] existingData = null;
         if (k8sData.Secret?.Data != null)
         {
+            Logger.LogDebug("k8sData.Secret.Data is not null so attempting to get existingData from secret data field {Name}...", existingDataFieldName);
             existingData = k8sData.Secret.Data.TryGetValue(existingDataFieldName, out var value) ? value : null;
         }
 
         if (!string.IsNullOrEmpty(config.CertificateStoreDetails.StorePassword))
         {
+            Logger.LogDebug("StorePassword is not null or empty so setting StorePassword to config.CertificateStoreDetails.StorePassword");
             StorePassword = config.CertificateStoreDetails.StorePassword;
+            var hashedStorePassword = GetSHA256Hash(StorePassword);
+            Logger.LogTrace("hashedStorePassword: {Hash}", hashedStorePassword);
         }
         Logger.LogDebug("Getting store password");
         var sPass = getK8SStorePassword(k8sData.Secret);
         // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
+        var hashedSPass = GetSHA256Hash(sPass);
+        Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)

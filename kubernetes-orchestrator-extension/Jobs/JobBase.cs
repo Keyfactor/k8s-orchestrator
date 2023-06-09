@@ -286,7 +286,7 @@ public abstract class JobBase
             //Attempt to load as Pkcs12Store if fail then try to load from DER format
             try
             {
-                Pkcs12Store pkcs12Store = loadPkcs12Store(Convert.FromBase64String(config.JobCertificate.Contents), pKeyPassword);
+                Pkcs12Store pkcs12Store = LoadPkcs12Store(Convert.FromBase64String(config.JobCertificate.Contents), pKeyPassword);
 
                 //Get the first certificate from the store
                 var alias = pkcs12Store.Aliases.FirstOrDefault(pkcs12Store.IsKeyEntry);
@@ -993,55 +993,69 @@ public abstract class JobBase
 
     protected string getK8SStorePassword(V1Secret certData)
     {
+        Logger.LogDebug("Entered getK8SStorePassword()");
         Logger.LogDebug("Attempting to get store password from K8S secret.");
         var storePasswordBytes = new byte[] { };
 
         // if secret is a buddy pass
         if (!string.IsNullOrEmpty(StorePassword))
         {
-            Logger.LogDebug("Store password is not null or empty, using it.");
+            Logger.LogDebug("StorePassword is not null or empty, using StorePassword");
+            var passwordHash = GetSHA256Hash(StorePassword);
+            Logger.LogTrace("Password hash: " + passwordHash);
             storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
             // Logger.LogDebug("Store password bytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else if (!string.IsNullOrEmpty(StorePasswordPath))
         {
             // Split password path into namespace and secret name
-            Logger.LogDebug("Store password is null or empty, using StorePasswordPath.");
+            Logger.LogDebug("Store password is null or empty, using StorePasswordPath");
+            Logger.LogTrace("Password path: {Path}", StorePasswordPath);
+            Logger.LogDebug("Splitting password path by /");
             var passwordPath = StorePasswordPath.Split("/");
+            Logger.LogDebug("Password path length: {Len}", passwordPath.Length.ToString());
             var passwordNamespace = "";
             var passwordSecretName = "";
             if (passwordPath.Length == 1)
             {
                 Logger.LogDebug("Password path length is 1, using KubeNamespace.");
                 passwordNamespace = KubeNamespace;
+                Logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
                 passwordSecretName = passwordPath[0];
+                Logger.LogTrace("Password secret name: {SecretName}", passwordSecretName);
             }
             else
             {
-                Logger.LogDebug("Password path length is not 1, using passwordPath[0] and passwordPath[^1].");
+                Logger.LogDebug("Password path length is not 1, using passwordPath[0] and passwordPath[^1]");
                 passwordNamespace = passwordPath[0];
+                Logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
                 passwordSecretName = passwordPath[^1];
+                Logger.LogTrace("Password secret name: {SecretName}", passwordSecretName);
             }
 
-            Logger.LogDebug("Password secret name: " + passwordSecretName);
-            Logger.LogDebug("Password namespace: " + passwordNamespace);
+            Logger.LogTrace("Password secret name: {Name}", passwordSecretName);
+            Logger.LogTrace("Password namespace: {Ns}", passwordNamespace);
 
-            Logger.LogDebug("Attempting to read K8S buddy secret.");
+            Logger.LogDebug("Attempting to read K8S buddy secret");
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
             storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
-            Logger.LogDebug("K8S buddy secret read successfully.");
+            var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
+            Logger.LogTrace("Password hash: {Pwd}", passwordHash);
+            Logger.LogDebug("K8S buddy secret read successfully");
             // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else if (certData != null && certData.Data.TryGetValue(PasswordFieldName, out var value1))
         {
-            Logger.LogDebug("Attempting to read password from PasswordFieldName.");
+            Logger.LogDebug("Attempting to read password from PasswordFieldName");
             storePasswordBytes = value1;
+            var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
+            Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             Logger.LogDebug("Password read successfully.");
             // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else
         {
-            Logger.LogDebug("No password found.");
+            Logger.LogDebug("No password found");
             var passwdEx = "";
             if (!string.IsNullOrEmpty(StorePasswordPath))
             {
@@ -1052,16 +1066,19 @@ public abstract class JobBase
             {
                 passwdEx = "Invalid store password.  Please provide a valid store password and try again.";
             }
-            Logger.LogError(passwdEx);
+            Logger.LogError("{Msg}", passwdEx);
             throw new Exception(passwdEx);
         }
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
+        // Logger.LogTrace("Store password: {Pwd}", storePassword);
+        var passwordHash2 = GetSHA256Hash(storePassword);
+        Logger.LogTrace("Password hash: {Pwd}", passwordHash2);
         return storePassword;
     }
 
-    protected Pkcs12Store loadPkcs12Store(byte[] pkcs12Data, string password)
+    protected Pkcs12Store LoadPkcs12Store(byte[] pkcs12Data, string password)
     {
         var storeBuilder = new Pkcs12StoreBuilder();
         var store = storeBuilder.Build();
@@ -1146,6 +1163,13 @@ public abstract class JobBase
             pemWriter.Writer.Flush();
             return stringWriter.ToString();
         }
+    }
+
+    public string GetSHA256Hash(string input)
+    {
+        var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
+        var passwordHash = BitConverter.ToString(passwordHashBytes).Replace("-", "").ToLower();
+        return passwordHash;
     }
 }
 
