@@ -119,6 +119,9 @@ public abstract class JobBase
     static protected readonly string DefaultJKSSecretFieldName = "jks";
     static protected readonly string DefaultPFXPasswordSecretFieldName = "password";
 
+    internal protected bool SeparateChain { get; set; } = false; //Don't arbitrarily change this to true without specifying BREAKING CHANGE in the release notes.
+    internal protected bool IncludeCertChain { get; set; } = true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
+    
     internal protected string OperationType { get; set; }
 
     static protected string CertChainSeparator = ",";
@@ -253,19 +256,7 @@ public abstract class JobBase
         }
         return sb.ToString();
     }
-    string ConvertToPEM(Asn1Encodable asn1Object)
-    {
-        const string header = "-----BEGIN CERTIFICATE-----";
-        const string footer = "-----END CERTIFICATE-----";
-
-        var derData = asn1Object.GetEncoded();
-        var base64Data = Convert.ToBase64String(derData);
-        var pemData = header + Environment.NewLine;
-        pemData += InsertLineBreaks(base64Data, 64);
-        pemData += Environment.NewLine + footer;
-
-        return pemData;
-    }
+    
 
     protected K8SJobCertificate InitJobCertificate(dynamic config)
     {
@@ -1202,6 +1193,23 @@ public class InvalidK8SSecretException : Exception
     }
 
     public InvalidK8SSecretException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+public class JkSisPkcs12Exception : Exception
+{
+    public JkSisPkcs12Exception()
+    {
+    }
+
+    public JkSisPkcs12Exception(string message)
+        : base(message)
+    {
+    }
+
+    public JkSisPkcs12Exception(string message, Exception innerException)
         : base(message, innerException)
     {
     }

@@ -11,6 +11,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
@@ -23,7 +24,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
 {
     class JksCertificateStoreSerializer : ICertificateStoreSerializer
     {
-        private ILogger _logger;
+        private readonly ILogger _logger;
         public JksCertificateStoreSerializer(string storeProperties)
         {
             _logger = LogHandler.GetClassLogger(GetType());
@@ -65,7 +66,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
                         pkcs12Store.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
                     }
                     _logger.LogDebug("JKS store loaded as Pkcs12Store");
-                    return pkcs12Store;
+                    // return pkcs12Store;
+                    throw new JkSisPkcs12Exception("JKS store is actually a Pkcs12Store");
                 }
                 catch (Exception ex2)
                 {

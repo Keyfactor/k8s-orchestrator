@@ -19,6 +19,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using System.Security.Cryptography;
+using Org.BouncyCastle.Pkcs;
 
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -280,10 +281,23 @@ public class Inventory : JobBase, IInventoryJobExtension
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
-            var jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            var sourceIsPkcs12 = false; //This refers to if the JKS store is actually a PKCS12 store
+            Pkcs12Store jStoreDs;
+            try
+            {
+                jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            }
+            catch (JkSisPkcs12Exception)
+            {
+                sourceIsPkcs12 = true;
+                var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+                jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            }
+            
             // create a list of certificate chains in PEM format
 
             Logger.LogDebug("Iterating through aliases in JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
+            var breakLoop = false;
             foreach (var certAlias in jStoreDs.Aliases)
             {
                 Logger.LogTrace("Certificate alias: {Alias}", certAlias);
@@ -291,6 +305,26 @@ public class Inventory : JobBase, IInventoryJobExtension
                 
                 Logger.LogDebug("Attempting to get certificate chain for alias '{Alias}'", certAlias);
                 var certChain = jStoreDs.GetCertificateChain(certAlias);
+
+                if (sourceIsPkcs12 && certChain.Length > 0 && certChain.Length == jStoreDs.Aliases.Count())
+                {
+                    // This is a PKCS12 store that was created as a JKS so we need to check that the aliases aren't the same as the cert chain
+                    // If they are the same then we need to only use the chain and break out of the loop
+                    var certChainAliases = new List<string>();
+                    foreach (var cert in certChain)
+                    {
+                        certChainAliases.Add(cert.Certificate.SubjectDN.ToString());
+                    }
+                    // Remove leaf certificate from chain
+                    certChainAliases.RemoveAt(0);
+                    var storeAliases = jStoreDs.Aliases.ToList();
+                    storeAliases.Remove(certAlias);
+                    if (certChainAliases.SequenceEqual(storeAliases))
+                    {
+                        Logger.LogDebug("Certificate chain aliases are the same as the certificate chain, using only the chain");
+                        breakLoop = true;
+                    }
+                }
                 
                 var fullAlias = keyAlias + "/" + certAlias;
                 Logger.LogTrace("Full alias: {Alias}", fullAlias);
@@ -327,6 +361,10 @@ public class Inventory : JobBase, IInventoryJobExtension
                 {
                     Logger.LogDebug("Adding certificate chain for alias '{Alias}' to inventory", certAlias);
                     jksInventoryDict[fullAlias] = certChainList;
+                    if (breakLoop)
+                    {
+                        break;
+                    }
                     continue;
                 }
                 
@@ -343,6 +381,10 @@ public class Inventory : JobBase, IInventoryJobExtension
                 }
                 Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
                 jksInventoryDict[fullAlias] = certChainList;
+                if (breakLoop)
+                {
+                    break;
+                }
             }
         }
         return jksInventoryDict;
