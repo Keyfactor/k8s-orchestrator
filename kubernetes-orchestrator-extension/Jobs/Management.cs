@@ -238,23 +238,31 @@ public class Management : JobBase, IManagementJobExtension
         var hashedSPass = GetSHA256Hash(sPass);
         Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
-        var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
-        if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
+        try
         {
-            Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
-            k8sData.Inventory = new Dictionary<string, byte[]>();
-            k8sData.Inventory.Add(existingDataFieldName, newJksStore);
+            var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
+            if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
+            {
+                Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
+                k8sData.Inventory = new Dictionary<string, byte[]>();
+                k8sData.Inventory.Add(existingDataFieldName, newJksStore);
+            }
+            else
+            {
+                Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
+                k8sData.Inventory[existingDataFieldName] = newJksStore;
+            }
+            // update the secret
+            Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
+            var updateResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
+            Logger.LogDebug("Exiting HandleJKSSecret()...");
+            return updateResponse;
         }
-        else
+        catch (JkSisPkcs12Exception)
         {
-            Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
-            k8sData.Inventory[existingDataFieldName] = newJksStore;
+            return HandlePkcs12Secret(config, remove);
         }
-        // update the secret
-        Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
-        var updateResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Exiting HandleJKSSecret()...");
-        return updateResponse;
+        
     }
 
     private V1Secret HandlePkcs12Secret(ManagementJobConfiguration config, bool remove = false)

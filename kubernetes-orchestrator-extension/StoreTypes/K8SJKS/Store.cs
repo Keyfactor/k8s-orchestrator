@@ -117,6 +117,44 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             _logger.LogDebug("Returning Pkcs12Store");
             return pkcs12StoreNew;
         }
+
+        // public JksStore ConvertPkcs12toJks(byte[] jksBytes, string jksPassword, byte[] pkcs12Bytes, string pkcs12Password)
+        // {
+        //     // Attempt to load JKS store as JksStore
+        //     var jksStore = new JksStore();
+        //     try
+        //     {
+        //         _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'", jksPassword ?? "null");
+        //         using (var ms = new MemoryStream(jksBytes))
+        //         {
+        //             jksStore.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
+        //         }
+        //         _logger.LogDebug("JKS store loaded");
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError("Error loading JKS store: {Ex}", ex.Message);
+        //         // Attempt to read JKS store as Pkcs12Store
+        //         try
+        //         {
+        //             _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password '{Pass}'", jksPassword ?? "null");
+        //             var pkcs12Store = new Pkcs12StoreBuilder().Build();
+        //             using (var ms = new MemoryStream(jksBytes))
+        //             {
+        //                 pkcs12Store.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
+        //             }
+        //             _logger.LogDebug("JKS store loaded as Pkcs12Store");
+        //             // return pkcs12Store;
+        //             throw new JkSisPkcs12Exception("JKS store is actually a Pkcs12Store");
+        //         }
+        //         catch (Exception ex2)
+        //         {
+        //             _logger.LogError("Error loading JKS store as Jks or Pkcs12Store: {Ex}", ex2.Message);
+        //             throw;
+        //         }
+        //     }
+        //     
+        // }
         
         public byte[] CreateOrUpdateJks(byte[] newPkcs12Bytes, string newCertPassword, string alias, byte[] existingStore = null, string existingStorePassword = null,
             bool remove = false)
@@ -140,7 +178,32 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
                 _logger.LogDebug("Loading existing JKS store");
                 using var ms = new MemoryStream(existingStore);
 
-                existingJksStore.Load(ms, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray());
+                try
+                {
+                    existingJksStore.Load(ms, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray());    
+                } catch (Exception ex)
+                {
+                    _logger.LogError("Error loading existing JKS store: {Ex}", ex.Message);
+                    // Check if existingStore is actually a Pkcs12Store
+                    try
+                    {
+                        _logger.LogDebug("Attempting to load existing JKS store as Pkcs12Store");
+                        var pkcs12Store = new Pkcs12StoreBuilder().Build();
+                        using (var ms2 = new MemoryStream(existingStore))
+                        {
+                            pkcs12Store.Load(ms2, string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray());
+                        }
+                        _logger.LogDebug("Existing JKS store loaded as Pkcs12Store");
+                        // return pkcs12Store;
+                        throw new JkSisPkcs12Exception("Existing JKS store is actually a Pkcs12Store");
+                    }
+                    catch (Exception ex2)
+                    {
+                        _logger.LogError("Error loading existing JKS store as Jks or Pkcs12Store: {Ex}", ex2.Message);
+                        throw;
+                    }
+                }
+                
                 if (existingJksStore.ContainsAlias(alias))
                 {
                     // If alias exists, delete it from existingJksStore
