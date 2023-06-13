@@ -112,7 +112,7 @@ namespace TestConsole
         public List<OrchTestCase> add { get; set; }
 
         public List<OrchTestCase> remove { get; set; }
-        
+
         public List<OrchTestCase> discovery { get; set; }
     }
 
@@ -217,7 +217,7 @@ namespace TestConsole
                 case "disc":
                 case "d":
                     return testConfig.discovery.ToArray();
-                    
+
             }
             throw new Exception("Invalid job type");
         }
@@ -252,10 +252,10 @@ namespace TestConsole
 
                 var pamMockUsername = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_USERNAME") ?? string.Empty;
                 var pamMockPassword = Environment.GetEnvironmentVariable("TEST_PAM_MOCK_PASSWORD") ?? string.Empty;
-                
+
                 Console.WriteLine("TEST_PAM_USERNAME_FIELD: " + pamUserNameField);
                 Console.WriteLine("TEST_PAM_MOCK_USERNAME: " + pamMockUsername);
-                
+
                 Console.WriteLine("TEST_PAM_PASSWORD_FIELD: " + pamPasswordField);
                 Console.WriteLine("TEST_PAM_MOCK_PASSWORD: " + pamMockPassword);
 
@@ -297,7 +297,7 @@ namespace TestConsole
 
                                 var invJobConfig = GetInventoryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
                                 SubmitInventoryUpdate sui = GetItems;
-                                
+
                                 var jobResult = inv.ProcessJob(invJobConfig, sui);
 
                                 if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
@@ -340,7 +340,7 @@ namespace TestConsole
                             Console.WriteLine("Select Management Type Add or Remove");
                             testMgmtType = Console.ReadLine();
                         }
-                        
+
                         tests = GetTestConfig(testConfigPath, testMgmtType);
 
                         Console.WriteLine("Running Management Job Test Cases");
@@ -417,13 +417,13 @@ namespace TestConsole
                                         );
 
                                         jobResult = mgmt.ProcessJob(jobConfig);
-                                        if(testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Success)
+                                        if (testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Success)
                                         {
                                             testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage} This test case was expected to fail but succeeded.";
                                             Console.ForegroundColor = ConsoleColor.Red;
                                             hasFailure = true;
                                         }
-                                        else if(!testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Failure)
+                                        else if (!testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Failure)
                                         {
                                             testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage} This test case was expected to succeed but failed.";
                                             Console.ForegroundColor = ConsoleColor.Red;
@@ -519,8 +519,8 @@ namespace TestConsole
                                 // }
                                 discPaths.Add("tls");
                                 SubmitDiscoveryUpdate dui = DiscoverItems;
-                                var jobResult = discovery.ProcessJob(discoveryJobConfiguration,  dui);
-                                
+                                var jobResult = discovery.ProcessJob(discoveryJobConfiguration, dui);
+
                                 if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
                                     (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
                                 {
@@ -649,7 +649,7 @@ namespace TestConsole
         {
             return true;
         }
-        
+
         public static bool DiscoverItems(IEnumerable<string> items)
         {
             return true;
@@ -667,7 +667,7 @@ namespace TestConsole
             var result = JsonConvert.DeserializeObject<InventoryJobConfiguration>(jobConfigString);
             return result;
         }
-        
+
         public static DiscoveryJobConfiguration GetDiscoveryJobConfiguration(string jobConfigString)
         {
             var result = JsonConvert.DeserializeObject<DiscoveryJobConfiguration>(jobConfigString);
