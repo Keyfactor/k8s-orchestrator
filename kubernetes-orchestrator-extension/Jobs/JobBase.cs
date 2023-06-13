@@ -23,12 +23,10 @@ using Keyfactor.PKI.Extensions;
 using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using Org.BouncyCastle.Asn1;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
-using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -184,7 +182,7 @@ public abstract class JobBase
     public string ExtensionName => "K8S";
 
     public string KubeCluster { get; set; }
-
+    
     protected void InitializeStore(InventoryJobConfiguration config)
     {
         InventoryConfig = config;
@@ -927,14 +925,21 @@ public abstract class JobBase
         };
     }
 
-    static protected JobResult SuccessJob(long jobHistoryId)
+    static protected JobResult SuccessJob(long jobHistoryId, string jobMessage = null)
     {
-        return new JobResult
+        var result = new JobResult
         {
             Result = OrchestratorJobStatusJobResult.Success,
             JobHistoryId = jobHistoryId,
 
         };
+
+        if (!string.IsNullOrEmpty(jobMessage))
+        {
+            result.FailureMessage = jobMessage;
+        }
+
+        return result;
     }
 
     protected string ParseJobPrivateKey(ManagementJobConfiguration config)

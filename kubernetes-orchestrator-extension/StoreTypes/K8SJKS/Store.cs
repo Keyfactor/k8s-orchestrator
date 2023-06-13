@@ -39,7 +39,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
 
             _logger.LogTrace("storePath: {Path}", storePath);
             // _logger.LogTrace("storePassword: {Pass}", storePassword ?? "null");
-            var hashedStorePassword = GetSHA256Hash(storePassword);
+            var hashedStorePassword = GetSha256Hash(storePassword);
             _logger.LogTrace("hashedStorePassword: {Pass}", hashedStorePassword ?? "null");
             
             var jksStore = new JksStore();
@@ -165,8 +165,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             var newJksStore = new JksStore();
             var createdNewStore = false;
             
-            var hashedNewCertPassword = GetSHA256Hash(newCertPassword);
-            var hashedExistingStorePassword = GetSHA256Hash(existingStorePassword);
+            var hashedNewCertPassword = GetSha256Hash(newCertPassword);
+            var hashedExistingStorePassword = GetSha256Hash(existingStorePassword);
             
             _logger.LogTrace("newCertPassword: {Pass}", hashedNewCertPassword ?? "null");
             _logger.LogTrace("alias: {Alias}", alias);
@@ -373,9 +373,13 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
         {
             return null;
         }
-        
-        public string GetSHA256Hash(string input)
+
+        private static string GetSha256Hash(string input)
         {
+            if (string.IsNullOrEmpty(input))
+            {
+                return null;
+            }
             var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
             var passwordHash = BitConverter.ToString(passwordHashBytes).Replace("-", "").ToLower();
             return passwordHash;

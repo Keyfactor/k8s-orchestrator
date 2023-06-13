@@ -624,11 +624,13 @@ public class Management : JobBase, IManagementJobExtension
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
 
-        K8SJobCertificate cert = new K8SJobCertificate();
-        cert.Alias = certAlias;
-        cert.StorePassword = config.CertificateStoreDetails.StorePassword;
-        cert.PasswordIsK8SSecret = PasswordIsK8SSecret;
-        cert.StorePasswordPath = StorePasswordPath;
+        var cert = new K8SJobCertificate
+        {
+            Alias = certAlias,
+            StorePassword = config.CertificateStoreDetails.StorePassword,
+            PasswordIsK8SSecret = PasswordIsK8SSecret,
+            StorePasswordPath = StorePasswordPath
+        };
 
         switch (secretType)
         {

@@ -24,7 +24,6 @@ using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
@@ -143,7 +142,7 @@ public class KubeCertificateManagerClient
                     SkipTlsVerify = false
                 }
             };
-            _logger.LogTrace($"Adding cluster '{clusterObj.Name}'({clusterObj.ClusterEndpoint}) to K8SConfiguration");
+            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name, clusterObj.ClusterEndpoint);
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
         _logger.LogTrace("Finished parsing clusters");
@@ -162,7 +161,7 @@ public class KubeCertificateManagerClient
                     Token = user["user"]?["token"]?.ToString()
                 }
             };
-            _logger.LogTrace($"Adding user {userObj.Name} to K8SConfiguration object");
+            _logger.LogTrace("Adding user {Name} to K8SConfiguration object", userObj.Name);
             k8SConfiguration.Users = new List<User> { userObj };
         }
         _logger.LogTrace("Finished parsing users");
@@ -182,7 +181,7 @@ public class KubeCertificateManagerClient
                     User = ctx["context"]?["user"]?.ToString()
                 }
             };
-            _logger.LogTrace($"Adding context '{contextObj.Name}' to K8SConfiguration object");
+            _logger.LogTrace("Adding context '{Name}' to K8SConfiguration object", contextObj.Name);
             k8SConfiguration.Contexts = new List<Context> { contextObj };
         }
         _logger.LogTrace("Finished parsing contexts");
@@ -195,11 +194,11 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entered GetKubeClient()");
         _logger.LogTrace("Getting executing assembly location");
         var strExeFilePath = Assembly.GetExecutingAssembly().Location;
-        _logger.LogTrace($"Executing assembly location: {strExeFilePath}");
+        _logger.LogTrace("Executing assembly location: {ExeFilePath}", strExeFilePath);
 
         _logger.LogTrace("Getting executing assembly directory");
         var strWorkPath = Path.GetDirectoryName(strExeFilePath);
-        _logger.LogTrace($"Executing assembly directory: {strWorkPath}");
+        _logger.LogTrace("Executing assembly directory: {WorkPath}", strWorkPath);
 
         var credentialFileName = kubeconfig;
         // Logger.LogDebug($"credentialFileName: {credentialFileName}");
@@ -1875,7 +1874,7 @@ public class KubeCertificateManagerClient
         public V1Secret Secret;
         public string Password;
         public string PasswordPath;
-        public string[] AllowedKeys;
+        public List<string> AllowedKeys;
         public Dictionary<string, byte[]> Inventory;
     }
 
@@ -1886,11 +1885,11 @@ public class KubeCertificateManagerClient
         public V1Secret Secret;
         public string Password;
         public string PasswordPath;
-        public string[] AllowedKeys;
+        public List<string> AllowedKeys;
         public Dictionary<string, byte[]> Inventory;
     }
 
-    public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, string[] allowedKeys = null)
+    public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, List<string> allowedKeys = null)
     {
         _logger.LogTrace("Entered GetJKSSecret()");
         _logger.LogTrace("secretName: " + secretName);
@@ -1907,14 +1906,13 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("secret.Data.Keys: {Name}", secret.Data.Keys);
                 _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
 
-                allowedKeys ??= new string[] { "jks", "JKS", "Jks" };
-
-
-                Dictionary<string, byte[]> secretData = new Dictionary<string, byte[]>();
+                allowedKeys ??= new List<string>() { "jks", "JKS", "Jks" };
+                
+                var secretData = new Dictionary<string, byte[]>();
 
                 foreach (var secretFieldName in secret?.Data.Keys)
                 {
-                    _logger.LogTrace("secretFieldName: " + secretFieldName);
+                    _logger.LogTrace("secretFieldName: {Name}", secretFieldName);
                     var sField = secretFieldName;
                     if (secretFieldName.Contains('.'))
                     {
@@ -1969,7 +1967,7 @@ public class KubeCertificateManagerClient
         return new JksSecret();
     }
 
-    public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null, string passwordPath = null, string[] allowedKeys = null)
+    public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null, string passwordPath = null, List<string> allowedKeys = null)
     {
         _logger.LogTrace("Entered GetPKCS12Secret()");
         _logger.LogTrace("secretName: " + secretName);
@@ -1984,7 +1982,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
             _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
 
-            allowedKeys ??= new[] { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
+            allowedKeys ??= new List<string>() { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
 
 
             var secretData = new Dictionary<string, byte[]>();
