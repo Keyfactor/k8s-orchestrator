@@ -42,8 +42,8 @@
         "supportsInventory": true,
         "platformSupport": "Unused"
       },
-      "store_types": [
-        {
+      "store_types": {
+        "K8SCert": {
           "Name": "K8SCert",
           "ShortName": "K8SCert",
           "Capability": "K8SCert",
@@ -99,7 +99,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         },
-        {
+        "K8SSecret": {
           "Name": "K8SSecret",
           "ShortName": "K8SSecret",
           "Capability": "K8SSecret",
@@ -155,7 +155,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         },
-        {
+        "K8STLSSecr": {
           "Name": "K8STLSSecr",
           "ShortName": "K8STLSSecr",
           "Capability": "K8STLSSecr",
@@ -211,7 +211,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         }
-      ]
+      }
     }
   }
 }
