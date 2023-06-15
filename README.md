@@ -871,14 +871,14 @@ Management add/remove/create operations will attempt to write back to the Kubern
 The following table shows the keys that the orchestrator will write back to the Kubernetes Secret for 
 each type of certificate store.
 
-| Store Type | Managed Secret Keys                       |
-|------------|-------------------------------------------|
-| K8STLSSecr | `tls.crt`,`tls.key`, `ca.crt`             |
-| K8SSecret  | `tls.crt`,`tls.key`, `ca.crt`             |
-| K8SPKCS12  | Specified in custom field `KubeSecretKey` |
-| K8SJKS     | Specified in custom field `KubeSecretKey` |
-| K8SCluster | `tls.crt`,`tls.key`                       |
-| K8SNS      | `tls.crt`,`tls.key`                       |
+| Store Type | Managed Secret Keys                                       |
+|------------|-----------------------------------------------------------|
+| K8STLSSecr | `tls.crt`,`tls.key`, `ca.crt`                             |
+| K8SSecret  | `tls.crt`,`tls.key`, `ca.crt`                             |
+| K8SPKCS12  | Specified in custom field `KubeSecretKey` or use defaults |
+| K8SJKS     | Specified in custom field `KubeSecretKey` or use defaults |
+| K8SCluster | `tls.crt`,`tls.key`                                       |
+| K8SNS      | `tls.crt`,`tls.key`                                       |
 
 ### K8STLSSecr & K8SSecret
 These store types are virtually the same, they only differ in what K8S secret type they create. Both store types allow
