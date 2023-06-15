@@ -234,7 +234,6 @@ public class Management : JobBase, IManagementJobExtension
         }
         Logger.LogDebug("Getting store password");
         var sPass = getK8SStorePassword(k8sData.Secret);
-        // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
         var hashedSPass = GetSHA256Hash(sPass);
         Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
@@ -318,7 +317,6 @@ public class Management : JobBase, IManagementJobExtension
         }
         Logger.LogDebug("Getting store password");
         var sPass = getK8SStorePassword(k8sData.Secret);
-        // Logger.LogDebug("sPass: " + sPass); //TODO: remove this line
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)

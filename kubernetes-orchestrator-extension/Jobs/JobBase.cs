@@ -1000,7 +1000,6 @@ public abstract class JobBase
             var passwordHash = GetSHA256Hash(StorePassword);
             Logger.LogTrace("Password hash: " + passwordHash);
             storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
-            // Logger.LogDebug("Store password bytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else if (!string.IsNullOrEmpty(StorePasswordPath))
         {
@@ -1038,7 +1037,6 @@ public abstract class JobBase
             var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
             Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             Logger.LogDebug("K8S buddy secret read successfully");
-            // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else if (certData != null && certData.Data.TryGetValue(PasswordFieldName, out var value1))
         {
@@ -1047,7 +1045,6 @@ public abstract class JobBase
             var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
             Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             Logger.LogDebug("Password read successfully.");
-            // Logger.LogDebug("passwordBytes: " + Encoding.UTF8.GetString(storePasswordBytes)); //todo: remove this
         }
         else
         {

@@ -184,7 +184,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            clusterInventoryDict[StorePath] = tlsObj; //todo: fix this  
+                            clusterInventoryDict[StorePath] = tlsObj;  
                         }
                         catch (Exception ex)
                         {
@@ -218,7 +218,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var opaqueObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = opaqueObj[0]; //todo: fix this    
+                            namespaceInventoryDict[StorePath] = opaqueObj[0];    
                         }
                         catch (Exception ex)
                         {
@@ -247,7 +247,7 @@ public class Inventory : JobBase, IInventoryJobExtension
 
 
                             var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = tlsObj[0]; //todo: fix this  
+                            namespaceInventoryDict[StorePath] = tlsObj[0];  
                         }
                         catch (Exception ex)
                         {
@@ -805,9 +805,9 @@ public class Inventory : JobBase, IInventoryJobExtension
             );
             Logger.LogDebug("KubeClient.GetCertificateStoreSecret() returned successfully.");
             Logger.LogTrace("certData: " + certData);
-            var certificatesBytes = certData.Data["tls.crt"]; //TODO: Make these KubeSecretKey
+            var certificatesBytes = certData.Data["tls.crt"]; 
             Logger.LogTrace("certificatesBytes: " + certificatesBytes);
-            var privateKeyBytes = certData.Data["tls.key"]; //TODO: Make these KubeSecretKey
+            var privateKeyBytes = certData.Data["tls.key"];
             byte[] caBytes = null;
             var certsList = new List<string>();
 

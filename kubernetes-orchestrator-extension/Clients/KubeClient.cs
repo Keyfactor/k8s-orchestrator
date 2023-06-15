@@ -925,7 +925,7 @@ public class KubeCertificateManagerClient
                 false,
                 passwordSecretPath,
                 passwordFieldName,
-                allowedKeys); //todo: fix overwrite and isk8ssecret params
+                allowedKeys); 
         }
 
         _logger.LogDebug("Attempting to create new secret...");
@@ -1139,8 +1139,8 @@ public class KubeCertificateManagerClient
 
                     Data = new Dictionary<string, byte[]>
                     {
-                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) }, //TODO: Make this configurable
-                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) } //TODO: Make this configurable
+                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) }, 
+                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) } 
                     }
                 };
                 break;
@@ -1238,13 +1238,13 @@ public class KubeCertificateManagerClient
 
         var existingCerts = existingSecret.Data.ContainsKey("certificates")
             ? Encoding.UTF8.GetString(existingSecret.Data["certificates"])
-            : ""; //TODO: Make this configurable
+            : ""; 
 
         _logger.LogTrace("Existing certificates: " + existingCerts);
 
         var existingKeys = existingSecret.Data.ContainsKey("tls.key")
             ? Encoding.UTF8.GetString(existingSecret.Data["tls.key"])
-            : ""; //TODO: Make this configurable
+            : ""; 
         // Logger.LogTrace("Existing private keys: " + existingKeys);
 
         if (existingCerts.Contains(certPem) && existingKeys.Contains(keyPem))
@@ -1408,11 +1408,11 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Parsing existing certificates from secret into a string.");
         foreach (var sKey in existingSecret.Data.Keys)
         {
-            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]); //TODO: Make this configurable.
+            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]); 
             _logger.LogTrace("existingCerts: " + existingCerts);
 
             _logger.LogDebug("Parsing existing private keys from secret into a string.");
-            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]); //TODO: Make this configurable.
+            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]); 
             // Logger.LogTrace("existingKeys: " + existingKeys);
 
             _logger.LogDebug("Splitting existing certificates into an array.");
@@ -1423,7 +1423,7 @@ public class KubeCertificateManagerClient
             var keys = existingKeys.Split(",");
             // Logger.LogTrace("keys: " + keys);
 
-            var index = 0; //Currently keys are assumed to be in the same order as certs. //TODO: Make this less fragile
+            var index = 0; //Currently keys are assumed to be in the same order as certs. 
             _logger.LogTrace("Entering foreach loop to remove existing certificate from opaque secret");
             foreach (var cer in certs)
             {
@@ -1474,7 +1474,7 @@ public class KubeCertificateManagerClient
             }
 
             _logger.LogDebug("Updating existing secret with new certificate data.");
-            existingSecret.Data[sKey] = Encoding.UTF8.GetBytes(existingCerts); //TODO: Make this configurable.
+            existingSecret.Data[sKey] = Encoding.UTF8.GetBytes(existingCerts); 
             _logger.LogDebug("Updating existing secret with new key data.");
             try
             {
@@ -1483,7 +1483,7 @@ public class KubeCertificateManagerClient
             catch (Exception)
             {
                 _logger.LogWarning("Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");
-            } //TODO: Make this configurable.
+            } 
 
 
             // Update Kubernetes secret
@@ -2068,7 +2068,7 @@ public class KubeCertificateManagerClient
         var distinguishedName = new X500DistinguishedName(name);
 
         _logger.LogDebug("Generating private key and CSR");
-        using var rsa = RSA.Create(4096); // TODO: Make key size and type configurable 
+        using var rsa = RSA.Create(4096);  
 
         _logger.LogDebug("Exporting private key and public key");
         var pkey = rsa.ExportPkcs8PrivateKey();
