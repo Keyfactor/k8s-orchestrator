@@ -4,7 +4,7 @@ The Kubernetes Orchestrator allows for the remote management of certificate stor
 - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
 - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
-#### Integration status: Pilot - Ready for use in test environments. Not for use in production.
+#### Integration status: Production - Ready for use in production environments.
 
 
 ## About the Keyfactor Universal Orchestrator Extension
@@ -20,7 +20,7 @@ The Universal Orchestrator is the successor to the Windows Orchestrator. This Or
 
 ## Support for Kubernetes Orchestrator Extension
 
-Kubernetes Orchestrator Extension is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
+Kubernetes Orchestrator Extension is supported by Keyfactor for Keyfactor customers. If you have a support issue, please open a support ticket with your Keyfactor representative.
 
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
 
@@ -249,6 +249,14 @@ current version are:
 - K8SCert - Kubernetes certificates of type `certificates.k8s.io/v1`
 - K8SSecret - Kubernetes secrets of type `Opaque`
 - K8STLSSecret - Kubernetes secrets of type `kubernetes.io/tls`
+- K8SCluster - This allows for a single store to manage a k8s cluster's secrets or type `Opaque` and `kubernetes.io/tls`. 
+This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores across all k8s namespaces.
+- K8SNS - This allows for a single store to manage a k8s namespace's secrets or type `Opaque` and `kubernetes.io/tls`. 
+This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores for a single k8s namespace.
+- K8SJKS - Kubernetes secrets of type `Opaque` that contain one or more Java Keystore(s). These cannot be managed at the
+cluster or namespace level as they should all require unique credentials.
+- K8SPKCS12 - Kubernetes secrets of type `Opaque` that contain one or more PKCS12(s). These cannot be managed at the 
+cluster or namespace level as they should all require unique credentials.
 
 This orchestrator extension makes use of the Kubernetes API by using a service account 
 to communicate remotely with certificate stores. The service account must have the correct permissions
@@ -277,6 +285,13 @@ must have a field that ends in `.jks`. The orchestrator will inventory and manag
 pattern: `<k8s_secret_field_name>/<keystore_alias>`.  For example, if the secret has a field named `mykeystore.jks` and
 the keystore contains a certificate with an alias of `mycert`, the orchestrator will manage the certificate using the
 alias `mykeystore.jks/mycert`.
+
+### K8SPKCS12
+The K8SPKCS12 store type is used to manage Kubernetes secrets of type `Opaque`.  These secrets
+must have a field that ends in `.p12`, `.pkcs12`, `.pfx`. The orchestrator will inventory and manage using a 
+*custom alias* of the following pattern: `<k8s_secret_field_name>/<keystore_alias>`.  For example, if the secret has a 
+field named `mykeystore.p12` and the keystore contains a certificate with an alias of `mycert`, the orchestrator will 
+manage the certificate using the alias `mykeystore.p12/mycert`.
 
 ## Versioning
 
