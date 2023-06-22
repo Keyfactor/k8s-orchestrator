@@ -1,10 +1,11 @@
 # Kubernetes Orchestrator Extension
 
 The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported:
-- Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
-- Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
+   - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
+    - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
 #### Integration status: Pilot - Ready for use in test environments. Not for use in production.
+
 
 ## About the Keyfactor Universal Orchestrator Extension
 
@@ -16,12 +17,12 @@ The Universal Orchestrator is the successor to the Windows Orchestrator. This Or
 
 
 
+
 ## Support for Kubernetes Orchestrator Extension
 
 Kubernetes Orchestrator Extension is open source and there is **no SLA** for this tool/library/client. Keyfactor will address issues as resources become available. Keyfactor customers may request escalation by opening up a support ticket through their Keyfactor representative.
 
 ###### To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
-___
 
 
 
@@ -63,6 +64,11 @@ It is not necessary to use a PAM Provider for all of the secrets available above
 
 If a PAM Provider will be used for one of the fields above, start by referencing the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam). The GitHub repo for the PAM Provider to be used contains important information such as the format of the `json` needed. What follows is an example but does not reflect the `json` values for all PAM Providers as they have different "instance" and "initialization" parameter names and values.
 
+<details><summary>General PAM Provider Configuration</summary>
+<p>
+
+
+
 ### Example PAM Provider Setup
 
 To use a PAM Provider to resolve a field, in this example the __Server Password__ will be resolved by the `Hashicorp-Vault` provider, first install the PAM Provider extension from the [Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam) on the Universal Orchestrator.
@@ -89,6 +95,8 @@ To have the __Server Password__ field resolved by the `Hashicorp-Vault` provider
 ~~~
 
 This text would be entered in as the value for the __Server Password__, instead of entering in the actual password. The Orchestrator will attempt to use the PAM Provider to retrieve the __Server Password__. If PAM should not be used, just directly enter in the value for the field.
+</p>
+</details> 
 
 
 
