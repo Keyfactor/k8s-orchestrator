@@ -4,13 +4,16 @@ read -p "Enter the name of the service account: " SA_NAME
 read -p "Enter the namespace of the service account: " NAMESPACE
 read -p "Enter the name of the cluster: " CLUSTER_NAME
 read -p "Enter the API server hostname w/ port of the cluster: " CLUSTER_API_SERVER
-read -p "Enter the index of the cluster in your kubeconfig file: " CLUSTER_INDEX
+### NOTE - If you have more than one cluster, you may need to change the index of the array ###
+#read -p "Enter the index of the cluster in your kubeconfig file: " CLUSTER_INDEX
 echo "Generating kubeconfig file for service account $SA_NAME in namespace $NAMESPACE on cluster $CLUSTER_NAME at $CLUSTER_API_SERVER"
 #echo "CA_CERT: $CA_CERT" #uncomment if you need to debug
 #echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug
 SA_TOKEN=$(kubectl get secrets -n $NAMESPACE | grep -i $SA_NAME | awk '{print $1}')
 SA_TOKEN=$(kubectl get secret/$SA_TOKEN -n $NAMESPACE -o json | jq -r '.data.token' | base64 --decode)
-CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[1].cluster."certificate-authority-data"')
+
+### NOTE - If you have more than one cluster, you may need to change the index of the array ###
+CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[0].cluster."certificate-authority-data"')
 # Create the kubeconfig file
 echo "apiVersion: v1
 kind: Config
