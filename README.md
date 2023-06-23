@@ -417,13 +417,13 @@ A Keyfactor Command certificate store `StorePath` for the K8S orchestrator exten
 | PFX Password Style    |          | The password style used by the certificate store type.                                                                                     | Default                |
 
 ##### Custom Fields Tab
-| Name             | Display Name              | Type   | Required | Default Value | Description                                                                                                                                          |
-|------------------|---------------------------|--------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace    | Kube Namespace            | String |          | `default`     | The Kubernetes namespace the store will reside. This will override the value parsed from `storepath`.                                                |
-| KubeSecretName   | Kube Secret Name          | String |          | none          | This field overrides `storepath` value. The Kubernetes secret or certificate resource name.                                                          |
-| KubeSecretType   | Kube Secret Type          | String | &check;  | none          | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                          |
-| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        | Will default to `true` if not set. Set this to `false` if you do not want certificate chains deployed.                                               |
-| SeparateChain    | SeparateChain             | Bool   |          | `false`       | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets. |
+| Name             | Display Name              | Type   | Required | Default Value | Description                                                                                                                                            |
+|------------------|---------------------------|--------|----------|---------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace    | Kube Namespace            | String |          |               | This field overrides implied `Store Path` value. The Kubernetes namespace the store will reside. This will override the value parsed from `storepath`. |
+| KubeSecretName   | Kube Secret Name          | String |          |               | This field overrides implied `Store Path` value. The Kubernetes secret or certificate resource name.                                                   |
+| KubeSecretType   | Kube Secret Type          | String | &check;  |               | Must be one of the following `secret`, `secret_tls` or `cert`. See [kube-secret-types](#kube-secret-types).                                            |
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        | Will default to `true` if not set. Set this to `false` if you do not want certificate chains deployed.                                                 |
+| SeparateChain    | SeparateChain             | Bool   |          | `false`       | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets.   |
 
 ##### Kube Secret Types
 - `secret` - A generic secret of type `Opaque`. Must contain a key of one of the following values: [ `cert`, `certficate`, `certs`,`certificates` ] to be inventoried.
@@ -474,13 +474,13 @@ kfutil store-types create --name K8SSecret
 ![k8ssecret_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name             | Display Name              | Type   | Required | Default Value |
-|------------------|---------------------------|--------|----------|---------------|
-| KubeNamespace    | Kube Namespace            | String |          | `default`     |
-| KubeSecretName   | Kube Secret Name          | String | &check;  |               |
-| KubeSecretType   | Kube Secret Type          | String | &check;  | `secret`      |
-| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        |
-| SeparateChain    | SeparateChain             | Bool   |          | `false`       |
+| Name             | Display Name              | Type   | Required | Default Value | Description                                                                                                                                                                         |
+|------------------|---------------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace    | Kube Namespace            | String |          | `default`     | The K8S namespace the `Opaque` secret lives. This will override any value inferred in the `Store Path`                                                                              |
+| KubeSecretName   | Kube Secret Name          | String | &check;  |               | The name of the K8S `Opaque` secret. This will override any value inferred in the `Store Path`                                                                                      |
+| KubeSecretType   | Kube Secret Type          | String | &check;  | `secret`      |                                                                                                                                                                                     |
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        | Will default to `true` if not set. If set to `false` only leaf cert will be deployed.                                                                                               |
+| SeparateChain    | SeparateChain             | Bool   |          | `false`       | Will default to `false` if not set. `true` will deploy leaf cert to `tls.crt` and the rest of the cert chain to `ca.crt`. If set to `false` the full chain is deployed to `tls.crt` |
 
 ![k8ssecret_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8ssecret_custom_fields.png)
 
@@ -526,13 +526,13 @@ kfutil store-types create --name K8STLSSecr
 ![k8sstlssecr_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name             | Display Name               | Type   | Required | Default Value |
-|------------------|----------------------------|--------|----------|---------------|
-| KubeNamespace    | Kube Namespace             | String |          | `default`     |
-| KubeSecretName   | Kube Secret Name           | String | &check;  |               |
-| KubeSecretType   | Kube Secret Type           | String | &check;  | `tls_secret`  |
-| IncludeCertChain | Include Certificate Chain  | Bool   |          | `true`        |
-| SeparateChain    | SeparateChain              | Bool   |          | `false`       |
+| Name             | Display Name               | Type   | Required | Default Value | Description                                                                                                                                     |
+|------------------|----------------------------|--------|----------|---------------|-------------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace    | Kube Namespace             | String |          |               | The K8S namespace the `tls` secret lives. This will override any value inferred in the `Store Path`                                             |
+| KubeSecretName   | Kube Secret Name           | String |          |               | The name of the K8S `tls` secret. This will override any value inferred in the `Store Path`                                                     |
+| KubeSecretType   | Kube Secret Type           | String | &check;  | `tls_secret`  |                                                                                                                                                 |
+| IncludeCertChain | Include Certificate Chain  | Bool   |          | `true`        | If set to `false` only leaf cert will be deployed.                                                                                              |
+| SeparateChain    | SeparateChain              | Bool   |          | `true`        | `true` will deploy leaf cert to `tls.crt` and the rest of the cert chain to `ca.crt`. If set to `false` the full chain is deployed to `tls.crt` | 
 
 
 ![k8sstlssecr_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sstlssecr_custom_fields.png)
@@ -579,16 +579,16 @@ kfutil store-types create --name K8SPKCS12
 ![k8spkcs12_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                                                                    |
-|--------------------------|-----------------------------|--------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------|
-| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the PKCS12 secret lives                                                                                                          |
-| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains PKCS12 data                                                                                                  |
-| KubeSecretType           | Kube Secret Type            | String | &check;  | `pkcs12`      | This must be set to `pkcs12`.                                                                                                                  |
-| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.p12`        | The K8S secret field name to source the PKCS12 data from. You can provide an extension `.p12` or `.pfx` for a secret with a key `example.p12`  |
-| PasswordFieldName        | Password Field Name         | String |          | `password`    | If sourcing the PKCS12 password from a K8S secret this is the field it will look for the password in.                                          |
-| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the PKCS12 secret or a separate secret specific in `KubeSecretPasswordPath` set this to `true`                              |
-| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the PKCS12 password on the store in Command use this.                                                                   |
-| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source PKCS12 password from a separate K8S secret. Pattern: `namespace_name/secret_name`                                                       |
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                                                                   |
+|--------------------------|-----------------------------|--------|----------|---------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          |               | K8S namespace the PKCS12 secret lives. This will override any value inferred in the `Store Path`                                              |
+| KubeSecretName           | Kube Secret Name            | String |          |               | The K8S secret name that contains PKCS12 data. This will override any value inferred in the `Store Path`                                      |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `pkcs12`      | This must be set to `pkcs12`.                                                                                                                 |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.p12`        | The K8S secret field name to source the PKCS12 data from. You can provide an extension `.p12` or `.pfx` for a secret with a key `example.p12` |
+| PasswordFieldName        | Password Field Name         | String |          | `password`    | If sourcing the PKCS12 password from a K8S secret this is the field it will look for the password in.                                         |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the PKCS12 secret or a separate secret specific in `KubeSecretPasswordPath` set this to `true`                             |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the PKCS12 password on the store in Command use this.                                                                  |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source PKCS12 password from a separate K8S secret. Pattern: `namespace_name/secret_name`                                                      |
                                                                                                    
 
 ![k8spkcs12_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8spkcs12_custom_fields.png)
@@ -643,16 +643,16 @@ kfutil store-types create --name K8SJKS
 ![k8sjks_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                        |
-|--------------------------|-----------------------------|--------|----------|---------------|----------------------------------------------------------------------------------------------------|
-| KubeNamespace            | Kube Namespace              | String |          | `default`     | K8S namespace the JKS secret lives                                                                 |
-| KubeSecretName           | Kube Secret Name            | String | &check;  |               | The K8S secret name that contains JKS data                                                         |
-| KubeSecretType           | Kube Secret Type            | String | &check;  | `JKS`         |                                                                                                    |
-| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.jks`        | The K8S secret field name to source the JKS data from                                              |
-| PasswordFieldName        | Password Field Name         | String | &check;  | `password`    | If sourcing the JKS password from a K8S secret this is the field it will look for the password in. |
-| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the JKS secret or a separate secret specific in `` set this to `true`           |
-| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the JKS password on the store in Command use this.                          |
-| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`              |
+| Name                     | Display Name                | Type   | Required | Default Value | Description                                                                                            |
+|--------------------------|-----------------------------|--------|----------|---------------|--------------------------------------------------------------------------------------------------------|
+| KubeNamespace            | Kube Namespace              | String |          |               | K8S namespace the JKS secret lives. This will override any value inferred in the `Store Path`.         |
+| KubeSecretName           | Kube Secret Name            | String |          |               | The K8S secret name that contains JKS data. This will override any value inferred in the `Store Path`. |
+| KubeSecretType           | Kube Secret Type            | String | &check;  | `jks`         |                                                                                                        |
+| CertificateDataFieldName | Certificate Data Field Name | String | &check;  | `.jks`        | The K8S secret field name to source the JKS data from                                                  |
+| PasswordFieldName        | Password Field Name         | String | &check;  | `password`    | If sourcing the JKS password from a K8S secret this is the field it will look for the password in.     |
+| PasswordIsK8SSecret      | Password Is K8S Secret      | Bool   | &check;  | `false`       | If you want to use the JKS secret or a separate secret specific in `` set this to `true`               |
+| StorePassword            | Kube Secret Password        | Secret |          |               | If you want to specify the JKS password on the store in Command use this.                              |
+| StorePasswordPath        | Kube Secret Password Path   | String |          |               | Source JKS password from a separate K8S secret. Pattern: `namespace_name/secret_name`                  |
 
 
 ![k8sjks_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sjks_custom_fields.png)
@@ -706,11 +706,10 @@ kfutil store-types create --name K8SCluster
 
 
 ##### UI Custom Fields Tab
-| Name             | Display Name              | Type   | Required | Default Value  |
-|------------------|---------------------------|--------|----------|----------------|
-| KubeNamespace    | Kube Namespace            | String |          |                |
-| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`         |
-| SeparateChain    | Separate Chain            | Bool   |          | `false`        |
+| Name             | Display Name              | Type   | Required | Default Value  | Description                                                                                                                                          |
+|------------------|---------------------------|--------|----------|----------------|------------------------------------------------------------------------------------------------------------------------------------------------------| 
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`         | Will default to `true` if not set. If set to `false` only leaf cert will be deployed.                                                                |
+| SeparateChain    | Separate Chain            | Bool   |          | `false`        | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets. |
 
 ![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
 
@@ -765,10 +764,11 @@ kfutil store-types create --name K8SNS
 ![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name             | Display Name              | Type   | Required | Default Value  |
-|------------------|---------------------------|--------|----------|----------------|
-| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`         |
-| SeparateChain    | Separate Chain            | Bool   |          | `false`        |
+| Name             | Display Name              | Type   | Required | Default Value | Description                                                                                                                                          |
+|------------------|---------------------------|--------|----------|---------------|------------------------------------------------------------------------------------------------------------------------------------------------------| 
+| KubeNamespace    | Kube Namespace            | String |          |               | K8S namespace to manage. This will override any value inferred in the `Store Path`.                                                                  |
+| IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        | Will default to `true` if not set. If set to `false` only leaf cert will be deployed.                                                                |
+| SeparateChain    | Separate Chain            | Bool   |          | `false`       | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets. |
 
 
 ##### UI Entry Parameters Tab:
@@ -811,11 +811,11 @@ kfutil store-types create --name K8SCert
 ![k8scert_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_advanced.png)
 
 ##### UI Custom Fields Tab
-| Name               | Display Name              | Type   | Required | Default Value |
-|--------------------|---------------------------|--------|----------|---------------|
-| KubeNamespace      | Kube Namespace            | String |          | `default`     |
-| KubeSecretName     | Kube Secret Name          | String | &check;  |               |
-| KubeSecretType     | Kube Secret Type          | String | &check;  | `cert`        |
+| Name               | Display Name              | Type   | Required | Default Value | Description                                                                                            |
+|--------------------|---------------------------|--------|----------|---------------|--------------------------------------------------------------------------------------------------------|
+| KubeNamespace      | Kube Namespace            | String |          |               | The K8S namespace the `cert` resource lives. This will override any value inferred in the `Store Path` |
+| KubeSecretName     | Kube Secret Name          | String |          |               | The K8S `cert` name. This will override any value inferred in the `Store Path`.                        |
+| KubeSecretType     | Kube Secret Type          | String | &check;  | `cert`        |                                                                                                        |
 
 
 ![k8scert_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8scert_custom_fields.png)
