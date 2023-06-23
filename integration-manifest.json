@@ -42,8 +42,8 @@
         "supportsInventory": true,
         "platformSupport": "Unused"
       },
-      "store_types": {
-        "K8SCert": {
+      "store_types": [
+        {
           "Name": "K8SCert",
           "ShortName": "K8SCert",
           "Capability": "K8SCert",
@@ -62,7 +62,7 @@
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "KubeSecretName",
@@ -70,7 +70,7 @@
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": true
+              "Required": false
             },
             {
               "Name": "KubeSecretType",
@@ -79,9 +79,33 @@
               "DependsOn": "",
               "DefaultValue": "cert",
               "Required": true
+            },
+            {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
+              "Name": "ServerUseSsl",
+              "DisplayName": "Use SSL",
+              "Type": "Bool",
+              "DependsOn": "",
+              "DefaultValue": "true",
+              "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -96,63 +120,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         },
-        "K8SSecret": {
-          "Name": "K8SSecret",
-          "ShortName": "K8SSecret",
-          "Capability": "K8SSecret",
-          "LocalStore": false,
-          "SupportedOperations": {
-            "Add": true,
-            "Create": true,
-            "Discovery": true,
-            "Enrollment": false,
-            "Remove": true
-          },
-          "Properties": [
-            {
-              
-              "Name": "KubeNamespace",
-              "DisplayName": "KubeNamespace",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "default",
-              "Required": true
-            },
-            {
-              
-              "Name": "KubeSecretName",
-              "DisplayName": "KubeSecretName",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              
-              "Name": "KubeSecretType",
-              "DisplayName": "KubeSecretType",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "secret",
-              "Required": true
-            }
-          ],
-          "EntryParameters": [],
-          "PasswordOptions": {
-            "EntrySupported": false,
-            "StoreRequired": false,
-            "Style": "Default"
-          },
-          "StorePathType": "",
-          "StorePathValue": "",
-          "PrivateKeyAllowed": "Optional",
-          "JobProperties": [],
-          "ServerRequired": true,
-          "PowerShell": false,
-          "BlueprintAllowed": false,
-          "CustomAliasAllowed": "Forbidden"
-        },
-        "K8SCluster": {
+        {
           "Name": "K8SCluster",
           "ShortName": "K8SCluster",
           "Capability": "K8SCluster",
@@ -179,7 +147,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -190,7 +158,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -205,7 +173,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Required"
         },
-        "K8SJKS": {
+        {
           "Name": "K8SJKS",
           "ShortName": "K8SJKS",
           "Capability": "K8SJKS",
@@ -288,7 +256,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -299,7 +267,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": true,
@@ -314,7 +282,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Required"
         },
-        "K8SNS": {
+        {
           "Name": "K8SNS",
           "ShortName": "K8SNS",
           "Capability": "K8SNS",
@@ -349,7 +317,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -360,7 +328,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -375,7 +343,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Required"
         },
-        "K8SPKCS12": {
+        {
           "Name": "K8SPKCS12",
           "ShortName": "K8SPKCS12",
           "Capability": "K8SPKCS12",
@@ -442,7 +410,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -469,7 +437,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": true,
@@ -484,7 +452,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Required"
         },
-        "K8SSecret": {
+        {
           "Name": "K8SSecret",
           "ShortName": "K8SSecret",
           "Capability": "K8SSecret",
@@ -535,7 +503,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -546,7 +514,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -561,7 +529,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         },
-        "K8STLSSecr": {
+        {
           "Name": "K8STLSSecr",
           "ShortName": "K8STLSSecr",
           "Capability": "K8STLSSecr",
@@ -612,7 +580,7 @@
               "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
+              "Required": true
             },
             {
               "Name": "ServerUseSsl",
@@ -623,7 +591,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": [],
+          "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -638,7 +606,7 @@
           "BlueprintAllowed": false,
           "CustomAliasAllowed": "Forbidden"
         }
-      }
+      ]
     }
   }
 }
