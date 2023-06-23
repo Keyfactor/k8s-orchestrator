@@ -1,4 +1,4 @@
-# 1.1.0
+# 1.1.1
 
 ## Features
 - feat(storetypes): `K8SPKCS12` store type added to support PKCS12, .P12, PFX, files in K8S `opaque` secrets.
