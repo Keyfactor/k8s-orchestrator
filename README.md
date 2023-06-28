@@ -1,10 +1,11 @@
 # Kubernetes Orchestrator Extension
 
 The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported:
-- Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
-- Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
+   - Secrets - Kubernetes secrets of type `kubernetes.io/tls` or `Opaque` 
+    - Certificates - Kubernetes certificates of type `certificates.k8s.io/v1`
 
 #### Integration status: Production - Ready for use in production environments.
+
 
 ## About the Keyfactor Universal Orchestrator Extension
 
@@ -13,6 +14,7 @@ This repository contains a Universal Orchestrator Extension which is a plugin to
 The Universal Orchestrator is part of the Keyfactor software distribution and is available via the Keyfactor customer portal. For general instructions on installing Extensions, see the “Keyfactor Command Orchestrator Installation and Configuration Guide” section of the Keyfactor documentation. For configuration details of this specific Extension see below in this readme.
 
 The Universal Orchestrator is the successor to the Windows Orchestrator. This Orchestrator Extension plugin only works with the Universal Orchestrator and does not work with the Windows Orchestrator.
+
 
 
 
