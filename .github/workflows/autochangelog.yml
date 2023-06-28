@@ -1,0 +1,48 @@
+#name: Auto Changelog
+#on:
+#  push:
+#    branches:
+#      - main
+#      - release*
+#      - pan_feedback
+##name: autochangelog
+##
+##on:
+##  repository_dispatch:
+##    types: [autochangelog]
+#
+#jobs:
+#  push:
+#    name: Push Container
+#    runs-on: ubuntu-latest
+#    steps:
+#      - name: Checkout Code
+#        uses: actions/checkout@v2
+#        with:
+#          fetch-depth: '0'
+#      - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
+#      - name: autochangelog-action
+#        id: ac
+#        uses: rubenfiszel/autochangelog-action@v0.16.0
+#        with:
+#          changelog_file: './CHANGELOG.md'
+#          manifest_file: './manifest.yaml'
+#          dry_run: false
+#          issues_url_prefix: 'https://github.com/org/repo/issues/'
+#          tag_prefix: 'v'
+#      - name: Create Pull Request
+#        id: cpr
+#        uses: peter-evans/create-pull-request@v2
+#        with:
+#          token: ${{ secrets.GITHUB_TOKEN }}
+#          commit-message: 'Update changelog and manifest'
+#          title: 'ci: release ${{ steps.ac.outputs.version }}'
+#          body: |
+#            Release [${{ steps.ac.outputs.version }}](https://github.com/org/repo/releases/tag/v${{ steps.ac.outputs.version }})
+#          labels: autorelease
+#          branch: automatic-release-prs
+#          reviewers: your-reviewers-list
+#      - name: Check outputs
+#        run: |
+#          echo "Pull Request Number - ${{ env.PULL_REQUEST_NUMBER }}"
+#          echo "Pull Request Number - ${{ steps.cpr.outputs.pr_number }}"
