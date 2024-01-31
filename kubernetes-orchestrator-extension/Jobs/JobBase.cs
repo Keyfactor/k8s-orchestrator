@@ -603,6 +603,19 @@ public abstract class JobBase
             }
             Logger.LogTrace("ServerUsername: " + ServerUsername);
         }
+        else
+        {
+            // check is username is json string and attempt to pam resolve
+            if (ServerUsername.StartsWith('{') && ServerUsername.EndsWith('}'))
+            {
+                Logger.LogDebug("ServerUsername is a JSON string. Attempting to resolve ServerUsername from store properties or PAM provider.");
+                var pamServerUsername = (string)ResolvePamField("ServerUsername", ServerUsername);
+                if (!string.IsNullOrEmpty(pamServerUsername))
+                {
+                    ServerUsername = pamServerUsername;
+                }
+            }
+        }
         if (string.IsNullOrEmpty(ServerPassword))
         {
             Logger.LogDebug("ServerPassword is empty.");
@@ -627,6 +640,20 @@ public abstract class JobBase
             }
 
         }
+        else
+        {
+            // check that password is json and is not a kubeconfig
+            if (ServerPassword.StartsWith('{') && ServerPassword.EndsWith('}') && !ServerPassword.Contains("apiVersion"))
+            {
+                Logger.LogDebug("ServerPassword is a JSON string. Attempting to resolve ServerPassword from store properties or PAM provider.");
+                var pamServerPassword = (string)ResolvePamField("ServerPassword", ServerPassword);
+                if (!string.IsNullOrEmpty(pamServerPassword))
+                {
+                    ServerPassword = pamServerPassword;
+                }
+                // Logger.LogTrace("ServerPassword: " + ServerPassword);
+            }
+        }
         if (string.IsNullOrEmpty(StorePassword))
         {
             Logger.LogDebug("StorePassword is empty.");
@@ -650,6 +677,20 @@ public abstract class JobBase
                 throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
             }
 
+        }
+        else
+        {
+            // check that password is json and is not a kubeconfig
+            if (StorePassword.StartsWith('{') && StorePassword.EndsWith('}') && !StorePassword.Contains("apiVersion"))
+            {
+                Logger.LogDebug("StorePassword is a JSON string. Attempting to resolve StorePassword from store properties or PAM provider.");
+                var pamStorePassword = (string)ResolvePamField("StorePassword", StorePassword);
+                if (!string.IsNullOrEmpty(pamStorePassword))
+                {
+                    StorePassword = pamStorePassword;
+                }
+                // Logger.LogTrace("StorePassword: " + StorePassword);
+            }
         }
         // var storePassword = ResolvePamField("Store Password", storeProperties.CertificateStoreDetails.StorePassword);
         //
