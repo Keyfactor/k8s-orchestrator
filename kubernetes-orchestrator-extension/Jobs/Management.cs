@@ -26,7 +26,7 @@ public class Management : JobBase, IManagementJobExtension
 {
     public Management(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
 
     //Job Entry Point
