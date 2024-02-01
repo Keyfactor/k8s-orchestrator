@@ -28,7 +28,7 @@ public class Inventory : JobBase, IInventoryJobExtension
 {
     public Inventory(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)

@@ -21,7 +21,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 {
     public Discovery(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
     //Job Entry Point
     public JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)
