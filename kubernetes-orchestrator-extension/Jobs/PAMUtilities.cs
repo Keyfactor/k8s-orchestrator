@@ -10,11 +10,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S;
 
-class PamUtilities
+class PAMUtilities
 {
-    internal static string ResolvePamField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
+    internal static string ResolvePAMField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
     {
         logger.LogDebug($"Attempting to resolve PAM eligible field {name} with key {key}");
-        return resolver.Resolve(key);
+        return string.IsNullOrEmpty(key) ? key : resolver.Resolve(key);
     }
 }

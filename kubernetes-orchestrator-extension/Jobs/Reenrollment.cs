@@ -25,7 +25,7 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
 {
     public Reenrollment(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
     //Job Entry Point
     public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
