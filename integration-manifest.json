@@ -20,7 +20,7 @@
   ],
   "update_catalog": true,
   "support_level": "kf-supported",
-  "release_dir": "k8s-orchestrator\\bin\\Release",
+  "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
   "about": {
     "orchestrator": {
       "keyfactor_platform_version": "10.x",
