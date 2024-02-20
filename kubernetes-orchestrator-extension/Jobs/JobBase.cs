@@ -1,4 +1,4 @@
-// Copyright 2023 Keyfactor
+// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -586,95 +586,95 @@ public abstract class JobBase
 
         //check if storeProperties contains ServerUsername key
 
-        if (!string.IsNullOrEmpty(ServerUsername))
+       
+        Logger.LogInformation("Attempting to resolve ServerUsername from store properties or PAM provider.");
+        var pamServerUsername = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
+        if (!string.IsNullOrEmpty(pamServerUsername))
         {
-            var pamServerUsername = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
-            if (!string.IsNullOrEmpty(pamServerUsername))
-            {
-                ServerUsername = pamServerUsername;
-            }
-            else
-            {
-                pamServerUsername = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
-                if (!string.IsNullOrEmpty(pamServerUsername))
-                {
-                    ServerUsername = pamServerUsername;
-                }
-            }
+            Logger.LogInformation("ServerUsername resolved from PAM provider. Setting ServerUsername to resolved value.");
+            Logger.LogTrace("PAMServerUsername: " + pamServerUsername);
+            ServerUsername = pamServerUsername;
         }
         else
         {
+            Logger.LogInformation("ServerUsername not resolved from PAM provider. Attempting to resolve Server Username from store properties.");
+            pamServerUsername = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
+            if (!string.IsNullOrEmpty(pamServerUsername))
+            {
+                Logger.LogInformation("ServerUsername resolved from store properties. Setting ServerUsername to resolved value.");
+                Logger.LogTrace("PAMServerUsername: " + pamServerUsername);
+                ServerUsername = pamServerUsername;
+            }
+        }
+        
+        if (string.IsNullOrEmpty(ServerUsername))
+        {
+            Logger.LogInformation("ServerUsername is empty. Setting ServerUsername to default value.");
             ServerUsername = "kubeconfig";
         }
         
         // Check if ServerPassword is empty and resolve from store properties or PAM provider
-        if (!string.IsNullOrEmpty(ServerPassword))
+       
+        try
         {
-            try
+            Logger.LogInformation("Attempting to resolve ServerPassword from store properties or PAM provider.");
+            var pamServerPassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
+            if (!string.IsNullOrEmpty(pamServerPassword))
             {
-                var pamServerPassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
+                Logger.LogInformation("ServerPassword resolved from PAM provider. Setting ServerPassword to resolved value.");
+                // Logger.LogTrace("PAMServerPassword: " + pamServerPassword);
+                ServerPassword = pamServerPassword;
+            }
+            else
+            {
+                Logger.LogInformation("ServerPassword not resolved from PAM provider. Attempting to resolve Server Password from store properties.");
+                pamServerPassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
                 if (!string.IsNullOrEmpty(pamServerPassword))
                 {
+                    Logger.LogInformation("ServerPassword resolved from store properties. Setting ServerPassword to resolved value.");
+                    // Logger.LogTrace("PAMServerPassword: " + pamServerPassword);
                     ServerPassword = pamServerPassword;
                 }
-                else
-                {
-                    pamServerPassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
-                    if (!string.IsNullOrEmpty(pamServerPassword))
-                    {
-                        ServerPassword = pamServerPassword;
-                    }
-                    else
-                    {
-                        pamServerPassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
-                        if (!string.IsNullOrEmpty(pamServerPassword))
-                        {
-                            ServerPassword = pamServerPassword;
-                        }
-                    }
-                }
             }
-            catch (Exception e)
-            {
-                Logger.LogError("Unable to resolve ServerPassword from store properties or PAM provider, defaulting to empty string.");
-                ServerPassword = "";
-                Logger.LogError(e.Message);
-                Logger.LogTrace(e.ToString());
-                Logger.LogTrace(e.StackTrace);
-                throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
-            }
-        } else {
-            Logger.LogError("Unable to resolve ServerPassword from store properties or PAM provider, defaulting to empty string.");
-            throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
         }
-        
-        if (!string.IsNullOrEmpty(StorePassword))
+        catch (Exception e)
         {
-            try
+            Logger.LogError("Unable to resolve ServerPassword from store properties or PAM provider, defaulting to empty string.");
+            ServerPassword = "";
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            // throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
+        }
+        // } else {
+        //     Logger.LogError("Unable to resolve ServerPassword from store properties or PAM provider, defaulting to empty string.");
+        //     throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
+        // }
+        
+        try
+        {
+            var pamStorePassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
+            if (!string.IsNullOrEmpty(pamStorePassword))
             {
-                var pamStorePassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
+                StorePassword = pamStorePassword;
+            }
+            else
+            {
+                pamStorePassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
                 if (!string.IsNullOrEmpty(pamStorePassword))
                 {
                     StorePassword = pamStorePassword;
                 }
-                else
-                {
-                    pamStorePassword = (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
-                    if (!string.IsNullOrEmpty(pamStorePassword))
-                    {
-                        StorePassword = pamStorePassword;
-                    }
-                }
             }
-            catch (Exception e)
-            {
-                Logger.LogError("Unable to resolve StorePassword from store properties or PAM provider, defaulting to empty string.");
-                StorePassword = "";
-                Logger.LogError(e.Message);
-                Logger.LogTrace(e.ToString());
-                Logger.LogTrace(e.StackTrace);
-                throw new ConfigurationException("Invalid configuration. StorePassword not provided or is invalid.");
-            }
+        }
+        catch (Exception e)
+        {
+            Logger.LogError("Unable to resolve StorePassword from store properties or PAM provider, defaulting to empty string.");
+            StorePassword = "";
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            // throw new ConfigurationException("Invalid configuration. StorePassword not provided or is invalid.");
         }
         
         if (ServerUsername == "kubeconfig" || string.IsNullOrEmpty(ServerUsername))

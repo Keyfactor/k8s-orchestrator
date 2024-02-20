@@ -20,7 +20,7 @@
   ],
   "update_catalog": true,
   "support_level": "kf-supported",
-  "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
+  "release_dir": "k8s-orchestrator\\bin\\Release",
   "about": {
     "orchestrator": {
       "keyfactor_platform_version": "10.x",
@@ -136,6 +136,20 @@
           },
           "Properties": [
             {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
+            },
+            {
               "Name": "ServerUsername",
               "DisplayName": "Server Username",
               "Type": "Secret",
@@ -245,6 +259,20 @@
               "Required": false
             },
             {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
+            },
+            {
               "Name": "ServerUsername",
               "DisplayName": "Server Username",
               "Type": "Secret",
@@ -306,6 +334,20 @@
               "Required": false
             },
             {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
+            },
+            {
               "Name": "ServerUsername",
               "DisplayName": "Server Username",
               "Type": "Secret",
@@ -359,6 +401,14 @@
           },
           "Properties": [
             {
+              "Name": "KubeSecretType",
+              "DisplayName": "Kube Secret Type",
+              "Type": "String",
+              "DependsOn": "",
+              "DefaultValue": "pkcs12",
+              "Required": true
+            },
+            {
               "Name": "KubeSecretKey",
               "DisplayName": "Kube Secret Key",
               "Type": "String",
@@ -399,6 +449,20 @@
               "Required": false
             },
             {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
+            },
+            {
               "Name": "ServerUsername",
               "DisplayName": "Server Username",
               "Type": "Secret",
@@ -420,14 +484,6 @@
               "Type": "Bool",
               "DependsOn": "",
               "DefaultValue": "true",
-              "Required": true
-            },
-            {
-              "Name": "KubeSecretType",
-              "DisplayName": "Kube Secret Type",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "pkcs12",
               "Required": true
             },
             {
@@ -490,6 +546,20 @@
               "DependsOn": "",
               "DefaultValue": "secret",
               "Required": true
+            },
+            {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
             },
             {
               "Name": "ServerUsername",
@@ -567,6 +637,20 @@
               "DependsOn": "",
               "DefaultValue": "tls_secret",
               "Required": true
+            },
+            {
+              "Name": "SeparateChain",
+              "DisplayName": "Separate Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "false",
+              "Required": false
+            },
+            {
+              "Name": "IncludeCertChain",
+              "DisplayName": "Include Certificate Chain",
+              "Type": "Bool",
+              "DefaultValue": "true",
+              "Required": false
             },
             {
               "Name": "ServerUsername",

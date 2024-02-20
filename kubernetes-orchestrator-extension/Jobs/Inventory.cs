@@ -1,4 +1,4 @@
-﻿// Copyright 2023 Keyfactor
+﻿// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,7 +19,6 @@ using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
 
-
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
 // The Inventory class implements IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
@@ -30,6 +29,7 @@ public class Inventory : JobBase, IInventoryJobExtension
     {
         _resolver = resolver;
     }
+
     //Job Entry Point
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
     {
@@ -45,73 +45,86 @@ public class Inventory : JobBase, IInventoryJobExtension
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-
-        InitializeStore(config);
-        Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
-        Logger.LogInformation($"Inventory for store type: {config.Capability}");
-
-        Logger.LogDebug($"Server: {KubeClient.GetHost()}");
-        Logger.LogDebug($"Store Path: {StorePath}");
-        Logger.LogDebug("KubeSecretType: " + KubeSecretType);
-        Logger.LogDebug("KubeSecretName: " + KubeSecretName);
-        Logger.LogDebug("KubeNamespace: " + KubeNamespace);
-        Logger.LogDebug("Host: " + KubeClient.GetHost());
-
-        Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
         try
         {
+            InitializeStore(config);
+            Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
+            Logger.LogInformation($"Inventory for store type: {config.Capability}");
+
+            Logger.LogDebug($"Server: {KubeClient.GetHost()}");
+            Logger.LogDebug($"Store Path: {StorePath}");
+            Logger.LogDebug("KubeSecretType: " + KubeSecretType);
+            Logger.LogDebug("KubeSecretName: " + KubeSecretName);
+            Logger.LogDebug("KubeNamespace: " + KubeNamespace);
+            Logger.LogDebug("Host: " + KubeClient.GetHost());
+
+            Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
+            
             var hasPrivateKey = false;
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
-            if (Capability.Contains("Cluster"))
-            {
-                KubeSecretType = "cluster";
-            }
-            if (Capability.Contains("NS"))
-            {
-                KubeSecretType = "namespace";
-            }
+            if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
+            if (Capability.Contains("NS")) KubeSecretType = "namespace";
 
             var allowedKeys = new List<string>();
             if (!string.IsNullOrEmpty(CertificateDataFieldName))
-            {
                 allowedKeys = CertificateDataFieldName.Split(',').ToList();
-            }
 
             switch (KubeSecretType.ToLower())
             {
                 case "secret":
                 case "secrets":
                 case "opaque":
-                    Logger.LogInformation("Inventorying opaque secrets using the following allowed keys: {Keys}", OpaqueAllowedKeys?.ToString());
-                    try {
+                    Logger.LogInformation("Inventorying opaque secrets using the following allowed keys: {Keys}",
+                        OpaqueAllowedKeys?.ToString());
+                    try
+                    {
                         var opaqueInventory = HandleTlsSecret(config.JobHistoryId);
-                        Logger.LogDebug("Returned inventory count: {Count}",opaqueInventory.Count.ToString());
+                        Logger.LogDebug("Returned inventory count: {Count}", opaqueInventory.Count.ToString());
                         return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, true);
                     }
                     catch (StoreNotFoundException)
                     {
-                        Logger.LogWarning("Unable to locate Opaque secret {Namespace}/{Name}. Sending empty inventory.", KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>() {}, config.JobHistoryId, submitInventory, false, "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
+                        Logger.LogWarning("Unable to locate Opaque secret {Namespace}/{Name}. Sending empty inventory.",
+                            KubeNamespace, KubeSecretName);
+                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
+                            "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
+                    } catch (Exception ex)
+                    {
+                        Logger.LogError("Inventory failed with exception: " + ex.Message);
+                        Logger.LogTrace(ex.Message);
+                        Logger.LogTrace(ex.StackTrace);
+                        //Status: 2=Success, 3=Warning, 4=Error
+                        Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId +
+                                              " with failure.");
+                        return new JobResult
+                        {
+                            Result = OrchestratorJobStatusJobResult.Failure,
+                            JobHistoryId = config.JobHistoryId,
+                            FailureMessage = ex.Message
+                        };
                     }
-                    
+
                 case "tls_secret":
                 case "tls":
                 case "tlssecret":
                 case "tls_secrets":
-                    Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}" , TLSAllowedKeys?.ToString());
+                    Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
+                        TLSAllowedKeys?.ToString());
                     try
                     {
                         var tlsCertsInv = HandleTlsSecret(config.JobHistoryId);
-                        Logger.LogDebug("Returned inventory count: {Count}",tlsCertsInv.Count.ToString());
+                        Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
                         return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
                     }
                     catch (StoreNotFoundException ex)
                     {
-                        Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory.", KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>() {}, config.JobHistoryId, submitInventory, false, "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
+                        Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory.",
+                            KubeNamespace, KubeSecretName);
+                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
+                            "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
                     }
-                    
+
                 case "certificate":
                 case "cert":
                 case "csr":
@@ -127,18 +140,18 @@ public class Inventory : JobBase, IInventoryJobExtension
                     allowedKeys.AddRange(Pkcs12AllowedKeys);
                     Logger.LogInformation("Inventorying PKCS12 using the following allowed keys: {Keys}", allowedKeys);
                     var pkcs12Inventory = HandlePkcs12Secret(config, allowedKeys);
-                    Logger.LogDebug("Returned inventory count: {Count}",pkcs12Inventory.Count.ToString());
+                    Logger.LogDebug("Returned inventory count: {Count}", pkcs12Inventory.Count.ToString());
                     return PushInventory(pkcs12Inventory, config.JobHistoryId, submitInventory, true);
                 case "jks":
                     allowedKeys.AddRange(JksAllowedKeys);
                     Logger.LogInformation("Inventorying JKS using the following allowed keys: {Keys}", allowedKeys);
                     var jksInventory = HandleJKSSecret(config, allowedKeys);
-                    Logger.LogDebug("Returned inventory count: {Count}",jksInventory.Count.ToString());
+                    Logger.LogDebug("Returned inventory count: {Count}", jksInventory.Count.ToString());
                     return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
 
                 case "cluster":
-                    var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all", false);
-                    var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all", false);
+                    var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all");
+                    var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all");
                     var errors = new List<string>();
 
                     var clusterInventoryDict = new Dictionary<string, List<string>>();
@@ -162,10 +175,10 @@ public class Inventory : JobBase, IInventoryJobExtension
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message + "\n\t" + ex.StackTrace);
+                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message +
+                                            "\n\t" + ex.StackTrace);
                             errors.Add(ex.Message);
                         }
-
                     }
 
                     foreach (var tlsSecret in clusterTlsSecrets)
@@ -184,23 +197,23 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            clusterInventoryDict[StorePath] = tlsObj;  
+                            clusterInventoryDict[StorePath] = tlsObj;
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + tlsSecret + " - " + ex.Message + "\n\t" + ex.StackTrace);
+                            Logger.LogError("Error processing TLS Secret: " + tlsSecret + " - " + ex.Message + "\n\t" +
+                                            ex.StackTrace);
                             errors.Add(ex.Message);
                         }
-
                     }
 
                     return PushInventory(clusterInventoryDict, config.JobHistoryId, submitInventory, true);
                 case "namespace":
-                    var namespaceOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", KubeNamespace, false);
-                    var namespaceTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", KubeNamespace, false);
+                    var namespaceOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", KubeNamespace);
+                    var namespaceTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", KubeNamespace);
                     var namespaceErrors = new List<string>();
 
-                    Dictionary<string, string> namespaceInventoryDict = new Dictionary<string, string>();
+                    var namespaceInventoryDict = new Dictionary<string, string>();
                     foreach (var opaqueSecret in namespaceOpaqueSecrets)
                     {
                         KubeSecretName = "";
@@ -218,14 +231,14 @@ public class Inventory : JobBase, IInventoryJobExtension
                             StorePath = string.Join("/", storePathSplitList);
 
                             var opaqueObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = opaqueObj[0];    
+                            namespaceInventoryDict[StorePath] = opaqueObj[0];
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message + "\n\t" + ex.StackTrace);
+                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message +
+                                            "\n\t" + ex.StackTrace);
                             namespaceErrors.Add(ex.Message);
                         }
-
                     }
 
                     foreach (var tlsSecret in namespaceTlsSecrets)
@@ -247,14 +260,14 @@ public class Inventory : JobBase, IInventoryJobExtension
 
 
                             var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = tlsObj[0];  
+                            namespaceInventoryDict[StorePath] = tlsObj[0];
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + tlsSecret + " - " + ex.Message + "\n\t" + ex.StackTrace);
+                            Logger.LogError("Error processing TLS Secret: " + tlsSecret + " - " + ex.Message + "\n\t" +
+                                            ex.StackTrace);
                             namespaceErrors.Add(ex.Message);
                         }
-
                     }
 
                     return PushInventory(namespaceInventoryDict, config.JobHistoryId, submitInventory, true);
@@ -263,7 +276,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                     Logger.LogError("Inventory failed with exception: " + KubeSecretType + " not supported.");
                     var errorMsg = $"{KubeSecretType} not supported.";
                     Logger.LogError(errorMsg);
-                    Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
+                    Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId +
+                                          " with failure.");
                     return new JobResult
                     {
                         Result = OrchestratorJobStatusJobResult.Failure,
@@ -278,15 +292,17 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace(ex.ToString());
             Logger.LogTrace(ex.StackTrace);
             //Status: 2=Success, 3=Warning, 4=Error
-            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId + " with failure.");
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId +
+                                  " with failure.");
             return new JobResult
             {
                 Result = OrchestratorJobStatusJobResult.Failure,
                 JobHistoryId = config.JobHistoryId,
-                FailureMessage = ex.ToString()
+                FailureMessage = ex.Message
             };
         }
     }
+
     private Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config, List<string> allowedKeys)
     {
         Logger.LogDebug("Enter HandleJKSSecret()");
@@ -294,15 +310,17 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
-        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
-        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "","", allowedKeys);
+        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " +
+                        KubeNamespace);
+        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
 
         var jksInventoryDict = new Dictionary<string, List<string>>();
         // iterate through the keys in the secret and add them to the jks store
         Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
-            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " + KubeNamespace + " and key " + keyName);
+            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
+                            KubeNamespace + " and key " + keyName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
             var passwordHash = GetSHA256Hash(keyPassword);
             Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
@@ -332,13 +350,13 @@ public class Inventory : JobBase, IInventoryJobExtension
             foreach (var certAlias in jStoreDs.Aliases)
             {
                 if (certAliasLookup.TryGetValue(certAlias, out var certAliasSubject))
-                {
                     if (certAliasSubject == "skip")
                     {
-                        Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'", certAlias, certAliasSubject);
-                        continue;    
+                        Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'",
+                            certAlias, certAliasSubject);
+                        continue;
                     }
-                }
+
                 Logger.LogTrace("Certificate alias: {Alias}", certAlias);
                 var certChainList = new List<string>();
 
@@ -347,7 +365,7 @@ public class Inventory : JobBase, IInventoryJobExtension
 
                 if (certChain != null)
                 {
-                    certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();    
+                    certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();
                     if (sourceIsPkcs12 && certChain.Length > 0)
                     {
                         // This is a PKCS12 store that was created as a JKS so we need to check that the aliases aren't the same as the cert chain
@@ -359,9 +377,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         storeAliases.Remove(certAlias);
                         // Iterate though the aliases and add them to the lookup as 'skip' if they are in the chain
                         foreach (var alias in storeAliases.Where(alias => certChainAliases.Contains(alias)))
-                        {
                             certAliasLookup[alias] = "skip";
-                        }
                     }
                 }
                 else
@@ -372,10 +388,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 var fullAlias = keyAlias + "/" + certAlias;
                 Logger.LogTrace("Full alias: {Alias}", fullAlias);
                 //check if the alias is a private key
-                if (jStoreDs.IsKeyEntry(certAlias))
-                {
-                    hasPrivateKeyJks = true;
-                }
+                if (jStoreDs.IsKeyEntry(certAlias)) hasPrivateKeyJks = true;
                 var pKey = jStoreDs.GetKey(certAlias);
                 if (pKey != null)
                 {
@@ -388,7 +401,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 if (certChain != null)
                 {
                     Logger.LogDebug("Certificate chain found for alias '{Alias}'", certAlias);
-                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain", certAlias);
+                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain",
+                        certAlias);
                     foreach (var cert in certChain)
                     {
                         certChainPem = new StringBuilder();
@@ -397,6 +411,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         certChainPem.AppendLine("-----END CERTIFICATE-----");
                         certChainList.Add(certChainPem.ToString());
                     }
+
                     Logger.LogTrace("Certificate chain for alias '{Alias}': {Chain}", certAlias, certChainList);
                 }
 
@@ -418,14 +433,12 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certChainPem.AppendLine("-----END CERTIFICATE-----");
                     certChainList.Add(certChainPem.ToString());
                 }
+
                 Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
-                if (certAliasLookup[certAlias] != "skip")
-                {
-                    jksInventoryDict[fullAlias] = certChainList;    
-                }
-                
+                if (certAliasLookup[certAlias] != "skip") jksInventoryDict[fullAlias] = certChainList;
             }
         }
+
         return jksInventoryDict;
     }
 
@@ -475,7 +488,8 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false, string jobMessage = null)
+    private JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory,
+        bool hasPrivateKey = false, string jobMessage = null)
     {
         Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
         Logger.LogTrace("submitInventory: " + submitInventory);
@@ -488,9 +502,11 @@ public class Inventory : JobBase, IInventoryJobExtension
             string alias;
             if (string.IsNullOrEmpty(cert))
             {
-                Logger.LogWarning($"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
+                Logger.LogWarning(
+                    $"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
                 continue;
             }
+
             try
             {
                 Logger.LogDebug("Attempting to load cert as X509Certificate2...");
@@ -507,7 +523,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 Logger.LogError(e.Message);
                 Logger.LogTrace(e.ToString());
                 Logger.LogTrace(e.StackTrace);
-                Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
+                Logger.LogInformation(
+                    "End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
                 return FailJob(e.Message, jobId);
             }
 
@@ -526,6 +543,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             });
             break;
         }
+
         try
         {
             Logger.LogDebug("Submitting inventoryItems to Keyfactor Command...");
@@ -548,25 +566,28 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult PushInventory(Dictionary<string, string> certsList, long jobId, SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
+    private JobResult PushInventory(Dictionary<string, string> certsList, long jobId,
+        SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
         Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
         Logger.LogTrace("submitInventory: " + submitInventory);
         Logger.LogTrace("certsList: " + certsList);
         var inventoryItems = new List<CurrentInventoryItem>();
-        foreach (KeyValuePair<string, string> certObj in certsList)
+        foreach (var certObj in certsList)
         {
             var cert = certObj.Value;
             Logger.LogTrace($"Cert:\n{cert}");
             // load as x509
-            string alias = certObj.Key;
+            var alias = certObj.Key;
             Logger.LogDebug("Cert alias: " + alias);
 
             if (string.IsNullOrEmpty(cert))
             {
-                Logger.LogWarning($"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
+                Logger.LogWarning(
+                    $"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
                 continue;
             }
+
             try
             {
                 Logger.LogDebug("Attempting to load cert as X509Certificate2...");
@@ -574,14 +595,14 @@ public class Inventory : JobBase, IInventoryJobExtension
                     ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
                     : new X509Certificate2(Convert.FromBase64String(cert));
                 Logger.LogTrace("Cert loaded as X509Certificate2: " + certFormatted);
-
             }
             catch (Exception e)
             {
                 Logger.LogError(e.Message);
                 Logger.LogTrace(e.ToString());
                 Logger.LogTrace(e.StackTrace);
-                Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
+                Logger.LogInformation(
+                    "End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
                 // return FailJob(e.Message, jobId);
             }
 
@@ -600,6 +621,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
             });
         }
+
         try
         {
             Logger.LogDebug("Submitting inventoryItems to Keyfactor Command...");
@@ -622,7 +644,8 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult PushInventory(Dictionary<string, List<string>> certsList, long jobId, SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
+    private JobResult PushInventory(Dictionary<string, List<string>> certsList, long jobId,
+        SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
         Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
         Logger.LogTrace("submitInventory: " + submitInventory);
@@ -634,12 +657,13 @@ public class Inventory : JobBase, IInventoryJobExtension
 
 
             // load as x509
-            string alias = certObj.Key;
+            var alias = certObj.Key;
             Logger.LogDebug("Cert alias: " + alias);
 
             if (certs.Count == 0)
             {
-                Logger.LogWarning($"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
+                Logger.LogWarning(
+                    $"Kubernetes returned an empty inventory for store {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}.");
                 continue;
             }
 
@@ -657,6 +681,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                     certs //Array of single X509 certificates in Base64 string format (certificates if chain, single cert if not), something like:
             });
         }
+
         try
         {
             Logger.LogDebug("Submitting inventoryItems to Keyfactor Command...");
@@ -679,15 +704,13 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
-    private JobResult HandleOpaqueSecret(long jobId, SubmitInventoryUpdate submitInventory, string[] secretManagedKeys, string secretPath = "")
+    private JobResult HandleOpaqueSecret(long jobId, SubmitInventoryUpdate submitInventory, string[] secretManagedKeys,
+        string secretPath = "")
     {
         Logger.LogDebug("Inventory entering HandleOpaqueSecret for job id " + jobId + "...");
         const bool hasPrivateKey = true;
         //check if secretAllowedKeys is null or empty
-        if (secretManagedKeys == null || secretManagedKeys.Length == 0)
-        {
-            secretManagedKeys = new[] { "certificates" };
-        }
+        if (secretManagedKeys == null || secretManagedKeys.Length == 0) secretManagedKeys = new[] { "certificates" };
         Logger.LogTrace("secretManagedKeys: " + secretManagedKeys);
         Logger.LogDebug(
             $"Querying Kubernetes secrets of type '{KubeSecretType}' for {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}...");
@@ -722,9 +745,9 @@ public class Inventory : JobBase, IInventoryJobExtension
                 Logger.LogTrace("certsList: " + certsList);
                 // certsList.Concat(certificates.Split(CertChainSeparator));
             }
+
             Logger.LogInformation("Submitting inventoryItems to Keyfactor Command for job id " + jobId + "...");
             return PushInventory(certsList, jobId, submitInventory, hasPrivateKey);
-
         }
         catch (HttpOperationException e)
         {
@@ -774,13 +797,16 @@ public class Inventory : JobBase, IInventoryJobExtension
                 Logger.LogTrace("KubeNamespace: " + KubeNamespace);
                 if (KubeNamespace == KubeSecretName)
                 {
-                    Logger.LogWarning("KubeNamespace was equal to KubeSecretName.  Setting KubeNamespace to 'default' for job id " + jobId + "...");
+                    Logger.LogWarning(
+                        "KubeNamespace was equal to KubeSecretName.  Setting KubeNamespace to 'default' for job id " +
+                        jobId + "...");
                     KubeNamespace = "default";
                 }
             }
             else
             {
-                Logger.LogWarning("StorePath was null or empty.  Setting KubeNamespace to 'default' for job id " + jobId + "...");
+                Logger.LogWarning("StorePath was null or empty.  Setting KubeNamespace to 'default' for job id " +
+                                  jobId + "...");
                 KubeNamespace = "default";
             }
         }
@@ -805,7 +831,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             );
             Logger.LogDebug("KubeClient.GetCertificateStoreSecret() returned successfully.");
             Logger.LogTrace("certData: " + certData);
-            var certificatesBytes = certData.Data["tls.crt"]; 
+            var certificatesBytes = certData.Data["tls.crt"];
             Logger.LogTrace("certificatesBytes: " + certificatesBytes);
             var privateKeyBytes = certData.Data["tls.key"];
             byte[] caBytes = null;
@@ -816,7 +842,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certObj = KubeClient.ReadPemCertificate(certPem);
             if (certObj == null)
             {
-                Logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                Logger.LogDebug(
+                    "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
                 // Attempt to read data as DER
                 certObj = KubeClient.ReadDerCertificate(certPem);
                 if (certObj != null)
@@ -828,6 +855,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 {
                     certPem = KubeClient.ConvertToPem(certObj);
                 }
+
                 Logger.LogTrace("certPem: " + certPem);
             }
             else
@@ -835,10 +863,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 certPem = KubeClient.ConvertToPem(certObj);
                 Logger.LogTrace("certPem: " + certPem);
             }
-            if (!string.IsNullOrEmpty(certPem))
-            {
-                certsList.Add(certPem);
-            }
+
+            if (!string.IsNullOrEmpty(certPem)) certsList.Add(certPem);
 
             var caPem = "";
             if (certData.Data.TryGetValue("ca.crt", out var value))
@@ -848,7 +874,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 var caObj = KubeClient.ReadPemCertificate(Encoding.UTF8.GetString(caBytes));
                 if (caObj == null)
                 {
-                    Logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                    Logger.LogDebug(
+                        "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
                     // Attempt to read data as DER
                     caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(caBytes));
                     if (caObj != null)
@@ -863,10 +890,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 }
 
                 Logger.LogTrace("caPem: " + caPem);
-                if (!string.IsNullOrEmpty(caPem))
-                {
-                    certsList.Add(caPem);
-                }
+                if (!string.IsNullOrEmpty(caPem)) certsList.Add(caPem);
             }
             else
             {
@@ -883,10 +907,12 @@ public class Inventory : JobBase, IInventoryJobExtension
                     }
                 }
             }
+
             // Logger.LogTrace("privateKeyBytes: " + privateKeyBytes);
             if (privateKeyBytes == null)
             {
-                Logger.LogDebug("privateKeyBytes was null.  Setting hasPrivateKey to false for job id " + jobId + "...");
+                Logger.LogDebug("privateKeyBytes was null.  Setting hasPrivateKey to false for job id " + jobId +
+                                "...");
                 hasPrivateKey = false;
             }
 
@@ -917,7 +943,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             throw new Exception(certDataErrorMsg);
         }
     }
-    
+
     private Dictionary<string, List<string>> HandlePkcs12Secret(JobConfiguration config, List<string> allowedKeys)
     {
         var hasPrivateKey = false;
@@ -937,15 +963,9 @@ public class Inventory : JobBase, IInventoryJobExtension
                 var certChainPem = new StringBuilder();
                 var fullAlias = keyName + "/" + certAlias;
                 //check if the alias is a private key
-                if (pStoreDs.IsKeyEntry(certAlias))
-                {
-                    hasPrivateKey = true;
-                }
+                if (pStoreDs.IsKeyEntry(certAlias)) hasPrivateKey = true;
                 var pKey = pStoreDs.GetKey(certAlias);
-                if (pKey != null)
-                {
-                    hasPrivateKey = true;
-                }
+                if (pKey != null) hasPrivateKey = true;
 
                 // if (certChain == null)
                 // {
@@ -961,7 +981,6 @@ public class Inventory : JobBase, IInventoryJobExtension
                         certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
                         certChainPem.AppendLine("-----END CERTIFICATE-----");
                         certChainList.Add(certChainPem.ToString());
-
                     }
 
                 if (certChainList.Count != 0)
@@ -988,6 +1007,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 pkcs12InventoryDict[fullAlias] = certChainList;
             }
         }
+
         return pkcs12InventoryDict;
     }
 }
