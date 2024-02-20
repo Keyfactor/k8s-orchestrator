@@ -81,30 +81,6 @@
               "DependsOn": "",
               "DefaultValue": "cert",
               "Required": true
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
@@ -148,30 +124,6 @@
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
@@ -231,8 +183,8 @@
               "DisplayName": "CertificateDataFieldName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
+              "DefaultValue": ".jks",
+              "Required": true
             },
             {
               "Name": "PasswordFieldName",
@@ -256,20 +208,6 @@
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "SeparateChain",
-              "DisplayName": "Separate Certificate Chain",
-              "Type": "Bool",
-              "DefaultValue": "false",
-              "Required": false
-            },
-            {
-              "Name": "IncludeCertChain",
-              "DisplayName": "Include Certificate Chain",
-              "Type": "Bool",
-              "DefaultValue": "true",
               "Required": false
             },
             {
@@ -346,30 +284,6 @@
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
@@ -417,6 +331,14 @@
               "Required": false
             },
             {
+              "Name": "CertificateDataFieldName",
+              "DisplayName": "CertificateDataFieldName",
+              "Type": "String",
+              "DependsOn": "",
+              "DefaultValue": ".p12",
+              "Required": true
+            },
+            {
               "Name": "PasswordFieldName",
               "DisplayName": "Password Field Name",
               "Type": "String",
@@ -447,44 +369,6 @@
               "DependsOn": "",
               "DefaultValue": null,
               "Required": false
-            },
-            {
-              "Name": "SeparateChain",
-              "DisplayName": "Separate Certificate Chain",
-              "Type": "Bool",
-              "DefaultValue": "false",
-              "Required": false
-            },
-            {
-              "Name": "IncludeCertChain",
-              "DisplayName": "Include Certificate Chain",
-              "Type": "Bool",
-              "DefaultValue": "true",
-              "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             },
             {
               "Name": "StorePasswordPath",
@@ -560,30 +444,6 @@
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
@@ -651,30 +511,6 @@
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
