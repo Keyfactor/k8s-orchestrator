@@ -1,3 +1,8 @@
+# 1.1.2
+
+## Fixes
+- fix(pam): Fixed issue with 'remote' PAM not being able to execute unless the input was empty, making 'remote' PAM impossible. 
+
 # 1.1.1
 
 ## Features
