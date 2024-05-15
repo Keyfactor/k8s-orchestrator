@@ -1,3 +1,21 @@
+# Keyfactor Command K8S Orchestrator Demo
+This repo contains Terraform code to demonstrate the use of the Keyfactor Command K8S Orchestrator extension to manage 
+certificates in a Kubernetes cluster.
+
+## Prerequisites
+- [Keyfactor Command](https://www.keyfactor.com/products/command/) 10.0 or later
+- [Keyfactor Command Universal Orchestrator](https://software.keyfactor.com/Core-OnPrem/v10.5/Content/InstallingAgents/Introduction.htm)
+- [Keyfactor Command K8S Universal Orchestrator Extension](https://github.com/Keyfactor/k8s-orchestrator?tab=readme-ov-file#kubernetes-orchestrator-extension-installation)
+- [Kubernetes Cluster Credentials](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes)
+- [Terraform](https://www.terraform.io/downloads.html) 1.0 or later
+
+## Usage
+1. Clone the repository
+2. Update the `terraform.tfvars` file with the appropriate values
+3. Run `terraform init`
+4. Run `terraform apply`
+5. Run `terraform destroy` to remove the resources
+
 <!-- BEGIN_TF_DOCS -->
 ## Requirements
 
