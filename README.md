@@ -38,7 +38,7 @@ The Keyfactor Universal Orchestrator may be installed on either Windows or Linux
 |Supports Management Remove|&check; |&check; |
 |Supports Create Store|&check; |&check; |
 |Supports Discovery|&check; |&check; |
-|Supports Renrollment|  |  |
+|Supports Reenrollment|  |  |
 |Supports Inventory|&check; |&check; |
 
 
@@ -918,5 +918,8 @@ Here's what this looks like in the UI:
 
 ## License
 [Apache](https://apache.org/licenses/LICENSE-2.0)
+
+
+When creating cert store type manually, that store property names and entry parameter names are case sensitive
 
 
