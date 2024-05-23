@@ -1,4 +1,4 @@
-﻿// Copyright 2023 Keyfactor
+﻿// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -11,6 +11,7 @@ using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -21,7 +22,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 {
     public Discovery(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
     //Job Entry Point
     public JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)
@@ -39,29 +40,48 @@ public class Discovery : JobBase, IDiscoveryJobExtension
 
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-        InitializeStore(config);
-        Logger.LogInformation("Begin Discovery for K8S Orchestrator Extension for job " + config.JobId);
-        Logger.LogInformation($"Discovery for store type: {config.Capability}");
+        Logger = LogHandler.GetClassLogger(GetType());
+        Logger.LogInformation("Begin Discovery for K8S Orchestrator Extension for job {JobID}", config.JobId);
+        Logger.LogInformation("Discovery for store type: {Capability}", config.Capability);
+        try
+        {
+            Logger.LogDebug("Calling InitializeStore()");
+            InitializeStore(config);    
+            Logger.LogDebug("Store initialized successfully");
+        } catch (Exception ex)
+        {
+            Logger.LogError("Failed to initialize store: {Error}", ex.Message);
+            return FailJob("Failed to initialize store: " + ex.Message, config.JobHistoryId);
+        }
+        
+        
 
         var locations = new List<string>();
 
         KubeSvcCreds = ServerPassword;
-        KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+        Logger.LogDebug("Calling KubeCertificateManagerClient()");
+        KubeClient = new KubeCertificateManagerClient(KubeSvcCreds, config.UseSSL);
+        if (KubeClient == null)
+        {
+            Logger.LogError("Failed to create KubeCertificateManagerClient");
+            return FailJob("Failed to create KubeCertificateManagerClient", config.JobHistoryId);
+        }
         
-        var namespaces = config.JobProperties["dirs"].ToString()?.Split(',');
+        var namespaces = config.JobProperties["dirs"].ToString()?.Split(',') ?? Array.Empty<string>();
         if (namespaces is { Length: 0 })
         {
+            Logger.LogDebug("No namespaces provided, using `default` namespace");
             namespaces = new[] { "default" };
         }
-        Logger.LogDebug("Namespaces: " + string.Join(",", namespaces));
+        Logger.LogDebug("Namespaces: {Namespaces}", string.Join(",", namespaces));
 
-        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString()?.Split(',');
-        Logger.LogDebug("Ignored Namespaces: " + string.Join(",", ignoreNamespace));
+        var ignoreNamespace = config.JobProperties["ignoreddirs"].ToString()?.Split(',') ?? Array.Empty<string>();
+        Logger.LogDebug("Ignored Namespaces: {Namespaces}", string.Join(",", ignoreNamespace));
 
-        var secretAllowedKeys = config.JobProperties["patterns"].ToString()?.Split(',');
-        Logger.LogDebug("Secret Allowed Keys: " + string.Join(",", secretAllowedKeys));
+        var secretAllowedKeys = config.JobProperties["patterns"].ToString()?.Split(',') ?? Array.Empty<string>();
+        Logger.LogDebug("Secret Allowed Keys: {AllowedKeys}",string.Join(",", secretAllowedKeys));
 
-        Logger.LogTrace("Discovery entering switch block based on capability: " + config.Capability);
+        Logger.LogTrace("Discovery entering switch block based on capability {Capability}", config.Capability);
         try
         {
             //Code logic to:

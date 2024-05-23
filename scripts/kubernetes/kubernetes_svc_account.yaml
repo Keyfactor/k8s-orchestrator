@@ -3,15 +3,13 @@ kind: ConfigMap
 metadata:
   name: keyfactor-orchestrator-config
 data:
-  namespace: default
-  service_account: keyfactor-orchestrator-sa
+  namespace: "default"
+  service_account: "keyfactor-orchestrator-sa"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-
 metadata:
   name: keyfactor-orchestrator
-  
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -30,21 +28,17 @@ rules:
 ---
 apiVersion: v1
 kind: ServiceAccount
-
 metadata:
   name: keyfactor-orchestrator-sa
-  
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: keyfactor-orchestrator-sa-binding
-  
 roleRef:
   kind: ClusterRole
   name: keyfactor-orchestrator
   apiGroup: rbac.authorization.k8s.io
-  
 subjects:
   - kind: ServiceAccount
     name: keyfactor-orchestrator-sa
@@ -53,7 +47,7 @@ subjects:
 apiVersion: v1
 kind: Secret
 metadata:
-  name: keyfactor
+  name: keyfactor-orchestrator-sa
   annotations:
     kubernetes.io/service-account.name: keyfactor-orchestrator-sa
 type: kubernetes.io/service-account-token

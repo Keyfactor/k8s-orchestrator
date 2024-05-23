@@ -1,4 +1,4 @@
-﻿// Copyright 2023 Keyfactor
+﻿// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -8,13 +8,13 @@
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
-class PamUtilities
+class PAMUtilities
 {
-    internal static string ResolvePamField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
+    internal static string ResolvePAMField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
     {
-        logger.LogDebug($"Attempting to resolve PAM eligible field {name} with key {key}");
-        return resolver.Resolve(key);
+        logger.LogDebug("Attempting to resolve PAM eligible field {Name} with key {Key}", name, key);
+        return string.IsNullOrEmpty(key) ? key : resolver.Resolve(key);
     }
 }
