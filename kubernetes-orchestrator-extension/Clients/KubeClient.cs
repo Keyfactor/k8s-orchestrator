@@ -16,6 +16,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s;
 using k8s.Autorest;
+using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -37,14 +38,14 @@ public class KubeCertificateManagerClient
 {
     private readonly ILogger _logger;
 
-    public KubeCertificateManagerClient(string kubeconfig)
+    public KubeCertificateManagerClient(string kubeconfig, bool useSSL = true)
     {
         _logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod()?.DeclaringType);
         Client = GetKubeClient(kubeconfig);
         ConfigJson = kubeconfig;
         try
         {
-            ConfigObj = ParseKubeConfig(kubeconfig);
+            ConfigObj = ParseKubeConfig(kubeconfig, !useSSL); // invert useSSL to skip TLS verification
         }
         catch (Exception)
         {
@@ -63,10 +64,12 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entered GetClusterName()");
         try
         {
+            _logger.LogTrace("Returning cluster name from ConfigObj");
             return ConfigObj.Clusters.FirstOrDefault()?.Name;
         }
         catch (Exception)
         {
+            _logger.LogWarning("Error getting cluster name from ConfigObj attempting to return client base uri");
             return GetHost();
         }
     }
@@ -77,33 +80,48 @@ public class KubeCertificateManagerClient
         return Client.BaseUri.ToString();
     }
 
-    private K8SConfiguration ParseKubeConfig(string kubeconfig)
+    private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
         var k8SConfiguration = new K8SConfiguration();
-        // test if kubeconfig is base64 encoded
-        _logger.LogDebug("Testing if kubeconfig is base64 encoded");
+        
+        _logger.LogTrace("Checking if kubeconfig is null or empty");
+        if (string.IsNullOrEmpty(kubeconfig))
+        {
+            _logger.LogError("kubeconfig is null or empty");
+            throw new KubeConfigException("kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
+        }
+        
         try
         {
+            // test if kubeconfig is base64 encoded
+            _logger.LogDebug("Testing if kubeconfig is base64 encoded");
             var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
             kubeconfig = decodedKubeconfig;
             _logger.LogDebug("Successfully decoded kubeconfig from base64");
         }
         catch
         {
-            // not base64 encoded so do nothing
+            _logger.LogTrace("Kubeconfig is not base64 encoded");
         }
 
-        // check if json is escaped
+        _logger.LogTrace("Checking if kubeconfig is escaped JSON");
         if (kubeconfig.StartsWith("\\"))
         {
-            _logger.LogDebug("Unescaping kubeconfig JSON");
+            _logger.LogDebug("Un-escaping kubeconfig JSON");
             kubeconfig = kubeconfig.Replace("\\", "");
             kubeconfig = kubeconfig.Replace("\\n", "\n");
+            _logger.LogDebug("Successfully un-escaped kubeconfig JSON");
         }
 
         // parse kubeconfig as a dictionary of string, string
-        if (!kubeconfig.StartsWith("{")) return k8SConfiguration;
+        if (!kubeconfig.StartsWith("{"))
+        {
+            _logger.LogError("kubeconfig is not a JSON object");
+            throw new KubeConfigException("kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh"); 
+            // return k8SConfiguration;
+        } 
+            
 
         _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
 
@@ -130,6 +148,21 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entering foreach loop to parse clusters...");
         foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString() ?? string.Empty))
         {
+            _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
+            // get environment variable for skip tls verify and convert to bool
+            var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
+            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}", skipTlsEnvStr);
+            if (!string.IsNullOrEmpty(skipTlsEnvStr) && (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+            {
+                if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
+                _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
+                if (skipTlsVerifyEnv && !skipTLSVerify)
+                {
+                    _logger.LogWarning("Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
+                    skipTLSVerify = true;
+                }
+            }
+            
             var clusterObj = new Cluster
             {
                 Name = clusterMetadata["name"]?.ToString(),
@@ -137,11 +170,10 @@ public class KubeCertificateManagerClient
                 {
                     Server = clusterMetadata["cluster"]?["server"]?.ToString(),
                     CertificateAuthorityData = clusterMetadata["cluster"]?["certificate-authority-data"]?.ToString(),
-                    SkipTlsVerify = false
+                    SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
-                clusterObj.ClusterEndpoint);
+            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name, clusterObj.ClusterEndpoint);
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
 
@@ -188,6 +220,7 @@ public class KubeCertificateManagerClient
 
         _logger.LogTrace("Finished parsing contexts");
         _logger.LogDebug("Finished parsing kubeconfig");
+        
         return k8SConfiguration;
     }
 
@@ -207,36 +240,34 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Calling ParseKubeConfig()");
         var k8SConfiguration = ParseKubeConfig(kubeconfig);
         _logger.LogDebug("Finished calling ParseKubeConfig()");
-
+        
         // use k8sConfiguration over credentialFileName
         KubernetesClientConfiguration config;
         if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
         {
-            _logger.LogDebug(
-                "Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
             try
             {
+                _logger.LogDebug(
+                    "Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
                 config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
                 _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
             }
             catch (Exception e)
             {
-                _logger.LogError("Error building config from config object: " + e.Message);
+                _logger.LogError("Error building config from config object: {Error}", e.Message);
                 config = KubernetesClientConfiguration.BuildDefaultConfig();
             }
         }
-        else if
-            (credentialFileName ==
-             "") // If no config defined in store parameters, use default config. This should never happen though.
+        else if (string.IsNullOrEmpty(credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
         {
             _logger.LogWarning(
-                "No config defined in store parameters, using default config. This should never happen though");
+                "No config defined in store parameters, using default config. This should never happen!");
             config = KubernetesClientConfiguration.BuildDefaultConfig();
             _logger.LogDebug("Finished calling BuildDefaultConfig()");
         }
         else
         {
-            // Logger.LogDebug($"Attempting to load config from file {credentialFileName}");
+            _logger.LogDebug("Calling BuildConfigFromConfigFile()");
             config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
                 strWorkPath != null && !credentialFileName.Contains(strWorkPath)
                     ? Path.Join(strWorkPath, credentialFileName)
@@ -277,15 +308,15 @@ public class KubeCertificateManagerClient
     {
         var foundCertificate = certificates
             .OfType<X509Certificate2>()
-            .FirstOrDefault(cert => cert.SubjectName.Name.Contains(alias));
+            .FirstOrDefault(cert => cert.SubjectName.Name != null && cert.SubjectName.Name.Contains(alias));
 
         return foundCertificate;
     }
 
     public V1Secret RemoveFromPKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName,
-        string namespaceName, string secretType, string certdataFieldName,
+        string namespaceName, string secretType, string certDataFieldName,
         string storePasswd, V1Secret k8SSecretData,
-        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "",
+        bool append = false, bool overwrite = true, bool passwdIsK8SSecret = false, string passwordSecretPath = "",
         string passwordFieldName = "password",
         string[] certdataFieldNames = null)
     {
@@ -308,14 +339,12 @@ public class KubeCertificateManagerClient
         {
             _logger.LogTrace("existingPkcs12DataObj.Data is not null");
 
-            // KeyValuePair<string, byte[]> updated_data = new KeyValuePair<string, byte[]>();
-
             foreach (var fieldName in existingPkcs12DataObj?.Data.Keys)
             {
                 //check if key is in certdataFieldNames
                 //if fieldname contains a . then split it and use the last part
                 var searchFieldName = fieldName;
-                certdataFieldName = fieldName;
+                certDataFieldName = fieldName;
                 if (fieldName.Contains("."))
                 {
                     var splitFieldName = fieldName.Split(".");
@@ -400,13 +429,13 @@ public class KubeCertificateManagerClient
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
-                { certdataFieldName, p12bytes }
+                { certDataFieldName, p12bytes }
             }
         };
         switch (string.IsNullOrEmpty(storePasswd))
         {
             case false
-                when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
+                when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
                 : // password is not empty and passwordSecretPath is empty
             {
                 _logger.LogDebug("Adding password to secret...");
@@ -415,7 +444,7 @@ public class KubeCertificateManagerClient
                 break;
             }
             case false
-                when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
+                when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
                 : // password is not empty and passwordSecretPath is not empty
             {
                 _logger.LogDebug("Adding password secret path to secret...");
@@ -1745,6 +1774,7 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entered DiscoverSecrets()");
         V1NamespaceList namespaces;
         var clusterName = GetClusterName() ?? GetHost();
+        _logger.LogTrace("clusterName: {ClusterName}", clusterName);
 
         var nsList = new string[] { };
 
@@ -1759,22 +1789,25 @@ public class KubeCertificateManagerClient
         }
 
 
-        _logger.LogDebug("Attempting to list k8s namespaces from " + clusterName);
+        _logger.LogDebug("Attempting to list k8s namespaces from {ClusterName}", clusterName);
+        _logger.LogDebug("Calling CoreV1.ListNamespace()");
         namespaces = Client.CoreV1.ListNamespace();
-        _logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
-        _logger.LogTrace("namespaces.Items: " + namespaces.Items);
+        _logger.LogDebug("returned from CoreV1.ListNamespace()");
+        _logger.LogTrace("namespaces.Items.Count: {Count}", namespaces.Items.Count);
+        _logger.LogTrace("namespaces.Items: {Items}", namespaces.Items.ToString());
 
-        nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
-        foreach (var nsLI in nsList)
+        nsList = ns.Contains(',') ? ns.Split(",") : new[] { ns };
+        foreach (var nsLi in nsList)
         {
+            _logger.LogTrace("Iterating through namespace list {NamespaceList}", nsLi);
             var secretsList = new List<string>();
-            _logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
+            _logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace");
             foreach (var nsObj in namespaces.Items)
             {
-                if (nsLI != "all" && nsLI != nsObj.Metadata.Name)
+                if (nsLi != "all" && nsLi != nsObj.Metadata.Name)
                 {
-                    _logger.LogWarning("Skipping namespace " + nsObj.Metadata.Name +
-                                       " because it does not match the namespace filter.");
+                    _logger.LogWarning(
+                        "Skipping namespace '{Namespace}' because it does not match the namespace filter", nsObj.Metadata.Name);
                     continue;
                 }
 
