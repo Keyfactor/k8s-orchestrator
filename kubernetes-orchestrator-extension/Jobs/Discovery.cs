@@ -211,15 +211,13 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //Status: 2=Success, 3=Warning, 4=Error
             Logger.LogError("Discovery job has failed due to an unknown error");
             Logger.LogError("{Message}", ex.Message);
-            Logger.LogTrace("{Message}", ex.StackTrace);
-            Logger.LogTrace("{Ex}",ex.ToString());
+            Logger.LogTrace("{Message}",ex.ToString());
             // iterate through the inner exceptions
             var inner = ex.InnerException;
             while (inner != null)
             {
                 Logger.LogError("Inner Exception: {Message}", inner.Message);
                 Logger.LogTrace("{Message}", inner.ToString());
-                Logger.LogTrace("{Message}", inner.StackTrace);
                 inner = inner.InnerException;
             }
             Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job '{JobID}' with failure",
@@ -249,13 +247,11 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //  may not be reflected in Keyfactor Command.
             Logger.LogError("Discovery job has failed due to an unknown error: `{Error}`", ex.Message);
             Logger.LogTrace("{Message}", ex.ToString());
-            Logger.LogTrace("{Message}", ex.StackTrace);
             var inner = ex.InnerException;
             while (inner != null)
             {
                 Logger.LogError("Inner Exception: {Message}", inner.Message);
                 Logger.LogTrace("{Message}", inner.ToString());
-                Logger.LogTrace("{Message}", inner.StackTrace);
                 inner = inner.InnerException;
             }
             Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job '{JobID}' with failure",
