@@ -7,6 +7,7 @@
 
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using Unity.Injection;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -14,7 +15,25 @@ class PAMUtilities
 {
     internal static string ResolvePAMField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
     {
-        logger.LogDebug("Attempting to resolve PAM eligible field {Name} with key {Key}", name, key);
-        return string.IsNullOrEmpty(key) ? key : resolver.Resolve(key);
+        logger.LogDebug("Attempting to resolve PAM eligible field '{Name}'", name);
+        if (string.IsNullOrEmpty(key))
+        {
+            logger.LogWarning("PAM field is empty, skipping PAM resolution");
+            return key;
+        }
+        
+        // test if field is JSON string
+        if (key.StartsWith("{") && key.EndsWith("}"))
+        {
+            var resolved =  resolver.Resolve(key);
+            if (string.IsNullOrEmpty(resolved))
+            {
+                logger.LogWarning("Failed to resolve PAM field {Name}", name);
+            }
+            return resolved;
+        }
+        
+        logger.LogDebug("Field '{Name}' is not a JSON string, skipping PAM resolution", name);
+        return key;
     }
 }

@@ -1776,22 +1776,24 @@ public class KubeCertificateManagerClient
         var clusterName = GetClusterName() ?? GetHost();
         _logger.LogTrace("clusterName: {ClusterName}", clusterName);
 
-        var nsList = new string[] { };
+        var nsList = Array.Empty<string>();
 
         var locations = new List<string>();
 
         if (secType == "cluster")
         {
             _logger.LogTrace(
-                "Discovering K8S cluster secrets from k8s cluster resources and returning only a single location.");
+                "Discovering K8S cluster secrets from k8s cluster resources and returning only a single location");
             locations.Add($"{clusterName}");
             return locations;
         }
 
 
         _logger.LogDebug("Attempting to list k8s namespaces from {ClusterName}", clusterName);
+        _logger.LogTrace("Client BaseUrl: {BaseUrl}", Client.BaseUri);
         _logger.LogDebug("Calling CoreV1.ListNamespace()");
         namespaces = Client.CoreV1.ListNamespace();
+        
         _logger.LogDebug("returned from CoreV1.ListNamespace()");
         _logger.LogTrace("namespaces.Items.Count: {Count}", namespaces.Items.Count);
         _logger.LogTrace("namespaces.Items: {Items}", namespaces.Items.ToString());

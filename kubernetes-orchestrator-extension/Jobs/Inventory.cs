@@ -162,7 +162,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "secret";
                         try
                         {
-                            resolveStorePath(opaqueSecret);
+                            ResolveStorePath(opaqueSecret);
                             StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
                             //Split storepath by / and remove first 1 elements
                             var storePathSplit = StorePath.Split('/');
@@ -188,7 +188,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "tls_secret";
                         try
                         {
-                            resolveStorePath(tlsSecret);
+                            ResolveStorePath(tlsSecret);
                             StorePath = tlsSecret.Replace("secrets", "secrets/tls");
                             //Split storepath by / and remove first 1 elements
                             var storePathSplit = StorePath.Split('/');
@@ -221,7 +221,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "secret";
                         try
                         {
-                            resolveStorePath(opaqueSecret);
+                            ResolveStorePath(opaqueSecret);
                             StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
                             //Split storepath by / and remove first 2 elements
                             var storePathSplit = StorePath.Split('/');
@@ -248,7 +248,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "tls_secret";
                         try
                         {
-                            resolveStorePath(tlsSecret);
+                            ResolveStorePath(tlsSecret);
                             StorePath = tlsSecret.Replace("secrets", "secrets/tls");
 
                             //Split storepath by / and remove first 2 elements
