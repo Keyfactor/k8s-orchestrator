@@ -27,6 +27,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
+using ECCurve = Org.BouncyCastle.Math.EC.ECCurve;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -259,6 +260,7 @@ public abstract class JobBase
         ServerUsername = config.ServerUsername;
         ServerPassword = config.ServerPassword;
         StorePath = config.CertificateStoreDetails?.StorePath;
+        
 
         Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
@@ -877,15 +879,15 @@ public abstract class JobBase
         }
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
-        // KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
-        //
-        // Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
-        // KubeHost = KubeClient.GetHost();
-        // Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
-        //
-        // Logger.LogTrace("Getting cluster name from KubeClient");
-        // KubeCluster = KubeClient.GetClusterName();
-        // Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
+        KubeClient = new KubeCertificateManagerClient(KubeSvcCreds, true); // todo source this from config or pass in
+        
+        Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
+        KubeHost = KubeClient.GetHost();
+        Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
+        
+        Logger.LogTrace("Getting cluster name from KubeClient");
+        KubeCluster = KubeClient.GetClusterName();
+        Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
 
         if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath) && !Capability.Contains("NS") &&
             !Capability.Contains("Cluster"))
