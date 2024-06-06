@@ -129,6 +129,8 @@ public abstract class JobBase
 
     protected KubeCertificateManagerClient KubeClient;
 
+    protected string K8SHostName;
+
     protected ILogger Logger;
 
     static JobBase()

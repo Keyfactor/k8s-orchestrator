@@ -10,10 +10,14 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Reflection;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using k8s;
 using k8s.Autorest;
 using k8s.Exceptions;
@@ -33,6 +37,21 @@ using Org.BouncyCastle.X509;
 using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
+
+public class CustomHttpClientHandler : DelegatingHandler
+{
+    public CustomHttpClientHandler(HttpMessageHandler innerHandler)
+        : base(innerHandler)
+    {
+    }
+
+    protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
+        CancellationToken cancellationToken)
+    {
+        // You can add any custom logic here if needed
+        return await base.SendAsync(request, cancellationToken);
+    }
+}
 
 public class KubeCertificateManagerClient
 {
@@ -56,8 +75,36 @@ public class KubeCertificateManagerClient
     private string ConfigJson { get; set; }
 
     private K8SConfiguration ConfigObj { get; }
+    private KubernetesClientConfiguration ClientConfig;
 
     private IKubernetes Client { get; set; }
+
+    private void ClientTest()
+    {
+        _logger.LogTrace("Entered clientTest()");
+        _logger.LogDebug("Testing client connection by listing k8s namespaces");
+        var namespaces = Client.CoreV1.ListNamespace(); 
+        _logger.LogTrace("k8s namespaces: {Namespaces}", namespaces?.Items.ToString());
+    }
+
+    public void EnforceTLS_1_3()
+    {
+        _logger.LogDebug("Entered EnforceTLS_1_3()");
+        _logger.LogDebug("Creating HttpClientHandler with SslProtocols.Tls13");
+        var handler = new HttpClientHandler
+        {
+            SslProtocols = SslProtocols.Tls13
+        };
+
+        // Create the custom delegating handler
+        _logger.LogDebug("Creating CustomHttpClientHandler with HttpClientHandler");
+        var customHandler = new CustomHttpClientHandler(handler);
+
+        _logger.LogDebug("Recreating Kubernetes client with custom handler for TLS 1.3 enforcement");
+        Client = new Kubernetes(ClientConfig, customHandler);
+
+        ClientTest();
+    }
 
     public string GetClusterName()
     {
@@ -84,14 +131,15 @@ public class KubeCertificateManagerClient
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
         var k8SConfiguration = new K8SConfiguration();
-        
+
         _logger.LogTrace("Checking if kubeconfig is null or empty");
         if (string.IsNullOrEmpty(kubeconfig))
         {
             _logger.LogError("kubeconfig is null or empty");
-            throw new KubeConfigException("kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
+            throw new KubeConfigException(
+                "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
         }
-        
+
         try
         {
             // test if kubeconfig is base64 encoded
@@ -118,10 +166,11 @@ public class KubeCertificateManagerClient
         if (!kubeconfig.StartsWith("{"))
         {
             _logger.LogError("kubeconfig is not a JSON object");
-            throw new KubeConfigException("kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh"); 
+            throw new KubeConfigException(
+                "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
             // return k8SConfiguration;
-        } 
-            
+        }
+
 
         _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
 
@@ -151,18 +200,21 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
             // get environment variable for skip tls verify and convert to bool
             var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
-            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}", skipTlsEnvStr);
-            if (!string.IsNullOrEmpty(skipTlsEnvStr) && (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
+                skipTlsEnvStr);
+            if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
+                (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
             {
                 if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
                 _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
                 if (skipTlsVerifyEnv && !skipTLSVerify)
                 {
-                    _logger.LogWarning("Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
+                    _logger.LogWarning(
+                        "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
                     skipTLSVerify = true;
                 }
             }
-            
+
             var clusterObj = new Cluster
             {
                 Name = clusterMetadata["name"]?.ToString(),
@@ -173,7 +225,8 @@ public class KubeCertificateManagerClient
                     SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name, clusterObj.ClusterEndpoint);
+            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
+                clusterObj.ClusterEndpoint);
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
 
@@ -220,7 +273,7 @@ public class KubeCertificateManagerClient
 
         _logger.LogTrace("Finished parsing contexts");
         _logger.LogDebug("Finished parsing kubeconfig");
-        
+
         return k8SConfiguration;
     }
 
@@ -240,35 +293,36 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Calling ParseKubeConfig()");
         var k8SConfiguration = ParseKubeConfig(kubeconfig);
         _logger.LogDebug("Finished calling ParseKubeConfig()");
-        
+
         // use k8sConfiguration over credentialFileName
-        KubernetesClientConfiguration config;
         if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
         {
             try
             {
                 _logger.LogDebug(
                     "Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
-                config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
+                ClientConfig = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
                 _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
             }
             catch (Exception e)
             {
                 _logger.LogError("Error building config from config object: {Error}", e.Message);
-                config = KubernetesClientConfiguration.BuildDefaultConfig();
+                ClientConfig = KubernetesClientConfiguration.BuildDefaultConfig();
             }
         }
-        else if (string.IsNullOrEmpty(credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
+        else if
+            (string.IsNullOrEmpty(
+                credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
         {
             _logger.LogWarning(
                 "No config defined in store parameters, using default config. This should never happen!");
-            config = KubernetesClientConfiguration.BuildDefaultConfig();
+            ClientConfig = KubernetesClientConfiguration.BuildDefaultConfig();
             _logger.LogDebug("Finished calling BuildDefaultConfig()");
         }
         else
         {
             _logger.LogDebug("Calling BuildConfigFromConfigFile()");
-            config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
+            ClientConfig = KubernetesClientConfiguration.BuildConfigFromConfigFile(
                 strWorkPath != null && !credentialFileName.Contains(strWorkPath)
                     ? Path.Join(strWorkPath, credentialFileName)
                     : // Else attempt to load config from file
@@ -277,11 +331,25 @@ public class KubeCertificateManagerClient
         }
 
         _logger.LogDebug("Creating Kubernetes client");
-        IKubernetes client = new Kubernetes(config);
-        _logger.LogDebug("Finished creating Kubernetes client");
+        // Configure the HTTP client handler to use only TLS 1.3
 
+
+        var client = new Kubernetes(ClientConfig);
+        _logger.LogDebug("Finished creating Kubernetes client");
         _logger.LogTrace("Setting Client property");
         Client = client;
+
+        try
+        {
+            ClientTest();
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            _logger.LogError("Error testing client connection: {Error}", ex.Message);
+            _logger.LogTrace("{StackTrace}", ex.ToString());
+            EnforceTLS_1_3();
+        }
+
         _logger.LogTrace("Exiting GetKubeClient()");
         return client;
     }
@@ -1793,7 +1861,7 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Client BaseUrl: {BaseUrl}", Client.BaseUri);
         _logger.LogDebug("Calling CoreV1.ListNamespace()");
         namespaces = Client.CoreV1.ListNamespace();
-        
+
         _logger.LogDebug("returned from CoreV1.ListNamespace()");
         _logger.LogTrace("namespaces.Items.Count: {Count}", namespaces.Items.Count);
         _logger.LogTrace("namespaces.Items: {Items}", namespaces.Items.ToString());
@@ -1809,7 +1877,8 @@ public class KubeCertificateManagerClient
                 if (nsLi != "all" && nsLi != nsObj.Metadata.Name)
                 {
                     _logger.LogWarning(
-                        "Skipping namespace '{Namespace}' because it does not match the namespace filter", nsObj.Metadata.Name);
+                        "Skipping namespace '{Namespace}' because it does not match the namespace filter",
+                        nsObj.Metadata.Name);
                     continue;
                 }
 
