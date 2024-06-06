@@ -7,7 +7,7 @@
       },
       "CertStores.K8SCluster.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SCluster.Discovery"
       },
       "CertStores.K8SCluster.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -23,7 +23,7 @@
       },
       "CertStores.K8SNS.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SNS.Discovery"
       },
       "CertStores.K8SNS.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -39,7 +39,7 @@
       },
       "CertStores.K8SJKS.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S..StoreTypes.K8SJKS.Discovery"
       },
       "CertStores.K8SJKS.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -55,7 +55,7 @@
       },
       "CertStores.K8SPFX.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPFX.Discovery"
       },
       "CertStores.K8SPFX.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -71,7 +71,7 @@
       },
       "CertStores.K8SPKCS12.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Discovery"
       },
       "CertStores.K8SPKCS12.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -87,7 +87,7 @@
       },
       "CertStores.K8SSecret.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SSecret.Discovery"
       },
       "CertStores.K8SSecret.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -103,7 +103,7 @@
       },
       "CertStores.K8STLSSecr.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr.Discovery"
       },
       "CertStores.K8STLSSecr.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -119,7 +119,7 @@
       },
       "CertStores.K8SCert.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SCert.Discovery"
       }
     }
   }
