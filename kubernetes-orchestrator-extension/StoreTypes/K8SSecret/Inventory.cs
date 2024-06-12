@@ -6,7 +6,7 @@ using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SSecret;
 
 public class Inventory : InventoryBase, IInventoryJobExtension
 {
@@ -32,21 +32,21 @@ public class Inventory : InventoryBase, IInventoryJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Init(config);
-        HasPrivateKey = true; //This is a k8s TLS secret, so it should have a private key
-        Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
-            TlsAllowedKeys?.ToString());
+        HasPrivateKey = false; //This is a k8s Opaque secret, so it can have a private key, but it is not required
+        Logger.LogInformation("Inventorying opaque secrets using the following allowed keys: {Keys}",
+            OpaqueAllowedKeys?.ToString());
         try
         {
-            var tlsCertsInv = HandleTlsSecret();
-            Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
-            return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
+            var opaqueInventory = HandleTlsSecret();
+            Logger.LogDebug("Returned inventory count: {Count}", opaqueInventory.Count.ToString());
+            return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, HasPrivateKey);
         }
         catch (StoreNotFoundException)
         {
-            Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory",
+            Logger.LogWarning("Unable to locate Opaque secret {Namespace}/{Name}, sending empty inventory",
                 KubeNamespace, KubeSecretName);
             return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                "WARNING: Store not found on Kubernetes cluster, assuming empty inventory");
+                "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
         }
         catch (Exception ex)
         {

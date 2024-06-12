@@ -10,12 +10,10 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
-using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
-using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
 
@@ -27,8 +25,7 @@ public abstract class InventoryBase : JobBase
 {
     protected string[] SecretAllowedKeys = Array.Empty<string>();
     
-    //Job Entry Point
-    public void Init(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
+    protected void Init(InventoryJobConfiguration config)
     {
         //METHOD ARGUMENTS...
         //config - contains context information passed from KF Command to this job run:
@@ -42,8 +39,6 @@ public abstract class InventoryBase : JobBase
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-
-
         InitializeStore(config);
         Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job '{JobId}", config.JobId);
         Logger.LogInformation("Inventory for store type: {Capability}", config.Capability);
@@ -55,15 +50,200 @@ public abstract class InventoryBase : JobBase
         Logger.LogDebug("KubeSecretName: {SecretName}", KubeSecretName);
         Logger.LogDebug("KubeNamespace: {Namespace}", KubeNamespace);
 
-        var hasPrivateKey = false;
-
         if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
         if (Capability.Contains("NS")) KubeSecretType = "namespace";
 
         if (!string.IsNullOrEmpty(CertificateDataFieldName))
             SecretAllowedKeys = CertificateDataFieldName.Split(',');
     }
+    
+    protected  Dictionary<string,List<string>> HandleK8SSecret(List<string> namespaceSecrets, string type)
+    {
+        Logger.LogDebug("Entering HandleK8SSecret()");
+        var errors = new List<string>();
 
+        var namespaceInventoryDict = new Dictionary<string, List<string>>();
+        foreach (var secret in namespaceSecrets)
+        {
+            KubeSecretName = "";
+            KubeNamespace = "";
+            var secretType = type switch
+            {
+                "Opaque" or "opaque" => "opaque",
+                _ => "tls"
+            };
+            try
+            {
+                Logger.LogDebug("Processing k8s secret of type '{SecretType}': {Secret}", type, secret);
+                ResolveStorePath(secret);
+                StorePath = secret.Replace("secrets", $"secrets/{secretType}");
+                //Split store path by / and remove first element
+                var storePathSplit = StorePath.Split('/');
+                var storePathSplitList = storePathSplit.ToList();
+                storePathSplitList.RemoveAt(0);
+                StorePath = string.Join("/", storePathSplitList);
+
+                var secretObj = HandleTlsSecret();
+                namespaceInventoryDict[StorePath] = secretObj;
+                Logger.LogDebug("Finished processing k8s secret of type '{SecretType}': {Secret}", type, secret);
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Error processing k8s secret of type '{SecretType}': {Message}",
+                    type, ex.Message);
+                Logger.LogTrace("{Message}", ex.ToString());
+                errors.Add(ex.Message);
+            }
+        }
+        if (errors.Count > 0)
+        {
+            Logger.LogError("Errors processing k8s namespace secrets of type '{SecretType}': {Errors}",
+                type, string.Join(",", errors));
+        }
+
+        Logger.LogDebug("Returning from HandleK8SSecret()");
+        return namespaceInventoryDict;
+    }
+    
+    protected Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config, List<string> allowedKeys)
+    {
+        Logger.LogDebug("Enter HandleJKSSecret()");
+        var hasPrivateKeyJks = false;
+        Logger.LogDebug("Attempting to serialize JKS store");
+        var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
+        //getJksBytesFromKubeSecret
+        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " +
+                        KubeNamespace);
+        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
+
+        var jksInventoryDict = new Dictionary<string, List<string>>();
+        // iterate through the keys in the secret and add them to the jks store
+        Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
+        foreach (var (keyName, keyBytes) in k8sData.Inventory)
+        {
+            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
+                            KubeNamespace + " and key " + keyName);
+            var keyPassword = GetK8SStorePassword(k8sData.Secret);
+            var passwordHash = GetSha256Hash(keyPassword);
+            Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
+            var keyAlias = keyName;
+            Logger.LogTrace("Key alias: {Alias}", keyAlias);
+            Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
+            var sourceIsPkcs12 = false; //This refers to if the JKS store is actually a PKCS12 store
+            Pkcs12Store jStoreDs;
+            try
+            {
+                jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            }
+            catch (JkSisPkcs12Exception)
+            {
+                sourceIsPkcs12 = true;
+                var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+                jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+                // return HandlePkcs12Secret(config);
+            }
+
+            // create a list of certificate chains in PEM format
+
+            Logger.LogDebug("Iterating through aliases in JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
+            var certAliasLookup = new Dictionary<string, string>();
+            //make a copy of jStoreDs.Aliases so we can remove items from it
+
+            foreach (var certAlias in jStoreDs.Aliases)
+            {
+                if (certAliasLookup.TryGetValue(certAlias, out var certAliasSubject))
+                    if (certAliasSubject == "skip")
+                    {
+                        Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'",
+                            certAlias, certAliasSubject);
+                        continue;
+                    }
+
+                Logger.LogTrace("Certificate alias: {Alias}", certAlias);
+                var certChainList = new List<string>();
+
+                Logger.LogDebug("Attempting to get certificate chain for alias '{Alias}'", certAlias);
+                var certChain = jStoreDs.GetCertificateChain(certAlias);
+
+                if (certChain != null)
+                {
+                    certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();
+                    if (sourceIsPkcs12 && certChain.Length > 0)
+                    {
+                        // This is a PKCS12 store that was created as a JKS so we need to check that the aliases aren't the same as the cert chain
+                        // If they are the same then we need to only use the chain and break out of the loop
+                        var certChainAliases = certChain.Select(cert => cert.Certificate.SubjectDN.ToString()).ToList();
+                        // Remove leaf certificate from chain
+                        certChainAliases.RemoveAt(0);
+                        var storeAliases = jStoreDs.Aliases.ToList();
+                        storeAliases.Remove(certAlias);
+                        // Iterate though the aliases and add them to the lookup as 'skip' if they are in the chain
+                        foreach (var alias in storeAliases.Where(alias => certChainAliases.Contains(alias)))
+                            certAliasLookup[alias] = "skip";
+                    }
+                }
+                else
+                {
+                    certAliasLookup[certAlias] = "skip";
+                }
+
+                var fullAlias = keyAlias + "/" + certAlias;
+                Logger.LogTrace("Full alias: {Alias}", fullAlias);
+                //check if the alias is a private key
+                if (jStoreDs.IsKeyEntry(certAlias)) hasPrivateKeyJks = true;
+                var pKey = jStoreDs.GetKey(certAlias);
+                if (pKey != null)
+                {
+                    Logger.LogDebug("Found private key for alias '{Alias}'", certAlias);
+                    hasPrivateKeyJks = true;
+                }
+
+                StringBuilder certChainPem;
+
+                if (certChain != null)
+                {
+                    Logger.LogDebug("Certificate chain found for alias '{Alias}'", certAlias);
+                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain",
+                        certAlias);
+                    foreach (var cert in certChain)
+                    {
+                        certChainPem = new StringBuilder();
+                        certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                        certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                        certChainPem.AppendLine("-----END CERTIFICATE-----");
+                        certChainList.Add(certChainPem.ToString());
+                    }
+
+                    Logger.LogTrace("Certificate chain for alias '{Alias}': {Chain}", certAlias, certChainList);
+                }
+
+                if (certChainList.Count != 0)
+                {
+                    Logger.LogDebug("Adding certificate chain for alias '{Alias}' to inventory", certAlias);
+                    jksInventoryDict[fullAlias] = certChainList;
+                    continue;
+                }
+
+                Logger.LogDebug("Attempting to get leaf certificate for alias '{Alias}'", certAlias);
+                var leaf = jStoreDs.GetCertificate(certAlias);
+                if (leaf != null)
+                {
+                    Logger.LogDebug("Leaf certificate found for alias '{Alias}'", certAlias);
+                    certChainPem = new StringBuilder();
+                    certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+                    certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
+                    certChainPem.AppendLine("-----END CERTIFICATE-----");
+                    certChainList.Add(certChainPem.ToString());
+                }
+
+                Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
+                if (certAliasLookup[certAlias] != "skip") jksInventoryDict[fullAlias] = certChainList;
+            }
+        }
+
+        return jksInventoryDict;
+    }
+    
     private bool validInvCert(string cert, string alias = "")
     {
         try
@@ -85,12 +265,12 @@ public abstract class InventoryBase : JobBase
         }
 
         return true;
-    } 
-    
-    private JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory,
+    }
+
+    protected JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory,
         bool hasPrivateKey = false, string jobMessage = null)
     {
-        Logger.LogDebug("Entering PushInventory for job id '{JobId}'", jobId);
+        Logger.LogDebug("Entered PushInventory for job id '{JobId}'", jobId);
         Logger.LogTrace("submitInventory: {Inv}", submitInventory.ToString());
         Logger.LogTrace("certsList: {Certs}", certsList.ToString());
         var inventoryItems = new List<CurrentInventoryItem>();
@@ -98,8 +278,6 @@ public abstract class InventoryBase : JobBase
         foreach (var cert in certificates)
         {
             Logger.LogTrace("Cert:\n{Cert}", cert);
-            // load as x509
-            string alias;
             if (string.IsNullOrEmpty(cert))
             {
                 Logger.LogWarning(
@@ -151,7 +329,7 @@ public abstract class InventoryBase : JobBase
         }
     }
 
-    private JobResult PushInventory(Dictionary<string, string> certsList, long jobId,
+    protected JobResult PushInventory(Dictionary<string, string> certsList, long jobId,
         SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
         Logger.LogDebug("Entering PushInventory for job id '{JobId}'", jobId);
@@ -227,7 +405,7 @@ public abstract class InventoryBase : JobBase
         }
     }
 
-    private JobResult PushInventory(Dictionary<string, List<string>> certsList, long jobId,
+    protected JobResult PushInventory(Dictionary<string, List<string>> certsList, long jobId,
         SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
         Logger.LogDebug("Entering PushInventory for job id '{JobId}'", jobId);
@@ -268,18 +446,17 @@ public abstract class InventoryBase : JobBase
             //Sends inventoried certificates back to KF Command
             submitInventory.Invoke(inventoryItems);
             //Status: 2=Success, 3=Warning, 4=Error
-            Logger.LogInformation("End INVENTORY completed successfully for job id " + jobId + ".");
+            Logger.LogInformation("End INVENTORY completed successfully for job id '{JobId}'", jobId);
             return SuccessJob(jobId);
         }
         catch (Exception ex)
         {
             // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
             //  may not be reflected in Keyfactor Command.
-            Logger.LogError("Unable to submit inventory to Keyfactor Command for job id " + jobId + ".");
-            Logger.LogError(ex.Message);
-            Logger.LogTrace(ex.ToString());
-            Logger.LogTrace(ex.StackTrace);
-            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
+            Logger.LogError("Unable to submit inventory to Keyfactor Command for job id '{JobId}'", jobId);
+            Logger.LogError("{Message}", ex.Message);
+            Logger.LogTrace("{Message}", ex.ToString());
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job {JobId} with failure", jobId);
             return FailJob(ex.Message, jobId);
         }
     }

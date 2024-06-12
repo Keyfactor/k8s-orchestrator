@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SNS;
 
 public class Inventory : InventoryBase, IInventoryJobExtension
 {
@@ -32,21 +32,34 @@ public class Inventory : InventoryBase, IInventoryJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Init(config);
-        HasPrivateKey = true; //This is a k8s TLS secret, so it should have a private key
-        Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
-            TlsAllowedKeys?.ToString());
+
         try
         {
-            var tlsCertsInv = HandleTlsSecret();
-            Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
-            return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
-        }
-        catch (StoreNotFoundException)
-        {
-            Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory",
-                KubeNamespace, KubeSecretName);
-            return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                "WARNING: Store not found on Kubernetes cluster, assuming empty inventory");
+            Logger.LogDebug("Calling KubeClient.DiscoverSecrets() for Opaque secrets");
+            var namespaceOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", KubeNamespace);
+            Logger.LogDebug("Returned from KubeClient.DiscoverSecrets() for Opaque secrets");
+
+            Logger.LogDebug("Calling KubeClient.DiscoverSecrets() for TLS secrets");
+            var namespaceTlsSecrets = KubeClient.DiscoverSecrets(TlsAllowedKeys, "tls", KubeNamespace);
+            Logger.LogDebug("Returned from KubeClient.DiscoverSecrets() for TLS secrets");
+
+            var namespaceInventoryDict = new Dictionary<string, List<string>>();
+            Logger.LogDebug("Calling HandleK8SSecret() for Opaque secrets");
+            var opaqueSecrets = HandleK8SSecret(namespaceOpaqueSecrets, "opaque");
+            Logger.LogDebug("Finished processing Opaque secrets");
+
+            Logger.LogDebug("Calling HandleK8SSecret() for TLS secrets");
+            var tlsSecrets = HandleK8SSecret(namespaceTlsSecrets, "tls");
+            Logger.LogDebug("Finished processing TLS secrets");
+            
+            Logger.LogDebug("Merging Opaque and TLS secrets into namespace inventory dictionary");
+            namespaceInventoryDict = namespaceInventoryDict.Concat(opaqueSecrets).ToDictionary(x => x.Key, x => x.Value);
+            
+            Logger.LogDebug("Merging Opaque and TLS secrets into namespace inventory dictionary");
+            namespaceInventoryDict = namespaceInventoryDict.Concat(tlsSecrets).ToDictionary(x => x.Key, x => x.Value);
+
+            Logger.LogDebug("Calling PushInventory for job id '{JobId}'", config.JobHistoryId);
+            return PushInventory(namespaceInventoryDict, config.JobHistoryId, submitInventory, HasPrivateKey);
         }
         catch (Exception ex)
         {
@@ -58,4 +71,6 @@ public class Inventory : InventoryBase, IInventoryJobExtension
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
+
+    
 }

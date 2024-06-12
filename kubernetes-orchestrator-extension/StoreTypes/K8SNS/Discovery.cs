@@ -46,7 +46,7 @@ public class Discovery : DiscoveryBase, IDiscoveryJobExtension
             Logger.LogTrace("Job capability: {Capability}", config.Capability);
 
             // Run discovery
-            SecretAllowedKeys = SecretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
+            SecretAllowedKeys = SecretAllowedKeys.Concat(TlsAllowedKeys).ToArray();
             Logger.LogInformation(
                 "Discovering k8s secrets in k8s namespaces `{Namespaces}` with allowed keys: `{AllowedKeys}` and secret types: `kubernetes.io/tls, Opaque`",
                 string.Join(",", SecretAllowedKeys), string.Join(",", SecretAllowedKeys));

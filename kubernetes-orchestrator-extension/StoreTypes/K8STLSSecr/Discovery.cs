@@ -46,7 +46,7 @@ public class Discovery : DiscoveryBase, IDiscoveryJobExtension
             Logger.LogTrace("SecretType: {SecretType}", SecretType);
             Logger.LogTrace("Job capability: {Capability}", config.Capability);
             
-            SecretAllowedKeys = SecretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
+            SecretAllowedKeys = SecretAllowedKeys.Concat(TlsAllowedKeys).ToArray();
             Logger.LogInformation(
                 "Discovering k8s secrets in k8s namespaces `{Namespaces}` with allowed keys: `{AllowedKeys}` and secret type: `{SecretType}`",
                 string.Join(",", SearchNamespaces), string.Join(",", SecretAllowedKeys), SecretType);

@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 
 public class Inventory : InventoryBase, IInventoryJobExtension
 {
@@ -32,21 +32,19 @@ public class Inventory : InventoryBase, IInventoryJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Init(config);
-        HasPrivateKey = true; //This is a k8s TLS secret, so it should have a private key
-        Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
-            TlsAllowedKeys?.ToString());
+
+        var allowedKeys = new List<string>();
+        if (!string.IsNullOrEmpty(CertificateDataFieldName))
+            allowedKeys = CertificateDataFieldName.Split(',').ToList();
+        
         try
         {
-            var tlsCertsInv = HandleTlsSecret();
-            Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
-            return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
-        }
-        catch (StoreNotFoundException)
-        {
-            Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory",
-                KubeNamespace, KubeSecretName);
-            return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                "WARNING: Store not found on Kubernetes cluster, assuming empty inventory");
+            //combine allowed keys and CertificateDataFields into one list
+            allowedKeys.AddRange(Pkcs12AllowedKeys);
+            Logger.LogInformation("Inventorying JKS using the following allowed keys: {Keys}", allowedKeys);
+            var jksInventory = HandleJKSSecret(config, allowedKeys);
+            Logger.LogDebug("Returned inventory count: {Count}", jksInventory.Count.ToString());
+            return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
         }
         catch (Exception ex)
         {

@@ -5,8 +5,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SCert;
 
 public class Inventory : InventoryBase, IInventoryJobExtension
 {
@@ -32,21 +31,42 @@ public class Inventory : InventoryBase, IInventoryJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Init(config);
-        HasPrivateKey = true; //This is a k8s TLS secret, so it should have a private key
+        HasPrivateKey = false; //A k8s certificate signing request does not have a private key to recover
         Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
             TlsAllowedKeys?.ToString());
+        var jobId = config.JobHistoryId;
         try
         {
-            var tlsCertsInv = HandleTlsSecret();
-            Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
-            return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
+            Logger.LogInformation("Inventorying k8s certificate resources using the following allowed keys: {Keys}",
+                CertAllowedKeys?.ToString());
+            try
+            {
+                Logger.LogDebug("Calling KubeClient.GetCertificateSigningRequestStatus()");
+                var certificates = KubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
+                Logger.LogDebug("Returned from KubeClient.GetCertificateSigningRequestStatus()");
+                Logger.LogDebug(
+                    "GetCertificateSigningRequestStatus returned '{Count}' certificates for job id '{JobId}'",
+                    certificates.Length, jobId);
+                Logger.LogTrace("{Certs}", string.Join("\r\n", certificates));
+                Logger.LogDebug("Calling PushInventory for job id '{JobId}'", jobId);
+                return PushInventory(certificates, jobId, submitInventory, HasPrivateKey);
+            }
+            catch (Exception e)
+            {
+                Logger.LogError("{Message}", e.Message);
+                Logger.LogTrace("{Message}", e.ToString());
+                var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+                Logger.LogError("{Message}", certDataErrorMsg);
+                Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job '{JobId}' with failure",
+                    jobId);
+                return FailJob(certDataErrorMsg, jobId);
+            }
         }
         catch (StoreNotFoundException)
         {
-            Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory",
-                KubeNamespace, KubeSecretName);
-            return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                "WARNING: Store not found on Kubernetes cluster, assuming empty inventory");
+            Logger.LogWarning("Unable to locate certificates on Kubernetes cluster {Host}, sending empty inventory", KubeHost);
+            return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, HasPrivateKey,
+                "WARNING: No certificates returned from Kubernetes cluster, assuming empty inventory.");
         }
         catch (Exception ex)
         {

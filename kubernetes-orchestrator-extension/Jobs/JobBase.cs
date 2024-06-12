@@ -13,6 +13,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Common.Logging;
+using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Logging;
@@ -24,10 +25,6 @@ using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Org.BouncyCastle.Pkcs;
-using Org.BouncyCastle.Security;
-using Org.BouncyCastle.Utilities.IO.Pem;
-using Org.BouncyCastle.X509;
-using ECCurve = Org.BouncyCastle.Math.EC.ECCurve;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -41,8 +38,6 @@ public class KubernetesCertStore
     public string KubeSecretType { get; set; } = "";
 
     public string KubeSvcCreds { get; set; } = "";
-
-    public Cert[] Certs { get; set; }
 }
 
 public class KubeCreds
@@ -54,34 +49,23 @@ public class KubeCreds
     public string KubeCert { get; set; } = "";
 }
 
-public class Cert
-{
-    public string Alias { get; set; } = "";
-
-    public string CertData { get; set; } = "";
-
-    public string PrivateKey { get; set; } = "";
-}
-
 public class K8SJobCertificate
 {
     public string Alias { get; set; } = "";
 
     public string CertB64 { get; set; } = "";
-
     public string CertPem { get; set; } = "";
-
     public string CertThumbprint { get; set; } = "";
-
     public byte[] CertBytes { get; set; }
-
     public string PrivateKeyPem { get; set; } = "";
 
-    public byte[] PrivateKeyBytes { get; set; }
+    public string PrivateKeyPkcs8 { get; set; } = "";
 
+    public string PrivateKeyPkcs1 { get; set; } = "";
+    public byte[] PrivateKeyBytes { get; set; }
     public string Password { get; set; } = "";
 
-    public bool PasswordIsK8SSecret { get; set; } = false;
+    public bool PasswordIsK8SSecret { get; set; }
 
     public string StorePassword { get; set; } = "";
 
@@ -90,7 +74,6 @@ public class K8SJobCertificate
     public bool HasPrivateKey { get; set; } = false;
 
     public bool HasPassword { get; set; } = false;
-
     public X509CertificateEntry CertificateEntry { get; set; }
 
     public X509CertificateEntry[] CertificateEntryChain { get; set; }
@@ -105,11 +88,11 @@ public abstract class JobBase
     protected static readonly string[] SupportedKubeStoreTypes;
 
     private static readonly string[] RequiredProperties;
-    private const string DefaultPFXSecretFieldName = "pfx";
-    private const string DefaultJKSSecretFieldName = "jks";
-    private const string DefaultPFXPasswordSecretFieldName = "password";
+    private const string DefaultPfxSecretFieldName = "pfx";
+    private const string DefaultJksSecretFieldName = "jks";
+    private const string DefaultPfxPasswordSecretFieldName = "password";
 
-    protected static readonly string[] TLSAllowedKeys;
+    protected static readonly string[] TlsAllowedKeys;
     protected static readonly string[] OpaqueAllowedKeys;
     protected static readonly string[] CertAllowedKeys;
     protected static readonly string[] Pkcs12AllowedKeys;
@@ -123,7 +106,7 @@ public abstract class JobBase
         true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
 
     protected internal string OperationType { get; set; }
-    protected internal bool SkipTlsValidation { get; set; } = false;
+    protected internal bool SkipTlsValidation { get; set; }
 
     protected const string CertChainSeparator = ",";
 
@@ -136,7 +119,7 @@ public abstract class JobBase
     static JobBase()
     {
         CertAllowedKeys = new[] { "cert", "csr" };
-        TLSAllowedKeys = new[] { "tls.crt", "tls.key", "ca.crt" };
+        TlsAllowedKeys = new[] { "tls.crt", "tls.key", "ca.crt" };
         OpaqueAllowedKeys = new[]
             { "tls.crt", "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
         SupportedKubeStoreTypes = new[] { "secret", "certificate" };
@@ -153,19 +136,19 @@ public abstract class JobBase
 
     public string StorePath { get; set; }
 
-    protected internal string KubeNamespace { get; set; }
+    protected string KubeNamespace { get; set; }
 
-    protected internal string KubeSecretName { get; set; }
+    protected string KubeSecretName { get; set; }
 
-    protected internal string KubeSecretType { get; set; }
+    protected string KubeSecretType { get; set; }
 
-    protected internal string KubeSvcCreds { get; set; }
+    protected string KubeSvcCreds { get; set; }
 
-    protected internal string KubeHost { get; set; }
+    protected string KubeHost { get; set; }
 
-    protected internal string CertificateDataFieldName { get; set; }
+    public string CertificateDataFieldName { get; set; }
 
-    protected internal string PasswordFieldName { get; set; }
+    public string PasswordFieldName { get; set; }
 
     protected internal bool PasswordIsSeparateSecret { get; set; }
 
@@ -179,7 +162,7 @@ public abstract class JobBase
 
     protected bool Overwrite { get; set; }
 
-    protected internal virtual AsymmetricKeyEntry KeyEntry { get; set; }
+    protected bool HasPrivateKey { get; set; }
 
     protected internal ManagementJobConfiguration ManagementConfig { get; set; }
 
@@ -189,7 +172,7 @@ public abstract class JobBase
 
     public string ExtensionName => "K8S";
 
-    public string KubeCluster { get; set; }
+    protected string KubeCluster { get; set; }
 
     protected void InitializeStore(InventoryJobConfiguration config)
     {
@@ -262,7 +245,7 @@ public abstract class JobBase
         ServerUsername = config.ServerUsername;
         ServerPassword = config.ServerPassword;
         StorePath = config.CertificateStoreDetails?.StorePath;
-        
+
 
         Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
@@ -496,8 +479,8 @@ public abstract class JobBase
                 if (string.IsNullOrEmpty(KubeSecretName))
                 {
                     Logger.LogInformation(
-                        "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath}`",
-                        sPathParts[0]);
+                        "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath2}`",
+                        spath, sPathParts[0]);
                     KubeSecretName = sPathParts[0];
                 }
                 else
@@ -509,16 +492,19 @@ public abstract class JobBase
 
                 break;
             case 2 when IsClusterStore(Capability):
-                Logger.LogWarning("`StorePath`: `{StorePath}` is 2 parts this is not a valid combination for `K8SCluster` and will be ignored", spath);
+                Logger.LogWarning(
+                    "`StorePath`: `{StorePath}` is 2 parts this is not a valid combination for `K8SCluster` and will be ignored",
+                    spath);
                 break;
             case 2 when IsNamespaceStore(Capability):
                 var nsPrefix = sPathParts[0];
                 Logger.LogTrace("nsPrefix: {NsPrefix}", nsPrefix);
                 var nsName = sPathParts[1];
                 Logger.LogTrace("nsName: {NsName}", nsName);
-                
+
                 Logger.LogInformation(
-                    "`StorePath`: `{StorePath}` is 2 parts and store type is `K8SNS`, assuming that store path pattern is either `<cluster_name>/<namespace_name>` or `namespace/<namespace_name>`", spath);
+                    "`StorePath`: `{StorePath}` is 2 parts and store type is `K8SNS`, assuming that store path pattern is either `<cluster_name>/<namespace_name>` or `namespace/<namespace_name>`",
+                    spath);
                 if (string.IsNullOrEmpty(KubeNamespace))
                 {
                     Logger.LogInformation("`KubeNamespace` is empty, setting `KubeNamespace` to `{Namespace}`", nsName);
@@ -526,16 +512,20 @@ public abstract class JobBase
                 }
                 else
                 {
-                    Logger.LogInformation("`KubeNamespace` parameter is not empty, ignoring `StorePath` value `{StorePath}`", spath);
+                    Logger.LogInformation(
+                        "`KubeNamespace` parameter is not empty, ignoring `StorePath` value `{StorePath}`", spath);
                 }
+
                 break;
             case 2:
-                Logger.LogInformation("`StorePath`: `{StorePath}` is 2 parts, assuming that store path pattern is the `<cluster>/<secret_name>` ", spath);
+                Logger.LogInformation(
+                    "`StorePath`: `{StorePath}` is 2 parts, assuming that store path pattern is the `<cluster>/<secret_name>` ",
+                    spath);
                 var kNs = sPathParts[0];
                 Logger.LogTrace("kNs: {KubeNamespace}", kNs);
                 var kSn = sPathParts[1];
                 Logger.LogTrace("kSn: {KubeSecretName}", kSn);
-                
+
                 if (string.IsNullOrEmpty(KubeNamespace))
                 {
                     Logger.LogInformation("`KubeNamespace` is not set, setting `KubeNamespace` to `{Namespace}`", kNs);
@@ -558,10 +548,14 @@ public abstract class JobBase
 
                 break;
             case 3 when IsClusterStore(Capability):
-                Logger.LogError("`StorePath`: `{StorePath}` is 3 parts and store type is `K8SCluster`, this is not a valid combination and `StorePath` will be ignored", spath);
+                Logger.LogError(
+                    "`StorePath`: `{StorePath}` is 3 parts and store type is `K8SCluster`, this is not a valid combination and `StorePath` will be ignored",
+                    spath);
                 break;
             case 3 when IsNamespaceStore(Capability):
-                Logger.LogInformation("`StorePath`: `{StorePath}` is 3 parts and store type is `K8SNS`, assuming that store path pattern is `<cluster>/namespace/<namespace_name>`", spath);
+                Logger.LogInformation(
+                    "`StorePath`: `{StorePath}` is 3 parts and store type is `K8SNS`, assuming that store path pattern is `<cluster>/namespace/<namespace_name>`",
+                    spath);
                 var nsCluster = sPathParts[0];
                 Logger.LogTrace("nsCluster: {NsCluster}", nsCluster);
                 var nsClarifier = sPathParts[1];
@@ -571,33 +565,37 @@ public abstract class JobBase
 
                 if (string.IsNullOrEmpty(KubeNamespace))
                 {
-                    Logger.LogInformation("`KubeNamespace` is not set, setting `KubeNamespace` to `{Namespace}`", nsName3);
+                    Logger.LogInformation("`KubeNamespace` is not set, setting `KubeNamespace` to `{Namespace}`",
+                        nsName3);
                     KubeNamespace = nsName3;
                 }
                 else
                 {
-                    Logger.LogInformation("`KubeNamespace` is set, ignoring `StorePath` value `{StorePath}`", spath);    
+                    Logger.LogInformation("`KubeNamespace` is set, ignoring `StorePath` value `{StorePath}`", spath);
                 }
 
                 if (!string.IsNullOrEmpty(KubeSecretName))
                 {
-                    Logger.LogWarning("`KubeSecretName` parameter is not empty, but is not supported for `K8SNS` store type and will be ignored");
+                    Logger.LogWarning(
+                        "`KubeSecretName` parameter is not empty, but is not supported for `K8SNS` store type and will be ignored");
                     KubeSecretName = "";
                 }
 
                 break;
             case 3:
-                Logger.LogInformation("Store path is 3 parts assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>`");
+                Logger.LogInformation(
+                    "Store path is 3 parts assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>`");
                 var kH = sPathParts[0];
                 Logger.LogTrace("kH: {KubeHost}", kH);
                 var kN = sPathParts[1];
                 Logger.LogTrace("kN: {KubeNamespace}", kN);
                 var kS = sPathParts[2];
                 Logger.LogTrace("kS: {KubeSecretName}", kS);
-                
+
                 if (kN is "secret" or "tls" or "certificate" or "namespace")
                 {
-                    Logger.LogInformation("Store path is 3 parts and the second part is a reserved keyword, assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>'");
+                    Logger.LogInformation(
+                        "Store path is 3 parts and the second part is a reserved keyword, assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>'");
                     kN = sPathParts[0];
                     kS = sPathParts[1];
                 }
@@ -718,8 +716,7 @@ public abstract class JobBase
 
         //check if storeProperties contains ServerUsername key
         Logger.LogInformation("Attempting to resolve 'ServerUsername' from store properties or PAM provider");
-        var pamServerUsername =
-            (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
+        var pamServerUsername = PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
         if (!string.IsNullOrEmpty(pamServerUsername))
         {
             Logger.LogInformation(
@@ -731,8 +728,7 @@ public abstract class JobBase
         {
             Logger.LogInformation(
                 "ServerUsername not resolved from PAM provider, attempting to resolve 'Server Username' from store properties");
-            pamServerUsername =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
+            pamServerUsername = PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
             if (!string.IsNullOrEmpty(pamServerUsername))
             {
                 Logger.LogInformation(
@@ -752,8 +748,7 @@ public abstract class JobBase
         try
         {
             Logger.LogInformation("Attempting to resolve 'ServerPassword' from store properties or PAM provider");
-            var pamServerPassword =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
+            var pamServerPassword = PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
             if (!string.IsNullOrEmpty(pamServerPassword))
             {
                 Logger.LogInformation(
@@ -765,8 +760,7 @@ public abstract class JobBase
             {
                 Logger.LogInformation(
                     "ServerPassword not resolved from PAM provider, attempting to resolve 'Server Password' from store properties");
-                pamServerPassword =
-                    (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
+                pamServerPassword = PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
                 if (!string.IsNullOrEmpty(pamServerPassword))
                 {
                     Logger.LogInformation(
@@ -790,8 +784,7 @@ public abstract class JobBase
         try
         {
             Logger.LogInformation("Attempting to resolve 'StorePassword' from store properties or PAM provider");
-            var pamStorePassword =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
+            var pamStorePassword = PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
             if (!string.IsNullOrEmpty(pamStorePassword))
             {
                 Logger.LogInformation(
@@ -802,8 +795,7 @@ public abstract class JobBase
             {
                 Logger.LogInformation(
                     "StorePassword not resolved from PAM provider, attempting to resolve 'Store Password' from store properties");
-                pamStorePassword =
-                    (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
+                pamStorePassword = PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
                 if (!string.IsNullOrEmpty(pamStorePassword))
                 {
                     Logger.LogInformation(
@@ -839,7 +831,7 @@ public abstract class JobBase
                     "Kubernetes certificate store type is 'pfx'. Setting default values for 'PasswordFieldName' and 'CertificateDataFieldName'");
                 PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName")
                     ? storeProperties["PasswordFieldName"]
-                    : DefaultPFXPasswordSecretFieldName;
+                    : DefaultPfxPasswordSecretFieldName;
                 PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
                     ? storeProperties["PasswordIsSeparateSecret"]
                     : false;
@@ -854,14 +846,14 @@ public abstract class JobBase
                     : "";
                 CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
                     ? storeProperties["CertificateDataFieldName"]
-                    : DefaultPFXSecretFieldName;
+                    : DefaultPfxSecretFieldName;
                 break;
             case "jks":
                 Logger.LogInformation(
                     "Kubernetes certificate store type is 'jks'. Setting default values for 'PasswordFieldName' and 'CertificateDataFieldName'");
                 PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName")
                     ? storeProperties["PasswordFieldName"]
-                    : DefaultPFXPasswordSecretFieldName;
+                    : DefaultPfxPasswordSecretFieldName;
                 PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
                     ? bool.Parse(storeProperties["PasswordIsSeparateSecret"])
                     : false;
@@ -876,17 +868,17 @@ public abstract class JobBase
                     : "";
                 CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
                     ? storeProperties["CertificateDataFieldName"]
-                    : DefaultJKSSecretFieldName;
+                    : DefaultJksSecretFieldName;
                 break;
         }
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
         KubeClient = new KubeCertificateManagerClient(KubeSvcCreds, true); // todo source this from config or pass in
-        
+
         Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
         KubeHost = KubeClient.GetHost();
         Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
-        
+
         Logger.LogTrace("Getting cluster name from KubeClient");
         KubeCluster = KubeClient.GetClusterName();
         Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
@@ -921,19 +913,17 @@ public abstract class JobBase
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
     }
 
-    public bool PasswordIsK8SSecret { get; set; } = false;
+    protected bool PasswordIsK8SSecret { get; set; }
 
     public object KubeSecretPassword { get; set; }
 
-    public string GetStorePath()
+    protected string GetStorePath()
     {
         Logger.LogTrace("Entered GetStorePath()");
         try
         {
-            var secretType = "";
+            string secretType;
             var storePath = StorePath;
-
-
             if (Capability.Contains("K8SNS"))
             {
                 secretType = "namespace";
@@ -994,103 +984,6 @@ public abstract class JobBase
         {
             Logger.LogError("Unknown error constructing canonical store path {Error}", e.Message);
             return StorePath;
-        }
-    }
-
-    protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
-    {
-        Logger.LogDebug("Entered GetKeyBytes()");
-        Logger.LogTrace("Key algo: {KeyAlgo}", certObj.GetKeyAlgorithm());
-        Logger.LogTrace("Has private key: {HasPrivateKey}", certObj.HasPrivateKey);
-        Logger.LogTrace("Pub key: {PublicKey}", certObj.GetPublicKey());
-
-        byte[] keyBytes;
-
-        try
-        {
-            switch (certObj.GetKeyAlgorithm())
-            {
-                case "RSA":
-                    Logger.LogDebug("Attempting to export private key as RSA");
-                    Logger.LogTrace("GetRSAPrivateKey().ExportRSAPrivateKey(): ");
-                    keyBytes = certObj.GetRSAPrivateKey()?.ExportRSAPrivateKey();
-                    Logger.LogTrace("ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "ECDSA":
-                    Logger.LogDebug("Attempting to export private key as ECDSA");
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportECPrivateKey(): ");
-                    keyBytes = certObj.GetECDsaPrivateKey()?.ExportECPrivateKey();
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "DSA":
-                    Logger.LogDebug("Attempting to export private key as DSA");
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): ");
-                    keyBytes = certObj.GetDSAPrivateKey()?.ExportPkcs8PrivateKey();
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                default:
-                    Logger.LogWarning("Unknown key algorithm, attempting to export as PKCS12");
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword)");
-                    keyBytes = certObj.Export(X509ContentType.Pkcs12, certPassword);
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword) complete");
-                    break;
-            }
-
-            if (keyBytes != null) return keyBytes;
-
-            Logger.LogError("Unable to parse private key");
-
-            throw new InvalidKeyException($"Unable to parse private key from certificate '{certObj.Thumbprint}'");
-        }
-        catch (Exception e)
-        {
-            Logger.LogError("Unknown error getting key bytes, but we're going to try a different method");
-            Logger.LogError("{Message}", e.Message);
-            Logger.LogTrace("{Message}", e.ToString());
-            Logger.LogTrace("{Trace}", e.StackTrace);
-            try
-            {
-                if (certObj.HasPrivateKey)
-                {
-                    try
-                    {
-                        Logger.LogDebug("Attempting to export private key as PKCS8");
-                        Logger.LogTrace("ExportPkcs8PrivateKey()");
-                        keyBytes = certObj.PrivateKey.ExportPkcs8PrivateKey();
-                        Logger.LogTrace("ExportPkcs8PrivateKey() complete");
-                        // Logger.LogTrace("keyBytes: " + keyBytes);
-                        // Logger.LogTrace("Converted to string: " + Encoding.UTF8.GetString(keyBytes));
-                        return keyBytes;
-                    }
-                    catch (Exception e2)
-                    {
-                        Logger.LogError(
-                            "Unknown error exporting private key as PKCS8, but we're going to try a a final method ");
-                        Logger.LogError(e2.Message);
-                        Logger.LogTrace(e2.ToString());
-                        Logger.LogTrace(e2.StackTrace);
-                        //attempt to export encrypted pkcs8
-                        Logger.LogDebug("Attempting to export encrypted PKCS8 private key");
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey()");
-                        keyBytes = certObj.PrivateKey.ExportEncryptedPkcs8PrivateKey(certPassword,
-                            new PbeParameters(
-                                PbeEncryptionAlgorithm.Aes128Cbc,
-                                HashAlgorithmName.SHA256,
-                                1));
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey() complete");
-                        return keyBytes;
-                    }
-                }
-            }
-            catch (Exception ie)
-            {
-                Logger.LogError("Unknown error exporting private key as PKCS8, returning null");
-                Logger.LogError("{Message}", ie.Message);
-                Logger.LogTrace("{Message}", ie.ToString());
-                Logger.LogTrace("{Trace}", ie.StackTrace);
-            }
-
-            return Array.Empty<byte>();
         }
     }
 
@@ -1164,11 +1057,11 @@ public abstract class JobBase
         return null; // Private key with the given alias not found
     }
 
-    protected string getK8SStorePassword(V1Secret certData)
+    protected string GetK8SStorePassword(V1Secret certData)
     {
         Logger.LogDebug("Entered getK8SStorePassword()");
         Logger.LogDebug("Attempting to get store password from K8S secret");
-        var storePasswordBytes = Array.Empty<byte>();
+        byte[] storePasswordBytes;
 
         // if secret is a buddy pass
         if (!string.IsNullOrEmpty(StorePassword))
@@ -1187,8 +1080,8 @@ public abstract class JobBase
             Logger.LogTrace("Splitting password path by /");
             var passwordPath = StorePasswordPath.Split("/");
             Logger.LogDebug("Password path length: {Len}", passwordPath.Length.ToString());
-            var passwordNamespace = "";
-            var passwordSecretName = "";
+            string passwordNamespace;
+            string passwordSecretName;
             if (passwordPath.Length == 1)
             {
                 Logger.LogDebug("Password path length is 1, using KubeNamespace");
@@ -1240,7 +1133,7 @@ public abstract class JobBase
         else
         {
             Logger.LogDebug("No password found");
-            var passwdEx = "";
+            string passwdEx;
             if (!string.IsNullOrEmpty(StorePasswordPath))
             {
                 passwdEx = "Store secret '" + StorePasswordPath + "'did not contain key '" + CertificateDataFieldName +
@@ -1284,7 +1177,7 @@ public abstract class JobBase
         Logger.LogDebug("Entered GetCertificatePem()");
         if (string.IsNullOrEmpty(alias))
         {
-            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+            alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
         }
 
         Logger.LogDebug("Attempting to get certificate with alias {Alias}", alias);
@@ -1303,7 +1196,7 @@ public abstract class JobBase
         return stringWriter.ToString();
     }
 
-    protected string getPrivateKeyPem(Pkcs12Store store, string password, string alias = "")
+    protected string GetPrivateKeyPem(Pkcs12Store store, string password, string alias = "")
     {
         Logger.LogDebug("Entered getPrivateKeyPem()");
         if (string.IsNullOrEmpty(alias))
@@ -1327,63 +1220,190 @@ public abstract class JobBase
         return stringWriter.ToString();
     }
 
-    protected List<string> getCertChain(Pkcs12Store store, string password, string alias = "")
-    {
-        Logger.LogDebug("Entered getCertChain()");
-        if (string.IsNullOrEmpty(alias))
-        {
-            Logger.LogDebug("Alias is empty, attempting to get key entry alias");
-            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
-        }
-
-        var chain = new List<string>();
-        Logger.LogDebug("Attempting to get certificate chain with alias {Alias}", alias);
-        var chainCerts = store.GetCertificateChain(alias);
-        foreach (var chainCert in chainCerts)
-        {
-            Logger.LogTrace("Adding certificate to chain");
-            using var stringWriter = new StringWriter();
-            var pemWriter = new PemWriter(stringWriter);
-            pemWriter.WriteObject(chainCert.Certificate);
-            pemWriter.Writer.Flush();
-            chain.Add(stringWriter.ToString());
-        }
-
-        Logger.LogTrace("Certificate chain:\n{Chain}", string.Join("\n", chain));
-        Logger.LogDebug("Returning certificate chain");
-        return chain;
-    }
-
-    public static bool IsDerFormat(byte[] data)
-    {
-        try
-        {
-            var cert = new X509CertificateParser().ReadCertificate(data);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public static string ConvertDerToPem(byte[] data)
-    {
-        var pemObject = new PemObject("CERTIFICATE", data);
-        using var stringWriter = new StringWriter();
-        var pemWriter = new PemWriter(stringWriter);
-        pemWriter.WriteObject(pemObject);
-        pemWriter.Writer.Flush();
-        return stringWriter.ToString();
-    }
-
-    protected static string GetSHA256Hash(string input)
+    protected static string GetSha256Hash(string input)
     {
         var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
         var passwordHash = BitConverter.ToString(passwordHashBytes).Replace("-", "").ToLower();
         return passwordHash;
     }
+
+    protected List<string> HandleTlsSecret()
+    {
+        Logger.LogDebug("Entered HandleTlsSecret for job id '{JobId}'", InventoryConfig?.JobHistoryId);
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogWarning("KubeNamespace is null or empty, attempting to parse from StorePath {StorePath}",
+                StorePath);
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                Logger.LogDebug("Splitting StorePath {StorePath} to get KubeNamespace", StorePath);
+                KubeNamespace = StorePath.Split("/").First();
+                Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
+                if (KubeNamespace == KubeSecretName)
+                {
+                    Logger.LogWarning(
+                        "KubeNamespace and KubeSecretName are the same. Setting KubeNamespace to 'default'");
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                Logger.LogWarning("StorePath is null or empty, setting KubeNamespace to 'default'");
+                KubeNamespace = "default";
+            }
+
+            Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogWarning("KubeSecretName is null or empty, attempting to parse from StorePath {StorePath}",
+                StorePath);
+            KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
+        }
+
+        try
+        {
+            Logger.LogTrace("Calling KubeClient.GetCertificateStoreSecret()");
+            var certData = KubeClient.GetCertificateStoreSecret(
+                KubeSecretName,
+                KubeNamespace
+            );
+            Logger.LogDebug("KubeClient.GetCertificateStoreSecret() returned successfully");
+            Logger.LogTrace("certData: {CertData}", certData);
+            var certificatesBytes = certData?.Data["tls.crt"];
+            Logger.LogTrace("certificatesBytes: {CertificatesBytes}", certificatesBytes);
+            var privateKeyBytes = certData?.Data["tls.key"];
+            var certsList = new List<string>();
+
+            if (certificatesBytes == null)
+            {
+                Logger.LogError("tls.crt was not found in secret data for job id {JobId}", InventoryConfig?.JobHistoryId);
+                throw new InvalidK8SSecretException(
+                    $"'tls.crt' key was not found in secret data for secret {KubeSecretName} in namespace {KubeNamespace}");
+            }
+
+            if (privateKeyBytes == null)
+            {
+                Logger.LogError("tls.key was not found in secret data for job id {JobId}", InventoryConfig?.JobHistoryId);
+                HasPrivateKey = false;
+            }
+            else
+            {
+                Logger.LogDebug("tls.key found in secret data for job id {JobId}", InventoryConfig?.JobHistoryId);
+                HasPrivateKey = true;
+            }
+
+            Logger.LogTrace("{HasPrivateKey}", HasPrivateKey);
+
+            var certPem = Encoding.UTF8.GetString(certificatesBytes);
+            Logger.LogTrace("certPem: {CertPem}", certPem);
+
+            Logger.LogDebug("Calling KubeClient.ReadPemCertificate()");
+            var certObj = KubeClient.ReadPemCertificate(certPem);
+            Logger.LogDebug("Returned from KubeClient.ReadPemCertificate()");
+            if (certObj == null)
+            {
+                Logger.LogDebug(
+                    "Failed to parse certificate from TLS secret data as PEM, attempting to parse as DER");
+                // Attempt to read data as DER
+                certObj = KubeClient.ReadDerCertificate(certPem);
+                if (certObj != null)
+                {
+                    Logger.LogDebug("Calling KubeClient.ConvertToPem()");
+                    certPem = KubeClient.ConvertToPem(certObj);
+                    Logger.LogDebug("Returned from KubeClient.ConvertToPem()");
+                    Logger.LogTrace("certPem: {CertPem}", certPem);
+                }
+                else
+                {
+                    Logger.LogError("Failed to parse certificate from TLS secret data as DER");
+                }
+            }
+            else
+            {
+                Logger.LogDebug("Calling KubeClient.ConvertToPem()");
+                certPem = KubeClient.ConvertToPem(certObj);
+                Logger.LogDebug("Returned from KubeClient.ConvertToPem()");
+                Logger.LogTrace("certPem: {CertPem}", certPem);
+            }
+
+            if (!string.IsNullOrEmpty(certPem)) certsList.Add(certPem);
+
+            var caPem = "";
+            if (certData.Data.TryGetValue("ca.crt", out var value))
+            {
+                Logger.LogDebug("ca.crt found in secret data");
+                Logger.LogTrace("caBytes: {CaBytes}", value);
+                var caObj = KubeClient.ReadPemCertificate(Encoding.UTF8.GetString(value));
+                if (caObj == null)
+                {
+                    Logger.LogDebug(
+                        "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                    // Attempt to read data as DER
+                    caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(value));
+                    if (caObj != null)
+                    {
+                        caPem = KubeClient.ConvertToPem(caObj);
+                        Logger.LogTrace("caPem: {CaPem}", caPem);
+                    }
+                }
+                else
+                {
+                    caPem = KubeClient.ConvertToPem(caObj);
+                }
+
+                Logger.LogTrace("caPem: {CaPem}", caPem);
+                if (!string.IsNullOrEmpty(caPem)) certsList.Add(caPem);
+            }
+            else
+            {
+                // Determine if chain is present in tls.crt
+                Logger.LogDebug("Calling KubeClient.LoadCertificateChain()");
+                var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(certificatesBytes));
+                Logger.LogDebug("Returned from KubeClient.LoadCertificateChain()");
+                if (certChain is { Count: > 1 })
+                {
+                    certsList.Clear();
+                    Logger.LogDebug("Certificate chain detected in tls.crt.  Attempting to parse chain...");
+                    foreach (var cert in certChain)
+                    {
+                        Logger.LogTrace("cert: {Cert}", cert.ToString());
+                        Logger.LogDebug("Calling KubeClient.ConvertToPem()");
+                        caPem = KubeClient.ConvertToPem(cert);
+                        Logger.LogDebug("Returned from KubeClient.ConvertToPem()");
+                        certsList.Add(caPem);
+                    }
+                }
+            }
+
+            Logger.LogTrace("certsList: {CertsList}", certsList);
+            Logger.LogDebug("Returning from HandleTlsSecret for job id '{JobId}'", InventoryConfig?.JobHistoryId);
+            return certsList.ToList();
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogError("{Message}", e.Message);
+            Logger.LogTrace("{Message}", e.ToString());
+            var certDataErrorMsg =
+                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
+            Logger.LogError("{Message}", certDataErrorMsg);
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job '{JobId}' with failure", InventoryConfig?.JobHistoryId);
+            throw new StoreNotFoundException(certDataErrorMsg);
+        }
+        catch (Exception e)
+        {
+            Logger.LogError("{Message}", e.Message);
+            Logger.LogTrace("{Message}", e.ToString());
+            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job '{JobId}' with failure", InventoryConfig?.JobHistoryId);
+            throw new Exception(certDataErrorMsg);
+        }
+    }
 }
+
+
 
 public class StoreNotFoundException : Exception
 {

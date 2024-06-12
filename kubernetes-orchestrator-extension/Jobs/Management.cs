@@ -229,12 +229,12 @@ public class Management : JobBase, IManagementJobExtension
         {
             Logger.LogDebug("StorePassword is not null or empty so setting StorePassword to config.CertificateStoreDetails.StorePassword");
             StorePassword = config.CertificateStoreDetails.StorePassword;
-            var hashedStorePassword = GetSHA256Hash(StorePassword);
+            var hashedStorePassword = GetSha256Hash(StorePassword);
             Logger.LogTrace("hashedStorePassword: {Hash}", hashedStorePassword);
         }
         Logger.LogDebug("Getting store password");
-        var sPass = getK8SStorePassword(k8sData.Secret);
-        var hashedSPass = GetSHA256Hash(sPass);
+        var sPass = GetK8SStorePassword(k8sData.Secret);
+        var hashedSPass = GetSha256Hash(sPass);
         Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         try
@@ -316,7 +316,7 @@ public class Management : JobBase, IManagementJobExtension
             StorePassword = config.CertificateStoreDetails.StorePassword;
         }
         Logger.LogDebug("Getting store password");
-        var sPass = getK8SStorePassword(k8sData.Secret);
+        var sPass = GetK8SStorePassword(k8sData.Secret);
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
