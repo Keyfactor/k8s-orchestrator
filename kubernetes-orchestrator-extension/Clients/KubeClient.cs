@@ -86,24 +86,34 @@ public class KubeCertificateManagerClient
         var namespaces = Client.CoreV1.ListNamespace(); 
         _logger.LogTrace("k8s namespaces: {Namespaces}", namespaces?.Items.ToString());
     }
-
-    public void EnforceTLS_1_3()
+    
+    private void ForceTLSVersion(string version="")
     {
-        _logger.LogDebug("Entered EnforceTLS_1_3()");
-        _logger.LogDebug("Creating HttpClientHandler with SslProtocols.Tls13");
+        _logger.LogDebug("Entered ForceTLSVersion()");
+        _logger.LogDebug("Creating HttpClientHandler with TLSv{Version}", version);
+        
         var handler = new HttpClientHandler
         {
-            SslProtocols = SslProtocols.Tls13
+            SslProtocols = SslProtocols.Tls13 //Default to TLS 1.3
         };
+        
+        if (version == "1.2")
+        {
+            handler.SslProtocols = SslProtocols.Tls12;
+        }
 
         // Create the custom delegating handler
         _logger.LogDebug("Creating CustomHttpClientHandler with HttpClientHandler");
         var customHandler = new CustomHttpClientHandler(handler);
 
-        _logger.LogDebug("Recreating Kubernetes client with custom handler for TLS 1.3 enforcement");
+        _logger.LogDebug("Recreating Kubernetes client with custom handler for TLSv{Version} enforcement", version);
+        _logger.LogTrace("TLS version on handler: {Version}", handler.SslProtocols.ToString());
         Client = new Kubernetes(ClientConfig, customHandler);
 
+        _logger.LogDebug("Calling ClientTest()");
         ClientTest();
+        _logger.LogDebug("Finished calling ClientTest()");
+        _logger.LogDebug("Exiting ForceTLSVersion()");
     }
 
     public string GetClusterName()
@@ -338,6 +348,8 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Finished creating Kubernetes client");
         _logger.LogTrace("Setting Client property");
         Client = client;
+        
+        // ForceTLSVersion("1.2"); //todo: force v1.2 to test
 
         try
         {
@@ -347,7 +359,7 @@ public class KubeCertificateManagerClient
         {
             _logger.LogError("Error testing client connection: {Error}", ex.Message);
             _logger.LogTrace("{StackTrace}", ex.ToString());
-            EnforceTLS_1_3();
+            ForceTLSVersion();
         }
 
         _logger.LogTrace("Exiting GetKubeClient()");

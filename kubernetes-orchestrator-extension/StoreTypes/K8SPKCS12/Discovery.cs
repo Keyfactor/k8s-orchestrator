@@ -13,7 +13,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SCluster;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 
 // The Discovery class implements IAgentJobExtension and is meant to find all certificate stores based on the information passed when creating the job in KF Command 
 public class Discovery : DiscoveryBase, IDiscoveryJobExtension
@@ -46,13 +46,28 @@ public class Discovery : DiscoveryBase, IDiscoveryJobExtension
             Logger.LogTrace("Job capability: {Capability}", config.Capability);
 
             // Run discovery
-            SecretAllowedKeys = SecretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
-            Logger.LogInformation(
-                "Discovering k8s secrets for cluster `{ClusterName}` with allowed keys: `{AllowedKeys}` and secret types: `kubernetes.io/tls, Opaque`",
-                KubeHost, string.Join(",", SecretAllowedKeys));
+            var secretAllowedKeysStr = config.JobProperties["extensions"].ToString();
+            var allowedPatterns = config.JobProperties["patterns"].ToString();
+
+            var additionalKeyPatterns = string.IsNullOrEmpty(allowedPatterns)
+                ? new[] { "p12" }
+                : allowedPatterns.Split(',');
+            SecretAllowedKeys = string.IsNullOrEmpty(secretAllowedKeysStr)
+                ? new[] { "p12" }
+                : secretAllowedKeysStr.Split(',');
+
+            //append pkcs12AllowedKeys to secretAllowedKeys
+            SecretAllowedKeys = SecretAllowedKeys.Concat(additionalKeyPatterns).ToArray();
+            SecretAllowedKeys = SecretAllowedKeys.Concat(Pkcs12AllowedKeys).ToArray();
+
+            //make secretAllowedKeys unique
+            SecretAllowedKeys = SecretAllowedKeys.Distinct().ToArray();
+
+            Logger.LogInformation("Discovering k8s secrets with allowed keys: `{AllowedKeys}` and type: `pkcs12`",
+                string.Join(",", SecretAllowedKeys));
             Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
-            DiscoveredLocations =
-                KubeClient.DiscoverSecrets(SecretAllowedKeys, SecretType, string.Join(",", SearchNamespaces));
+            DiscoveredLocations = KubeClient.DiscoverSecrets(SecretAllowedKeys, "pkcs12",
+                string.Join(",", SearchNamespaces));
             Logger.LogDebug("Returned from KubeClient.DiscoverSecrets()");
 
             //Sends store locations back to KF command where they can be approved or rejected
