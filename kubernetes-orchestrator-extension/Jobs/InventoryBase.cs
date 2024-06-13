@@ -12,6 +12,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
@@ -39,9 +40,14 @@ public abstract class InventoryBase : JobBase
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
-        InitializeStore(config);
+        Logger = LogHandler.GetClassLogger(GetType());
         Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job '{JobId}", config.JobId);
         Logger.LogInformation("Inventory for store type: {Capability}", config.Capability);
+        
+        Logger.LogDebug("Calling InitializeStore()");
+        InitializeStore(config);
+        Logger.LogDebug("Returned from InitializeStore()");
+        
 
         K8SHostName = KubeClient.GetHost();
         Logger.LogDebug("Server: {Host}", K8SHostName);

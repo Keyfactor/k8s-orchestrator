@@ -62,7 +62,7 @@ public class K8SJobCertificate
     public string PrivateKeyPkcs8 { get; set; } = "";
 
     public string PrivateKeyPkcs1 { get; set; } = "";
-    public byte[] PrivateKeyBytes { get; set; }
+    public byte[] PrivateKeyBytes { get; }
     public string Password { get; set; } = "";
 
     public bool PasswordIsK8SSecret { get; set; }
@@ -1417,6 +1417,23 @@ public class StoreNotFoundException : Exception
     }
 
     public StoreNotFoundException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+public class InvalidCertificateAlias : Exception
+{
+    public InvalidCertificateAlias()
+    {
+    }
+
+    public InvalidCertificateAlias(string message)
+        : base(message)
+    {
+    }
+
+    public InvalidCertificateAlias(string message, Exception innerException)
         : base(message, innerException)
     {
     }

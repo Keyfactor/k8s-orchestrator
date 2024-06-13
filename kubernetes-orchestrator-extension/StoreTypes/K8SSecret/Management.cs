@@ -13,7 +13,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8STLSSecr;
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SSecret;
 
 public class Management : ManagementBase, IManagementJobExtension
 {
@@ -52,7 +52,7 @@ public class Management : ManagementBase, IManagementJobExtension
                 KubeSecretName,
                 KubeNamespace,
                 KubeSecretType,
-                true, //todo: is this useful?
+                false, //todo: is this useful?
                 JobConfig.Overwrite
             );
             if (createResponse == null)
@@ -78,5 +78,60 @@ public class Management : ManagementBase, IManagementJobExtension
             Logger.LogTrace("{Message}", ex.ToString());
             return FailJob(ex.Message, config.JobHistoryId);
         }
+    }
+
+    protected override JobResult HandleUpdate(ManagementJobConfiguration config)
+    {
+        Logger.LogInformation("Updating certificate '{Alias}' in Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
+            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
+        Logger.LogDebug("Returning HandleCreate() for KubeSecretType: {KubeSecretType}", KubeSecretType);
+        return HandleCreate(config);
+    }
+
+    protected override JobResult HandleRemove(ManagementJobConfiguration config)
+    {
+        Logger.LogInformation(
+            "Removing certificate '{Alias}' from Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
+            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
+        try
+        {
+            Logger.LogDebug(
+                "Calling KubeClient.DeleteCertificateStoreSecret() with KubeSecretName: {KubeSecretName}, KubeNamespace: {KubeNamespace}, KubeSecretType: {KubeSecretType}, JobCertObj.Alias: {Alias}",
+                KubeSecretName, KubeNamespace, KubeSecretType, JobCertObj.Alias);
+            var response = KubeClient.DeleteCertificateStoreSecret(
+                KubeSecretName,
+                KubeNamespace,
+                KubeSecretType,
+                JobCertObj.Alias
+            );
+            Logger.LogDebug("Returned from KubeClient.DeleteCertificateStoreSecret()");
+            Logger.LogTrace("Response: {Response}", response);
+        }
+        catch (HttpOperationException rErr)
+        {
+            Logger.LogError("{Message}", rErr.Message);
+            Logger.LogTrace("{Message}", rErr.ToString());
+            if (!rErr.Message.Contains("NotFound")) return FailJob(rErr.Message, config.JobHistoryId);
+
+            var certDataErrorMsg =
+                $"Kubernetes secret type '{KubeSecretType}' named '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on Kubernetes client '{KubeHost}'";
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = config.JobHistoryId,
+                FailureMessage = certDataErrorMsg
+            };
+        }
+        catch (Exception e)
+        {
+            Logger.LogError(e,
+                "Error removing certificate '{Alias}' from Kubernetes client '{KubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}",
+                JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
+            Logger.LogInformation("End REMOVE MANAGEMENT job '{JobId}' with failure", config.JobId);
+            return FailJob(e.Message, config.JobHistoryId);
+        }
+
+        Logger.LogInformation("End REMOVE MANAGEMENT job '{JobId}' with success", config.JobId);
+        return SuccessJob(config.JobHistoryId);
     }
 }

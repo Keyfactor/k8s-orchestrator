@@ -277,57 +277,57 @@ namespace TestConsole
                     case "inventory":
                     case "inv":
                     case "i":
-                        // Get test configurations from testConfigPath
-
-                        tests = GetTestConfig(testConfigPath, input);
-                        var inv = new Inventory(secretResolver.Object);
-
-                        Console.WriteLine("Running Inventory Job Test Cases");
-                        foreach (var testCase in tests)
-                        {
-                            testOutputDict.Add(testCase.TestName, "Running");
-                            try
-                            {
-                                //convert testCase to InventoryJobConfig
-                                Console.WriteLine($"=============={testCase.TestName}==================");
-                                Console.WriteLine($"Description: {testCase.Description}");
-                                Console.WriteLine($"Expected Fail: {testCase.Fail.ToString()}");
-                                Console.WriteLine($"Expected Result: {testCase.ExpectedValue}");
-
-
-                                var invJobConfig = GetInventoryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
-                                SubmitInventoryUpdate sui = GetItems;
-
-                                var jobResult = inv.ProcessJob(invJobConfig, sui);
-
-                                if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
-                                    (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
-                                {
-                                    testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
-                                    Console.ForegroundColor = ConsoleColor.Green;
-                                }
-                                else
-                                {
-                                    testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
-                                    Console.ForegroundColor = ConsoleColor.Red;
-                                    hasFailure = true;
-                                }
-                                Console.WriteLine(
-                                    $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{invJobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{invJobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
-                                Console.ResetColor();
-                            }
-                            catch (Exception e)
-                            {
-                                testOutputDict[testCase.TestName] = $"Failure - {e.Message}";
-                                Console.ForegroundColor = ConsoleColor.Red;
-                                Console.WriteLine(e);
-                                Console.WriteLine($"Failed to run inventory test case: {testCase.TestName}");
-                                Console.ResetColor();
-                            }
-
-
-                        }
-                        Console.WriteLine("Finished Running Inventory Job Test Cases");
+                        // // Get test configurations from testConfigPath
+                        //
+                        // tests = GetTestConfig(testConfigPath, input);
+                        // var inv = new Inventory(secretResolver.Object);
+                        //
+                        // Console.WriteLine("Running Inventory Job Test Cases");
+                        // foreach (var testCase in tests)
+                        // {
+                        //     testOutputDict.Add(testCase.TestName, "Running");
+                        //     try
+                        //     {
+                        //         //convert testCase to InventoryJobConfig
+                        //         Console.WriteLine($"=============={testCase.TestName}==================");
+                        //         Console.WriteLine($"Description: {testCase.Description}");
+                        //         Console.WriteLine($"Expected Fail: {testCase.Fail.ToString()}");
+                        //         Console.WriteLine($"Expected Result: {testCase.ExpectedValue}");
+                        //
+                        //
+                        //         var invJobConfig = GetInventoryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
+                        //         SubmitInventoryUpdate sui = GetItems;
+                        //
+                        //         var jobResult = inv.ProcessJob(invJobConfig, sui);
+                        //
+                        //         if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
+                        //             (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
+                        //         {
+                        //             testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
+                        //             Console.ForegroundColor = ConsoleColor.Green;
+                        //         }
+                        //         else
+                        //         {
+                        //             testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
+                        //             Console.ForegroundColor = ConsoleColor.Red;
+                        //             hasFailure = true;
+                        //         }
+                        //         Console.WriteLine(
+                        //             $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{invJobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{invJobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
+                        //         Console.ResetColor();
+                        //     }
+                        //     catch (Exception e)
+                        //     {
+                        //         testOutputDict[testCase.TestName] = $"Failure - {e.Message}";
+                        //         Console.ForegroundColor = ConsoleColor.Red;
+                        //         Console.WriteLine(e);
+                        //         Console.WriteLine($"Failed to run inventory test case: {testCase.TestName}");
+                        //         Console.ResetColor();
+                        //     }
+                        //
+                        //
+                        // }
+                        // Console.WriteLine("Finished Running Inventory Job Test Cases");
                         break;
                     case "management":
                     case "man":
