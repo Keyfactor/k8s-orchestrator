@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
@@ -17,7 +16,6 @@ using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
-using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -268,7 +266,13 @@ public class Management : JobBase, IManagementJobExtension
     {
         Logger.LogDebug("Entering HandlePkcs12Secret()...");
         // get the pkcs12 store from the secret
-        var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+        var storeContent = config.JobCertificate.Contents;
+        var storePasswd = config.CertificateStoreDetails.StorePassword;
+        var storePath = config.CertificateStoreDetails.StorePath;
+        var pkcs12Store = new Pkcs12CertificateStoreSerializer(
+            Convert.FromBase64String(storeContent),
+            storePasswd,
+            storePath);
         //getPkcs12BytesFromKubeSecret
         var k8sData = new KubeCertificateManagerClient.Pkcs12Secret();
         if (config.OperationType is CertStoreOperationType.Add or CertStoreOperationType.Remove)
@@ -318,7 +322,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Getting store password");
         var sPass = GetK8SStorePassword(k8sData.Secret);
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
-        var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
+        var newPkcs12Store = pkcs12Store.CreateOrUpdateStore(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
             Logger.LogDebug("k8sData.Pkcs12Inventory is null or empty so creating new Dictionary...");

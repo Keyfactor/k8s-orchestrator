@@ -114,7 +114,6 @@ public abstract class InventoryBase : JobBase
     protected Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config, List<string> allowedKeys)
     {
         Logger.LogDebug("Enter HandleJKSSecret()");
-        var hasPrivateKeyJks = false;
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
@@ -139,13 +138,13 @@ public abstract class InventoryBase : JobBase
             Pkcs12Store jStoreDs;
             try
             {
-                jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+                jStoreDs = jksStore.ToPkcs12(keyBytes, keyName, keyPassword);
             }
             catch (JkSisPkcs12Exception)
             {
                 sourceIsPkcs12 = true;
-                var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
-                jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+                var pkcs12Store = new Pkcs12CertificateStoreSerializer(keyBytes, keyPassword);
+                jStoreDs = pkcs12Store.ToPkcs12(keyBytes, keyPassword);
                 // return HandlePkcs12Secret(config);
             }
 
@@ -196,12 +195,14 @@ public abstract class InventoryBase : JobBase
                 var fullAlias = keyAlias + "/" + certAlias;
                 Logger.LogTrace("Full alias: {Alias}", fullAlias);
                 //check if the alias is a private key
-                if (jStoreDs.IsKeyEntry(certAlias)) hasPrivateKeyJks = true;
+                if (jStoreDs.IsKeyEntry(certAlias))
+                {
+                }
+
                 var pKey = jStoreDs.GetKey(certAlias);
                 if (pKey != null)
                 {
                     Logger.LogDebug("Found private key for alias '{Alias}'", certAlias);
-                    hasPrivateKeyJks = true;
                 }
 
                 StringBuilder certChainPem;

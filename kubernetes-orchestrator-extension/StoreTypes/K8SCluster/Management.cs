@@ -56,7 +56,7 @@ public class Management : ManagementBase, IManagementJobExtension
             {
                 Logger.LogWarning("Certificate '{Thumbprint}' with alias '{Alias}' is empty, creating empty secret",
                     JobCertObj.CertThumbprint, JobCertObj.Alias);
-                var emptySecret = creatEmptySecret(KubeSecretType);
+                var emptySecret = CreatEmptySecret(KubeSecretType);
                 if (emptySecret != null)
                 {
                     Logger.LogInformation("Successfully created empty secret for certificate '{Alias}'",
@@ -100,13 +100,5 @@ public class Management : ManagementBase, IManagementJobExtension
             Logger.LogTrace("{Message}", ex.ToString());
             return FailJob(ex.Message, config.JobHistoryId);
         }
-    }
-
-    protected override JobResult HandleUpdate(ManagementJobConfiguration config)
-    {
-        Logger.LogInformation("Updating certificate '{Alias}' in Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
-            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Returning HandleCreate() for KubeSecretType: {KubeSecretType}", KubeSecretType);
-        return HandleCreate(config);
     }
 }

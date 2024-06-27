@@ -6,9 +6,7 @@
 // and limitations under the License.
 
 using System;
-using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -31,7 +29,7 @@ public class Management : ManagementBase, IManagementJobExtension
             {
                 Logger.LogWarning("Certificate '{Thumbprint}' with alias '{Alias}' is empty, creating empty secret",
                     JobCertObj.CertThumbprint, JobCertObj.Alias);
-                var emptySecret = creatEmptySecret(KubeSecretType);
+                var emptySecret = CreatEmptySecret(KubeSecretType);
                 if (emptySecret != null)
                 {
                     Logger.LogInformation("Successfully created empty secret for certificate '{Alias}'",

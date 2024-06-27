@@ -5,14 +5,20 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
-using System.Security.Cryptography.X509Certificates;
+using System.IO;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Models
 {
-    class SerializedStoreInfo : X509Certificate2
+    class SerializedStoreInfo : X509Certificate
     {
         public string FilePath { get; set; }
 
         public byte[] Contents { get; set; }
+        
+        public Pkcs12Store Pkcs12Object { get; set; }
+        
+        public string Password { get; set; }
     }
 }

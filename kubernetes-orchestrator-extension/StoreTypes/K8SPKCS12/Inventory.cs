@@ -60,15 +60,14 @@ public class Inventory : InventoryBase, IInventoryJobExtension
     
     private Dictionary<string, List<string>> HandlePkcs12Secret(JobConfiguration config, List<string> allowedKeys)
     {
-        var hasPrivateKey = false;
-        var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+        var pkcs12Store = new Pkcs12CertificateStoreSerializer();
         var k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
         var pkcs12InventoryDict = new Dictionary<string, List<string>>();
         // iterate through the keys in the secret and add them to the pkcs12 store
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
             var keyPassword = GetK8SStorePassword(k8sData.Secret);
-            var pStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
+            var pStoreDs = pkcs12Store.ToPkcs12(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
             foreach (var certAlias in pStoreDs.Aliases)
             {
@@ -77,9 +76,14 @@ public class Inventory : InventoryBase, IInventoryJobExtension
                 var certChainPem = new StringBuilder();
                 var fullAlias = keyName + "/" + certAlias;
                 //check if the alias is a private key
-                if (pStoreDs.IsKeyEntry(certAlias)) hasPrivateKey = true;
+                if (pStoreDs.IsKeyEntry(certAlias))
+                {
+                }
+
                 var pKey = pStoreDs.GetKey(certAlias);
-                if (pKey != null) hasPrivateKey = true;
+                if (pKey != null)
+                {
+                }
 
                 // if (certChain == null)
                 // {

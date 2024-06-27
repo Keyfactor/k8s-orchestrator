@@ -6,9 +6,7 @@
 // and limitations under the License.
 
 using System;
-using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -45,20 +43,19 @@ public class Management : ManagementBase, IManagementJobExtension
         }
     }
 
-    protected override JobResult HandleUpdate(ManagementJobConfiguration config)
-    {
-        Logger.LogInformation("Updating certificate '{Alias}' in Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
-            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Returning HandleCreate() for KubeSecretType: {KubeSecretType}", KubeSecretType);
-        return HandleCreate(config);
-    }
-
     protected override JobResult HandleRemove(ManagementJobConfiguration config)
     {
-        Logger.LogInformation(
-            "Removing certificate '{Alias}' from Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
-            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Returning HandleCreate() for KubeSecretType: {KubeSecretType}", KubeSecretType);
-        return HandleCreate(config);
+        Logger.LogDebug("Entered HandleRemove() for KubeSecretType: {KubeSecretType}", KubeSecretType);
+        try
+        {
+            Logger.LogDebug("Returning NotSupportedResult() for KubeSecretType: {KubeSecretType}", KubeSecretType);
+            return NotSupportedResult(config);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("{Message}", ex.Message);
+            Logger.LogTrace("{Message}", ex.ToString());
+            return FailJob(ex.Message, config.JobHistoryId);
+        }
     }
 }

@@ -6,9 +6,7 @@
 // and limitations under the License.
 
 using System;
-using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
@@ -31,7 +29,7 @@ public class Management : ManagementBase, IManagementJobExtension
             {
                 Logger.LogWarning("Certificate '{Thumbprint}' with alias '{Alias}' is empty, creating empty secret",
                     JobCertObj.CertThumbprint, JobCertObj.Alias);
-                var emptySecret = creatEmptySecret(KubeSecretType);
+                var emptySecret = CreatEmptySecret(KubeSecretType);
                 if (emptySecret != null)
                 {
                     Logger.LogInformation("Successfully created empty secret for certificate '{Alias}'",
@@ -42,7 +40,7 @@ public class Management : ManagementBase, IManagementJobExtension
                 Logger.LogError("Failed to create empty secret for certificate '{Alias}'", JobCertObj.Alias);
                 return FailJob("Failed to create empty secret", config.JobHistoryId);
             }
-            
+
             Logger.LogDebug(
                 "Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
             var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
@@ -67,7 +65,7 @@ public class Management : ManagementBase, IManagementJobExtension
             Logger.LogInformation(
                 "Successfully created secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeHost}' with certificate '{Alias}'",
                 KubeSecretName, KubeNamespace, KubeHost, JobCertObj.Alias);
-            
+
             Logger.LogInformation("End CREATE MANAGEMENT job '{JobId}' with success", config.JobId);
             Logger.LogDebug("Returning SuccessJob() for JobHistoryId: {JobHistoryId}", config.JobHistoryId);
             return SuccessJob(config.JobHistoryId);
@@ -78,60 +76,5 @@ public class Management : ManagementBase, IManagementJobExtension
             Logger.LogTrace("{Message}", ex.ToString());
             return FailJob(ex.Message, config.JobHistoryId);
         }
-    }
-
-    protected override JobResult HandleUpdate(ManagementJobConfiguration config)
-    {
-        Logger.LogInformation("Updating certificate '{Alias}' in Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
-            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Returning HandleCreate() for KubeSecretType: {KubeSecretType}", KubeSecretType);
-        return HandleCreate(config);
-    }
-
-    protected override JobResult HandleRemove(ManagementJobConfiguration config)
-    {
-        Logger.LogInformation(
-            "Removing certificate '{Alias}' from Kubernetes client '{KubeHost}' cert store '{KubeSecretName}' in namespace '{KubeNamespace}'",
-            JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-        try
-        {
-            Logger.LogDebug(
-                "Calling KubeClient.DeleteCertificateStoreSecret() with KubeSecretName: {KubeSecretName}, KubeNamespace: {KubeNamespace}, KubeSecretType: {KubeSecretType}, JobCertObj.Alias: {Alias}",
-                KubeSecretName, KubeNamespace, KubeSecretType, JobCertObj.Alias);
-            var response = KubeClient.DeleteCertificateStoreSecret(
-                KubeSecretName,
-                KubeNamespace,
-                KubeSecretType,
-                JobCertObj.Alias
-            );
-            Logger.LogDebug("Returned from KubeClient.DeleteCertificateStoreSecret()");
-            Logger.LogTrace("Response: {Response}", response);
-        }
-        catch (HttpOperationException rErr)
-        {
-            Logger.LogError("{Message}", rErr.Message);
-            Logger.LogTrace("{Message}", rErr.ToString());
-            if (!rErr.Message.Contains("NotFound")) return FailJob(rErr.Message, config.JobHistoryId);
-
-            var certDataErrorMsg =
-                $"Kubernetes secret type '{KubeSecretType}' named '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on Kubernetes client '{KubeHost}'";
-            return new JobResult
-            {
-                Result = OrchestratorJobStatusJobResult.Success,
-                JobHistoryId = config.JobHistoryId,
-                FailureMessage = certDataErrorMsg
-            };
-        }
-        catch (Exception e)
-        {
-            Logger.LogError(e,
-                "Error removing certificate '{Alias}' from Kubernetes client '{KubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}",
-                JobCertObj.Alias, KubeHost, KubeSecretName, KubeNamespace);
-            Logger.LogInformation("End REMOVE MANAGEMENT job '{JobId}' with failure", config.JobId);
-            return FailJob(e.Message, config.JobHistoryId);
-        }
-
-        Logger.LogInformation("End REMOVE MANAGEMENT job '{JobId}' with success", config.JobId);
-        return SuccessJob(config.JobHistoryId);
     }
 }
