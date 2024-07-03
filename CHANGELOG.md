@@ -2,6 +2,7 @@
 
 ## Bug Fixes
 - fix(management): Management jobs for `K8STLSSecret` and `K8SSecret` types handle ECC keys.
+- fix(pam): Fixed issue with 'remote' PAM not being able to execute unless the input was empty, making 'remote' PAM impossible.
 
 # 1.1.1
 
