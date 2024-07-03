@@ -195,8 +195,8 @@ The following table describes the required and optional fields for the `K8STLSSe
 | --------- | ----------- | ------------------------- |
 | Category | Select "K8STLSSecr" or the customized certificate store name from the previous step. | |
 | Container | Optional container to associate certificate store with. | |
-| Client Machine | For the Client Machine field when instantiating new Certificate Stores of type 'K8STLSSecr', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'. | |
-| Store Path | For the Store Path field when instantiating new Certificate Stores of type 'K8STLSSecr', enter the namespace and the secret name in the format 'namespace/secretName'. Example: 'default/my-tls-secret'. | |
+| Client Machine | The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'. | |
+| Store Path | The `Store Path` field should contain the namespace and name of the Kubernetes TLS secret in the format 'namespace/secretName'. For example, 'default/my-tls-secret'. | |
 | Orchestrator | Select an approved orchestrator capable of managing `K8STLSSecr` certificates. Specifically, one with the `K8STLSSecr` capability. | |
 
 * **Using kfutil**

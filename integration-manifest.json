@@ -1,9 +1,9 @@
 {
-    "$schema": "/Users/hroszell/coding/dev/staff-tools/keyfactor.github.io/v2/integration-manifest-schema.json",
+    "$schema": "https://keyfactor.github.io/v2/integration-manifest-schema.json",
     "integration_type": "orchestrator",
     "name": "Kubernetes Orchestrator Extension",
     "status": "production",
-    "description": "The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. The following types of Kubernetes resources are supported: kubernetes secrets of `kubernetes.io/tls` or `Opaque` and kubernetes certificates `certificates.k8s.io/v1`",
+    "description": "The Kubernetes Universal Orchestrator extension allows for the remote management of certificate resources within a Kubernetes cluster, leveraging the Kubernetes API and service accounts to perform inventory, addition, and removal operations on various Kubernetes secret and certificate store types.",
     "short_description": "The Kubernetes Orchestrator allows for remote management of Kubernetes secret types 'Opaque' and 'kubernetes.io/tls' as well as 'certificates.k8s.io/v1' resources. ",
     "link_github": true,
     "topics": [
@@ -24,24 +24,6 @@
         "orchestrator": {
             "UOFramework": "10.1",
             "pam_support": true,
-            "win": {
-                "supportsCreateStore": true,
-                "supportsDiscovery": true,
-                "supportsManagementAdd": true,
-                "supportsManagementRemove": true,
-                "supportsReenrollment": false,
-                "supportsInventory": true,
-                "platformSupport": "Unused"
-            },
-            "linux": {
-                "supportsCreateStore": true,
-                "supportsDiscovery": true,
-                "supportsManagementAdd": true,
-                "supportsManagementRemove": true,
-                "supportsReenrollment": false,
-                "supportsInventory": true,
-                "platformSupport": "Unused"
-            },
             "store_types": [
                 {
                     "Name": "K8SCert",
@@ -70,8 +52,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Forbidden",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SCert', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SCert', enter the namespace and the name of the certificate resource in the format 'namespace/certificateName'. Example: 'default/my-k8s-cert'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and name of the Kubernetes certificate resource in the format 'namespace/secretName'. For example, 'default/my-cert'."
                 },
                 {
                     "Name": "K8SCluster",
@@ -100,8 +82,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Required",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SCluster', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SCluster', enter the name of the Kubernetes cluster. Example: 'my-k8s-cluster'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the name of the Kubernetes cluster. For example, 'my-k8s-cluster'."
                 },
                 {
                     "Name": "K8SJKS",
@@ -130,8 +112,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Required",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SJKS', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SJKS', enter the namespace and the secret name containing the JKS data in the format 'namespace/secretName'. Example: 'default/my-jks-secret'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and name of the Kubernetes secret or keystore in the format 'namespace/secretName'. For example, 'default/my-keystore'."
                 },
                 {
                     "Name": "K8SNS",
@@ -160,8 +142,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Required",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SNS', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SNS', enter the namespace you wish to manage. Example: 'default'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and optionally the cluster name, if applicable, in the format 'namespace' or 'clusterName/namespace'. For example, 'default' or 'my-cluster/default'."
                 },
                 {
                     "Name": "K8SPKCS12",
@@ -190,8 +172,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Required",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SPKCS12', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SPKCS12', enter the namespace and the secret name containing the PKCS12 data in the format 'namespace/secretName'. Example: 'default/my-pkcs12-secret'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and name of the Kubernetes secret containing the PKCS12 data in the format 'namespace/secretName'. For example, 'default/my-pkcs12-secret'."
                 },
                 {
                     "Name": "K8SSecret",
@@ -220,8 +202,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Forbidden",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8SSecret', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8SSecret', enter the namespace and the secret name in the format 'namespace/secretName'. Example: 'default/my-secret'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and name of the Kubernetes secret in the format 'namespace/secretName'. For example, 'default/my-secret'."
                 },
                 {
                     "Name": "K8STLSSecr",
@@ -250,8 +232,8 @@
                     "PowerShell": false,
                     "BlueprintAllowed": false,
                     "CustomAliasAllowed": "Forbidden",
-                    "ClientMachineDescription": "For the Client Machine field when instantiating new Certificate Stores of type 'K8STLSSecr', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'.",
-                    "StorePathDescription": "For the Store Path field when instantiating new Certificate Stores of type 'K8STLSSecr', enter the namespace and the secret name in the format 'namespace/secretName'. Example: 'default/my-tls-secret'."
+                    "ClientMachineDescription": "The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'.",
+                    "StorePathDescription": "The `Store Path` field should contain the namespace and name of the Kubernetes TLS secret in the format 'namespace/secretName'. For example, 'default/my-tls-secret'."
                 }
             ]
         }

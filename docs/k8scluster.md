@@ -191,8 +191,8 @@ The following table describes the required and optional fields for the `K8SClust
 | --------- | ----------- | ------------------------- |
 | Category | Select "K8SCluster" or the customized certificate store name from the previous step. | |
 | Container | Optional container to associate certificate store with. | |
-| Client Machine | For the Client Machine field when instantiating new Certificate Stores of type 'K8SCluster', enter the Kubernetes cluster endpoint or API server URL. Example: 'https://api.k8s.cluster.local:6443'. | |
-| Store Path | For the Store Path field when instantiating new Certificate Stores of type 'K8SCluster', enter the name of the Kubernetes cluster. Example: 'my-k8s-cluster'. | |
+| Client Machine | The `Client Machine` field should contain the IP address or hostname of the Kubernetes cluster's API server. For example, 'https://k8s.cluster.local:6443'. | |
+| Store Path | The `Store Path` field should contain the name of the Kubernetes cluster. For example, 'my-k8s-cluster'. | |
 | Orchestrator | Select an approved orchestrator capable of managing `K8SCluster` certificates. Specifically, one with the `K8SCluster` capability. | |
 
 * **Using kfutil**
