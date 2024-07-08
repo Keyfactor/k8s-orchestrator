@@ -35,55 +35,55 @@
       },
       "CertStores.K8SJKS.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8JKS.Inventory"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
       },
       "CertStores.K8SJKS.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
       },
       "CertStores.K8SJKS.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8JKS.Management"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Management"
       },
       "CertStores.K8SJKS.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8JKS.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
       },
       "CertStores.K8SPFX.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Inventory"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
       },
       "CertStores.K8SPFX.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPFX.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
       },
       "CertStores.K8SPFX.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Management"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Management"
       },
       "CertStores.K8SPFX.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
       },
       "CertStores.K8SPKCS12.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Inventory"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Inventory"
       },
       "CertStores.K8SPKCS12.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Discovery"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Discovery"
       },
       "CertStores.K8SPKCS12.Management": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Management"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Management"
       },
       "CertStores.K8SPKCS12.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
       },
       "CertStores.K8SSecret.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12.Inventory"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SSecret.Inventory"
       },
       "CertStores.K8SSecret.Discovery": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",

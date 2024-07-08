@@ -43,6 +43,7 @@ public class Management : ManagementBase, IManagementJobExtension
 
             Logger.LogDebug(
                 "Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
+            
             var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
                 JobCertObj.PrivateKeyPem,
                 JobCertObj.CertPem,
@@ -50,8 +51,11 @@ public class Management : ManagementBase, IManagementJobExtension
                 KubeSecretName,
                 KubeNamespace,
                 KubeSecretType,
-                false, //todo: is this useful?
-                JobConfig.Overwrite
+                false,
+                JobConfig.Overwrite,
+                false,
+                SeparateChain,
+                IncludeCertChain
             );
             if (createResponse == null)
             {

@@ -114,23 +114,20 @@ public abstract class InventoryBase : JobBase
     protected Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config, List<string> allowedKeys)
     {
         Logger.LogDebug("Enter HandleJKSSecret()");
+        var hasPrivateKeyJks = false;
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
         //getJksBytesFromKubeSecret
-        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " +
-                        KubeNamespace);
-        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
+        Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
+        var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "","", allowedKeys);
 
         var jksInventoryDict = new Dictionary<string, List<string>>();
         // iterate through the keys in the secret and add them to the jks store
         Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
-            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
-                            KubeNamespace + " and key " + keyName);
+            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " + KubeNamespace + " and key " + keyName);
             var keyPassword = GetK8SStorePassword(k8sData.Secret);
-            var passwordHash = GetSha256Hash(keyPassword);
-            Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
@@ -138,13 +135,13 @@ public abstract class InventoryBase : JobBase
             Pkcs12Store jStoreDs;
             try
             {
-                jStoreDs = jksStore.ToPkcs12(keyBytes, keyName, keyPassword);
+                jStoreDs = jksStore.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             }
             catch (JkSisPkcs12Exception)
             {
                 sourceIsPkcs12 = true;
-                var pkcs12Store = new Pkcs12CertificateStoreSerializer(keyBytes, keyPassword);
-                jStoreDs = pkcs12Store.ToPkcs12(keyBytes, keyPassword);
+                var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
+                jStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
                 // return HandlePkcs12Secret(config);
             }
 
@@ -157,13 +154,13 @@ public abstract class InventoryBase : JobBase
             foreach (var certAlias in jStoreDs.Aliases)
             {
                 if (certAliasLookup.TryGetValue(certAlias, out var certAliasSubject))
+                {
                     if (certAliasSubject == "skip")
                     {
-                        Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'",
-                            certAlias, certAliasSubject);
-                        continue;
+                        Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'", certAlias, certAliasSubject);
+                        continue;    
                     }
-
+                }
                 Logger.LogTrace("Certificate alias: {Alias}", certAlias);
                 var certChainList = new List<string>();
 
@@ -172,7 +169,7 @@ public abstract class InventoryBase : JobBase
 
                 if (certChain != null)
                 {
-                    certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();
+                    certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();    
                     if (sourceIsPkcs12 && certChain.Length > 0)
                     {
                         // This is a PKCS12 store that was created as a JKS so we need to check that the aliases aren't the same as the cert chain
@@ -184,7 +181,9 @@ public abstract class InventoryBase : JobBase
                         storeAliases.Remove(certAlias);
                         // Iterate though the aliases and add them to the lookup as 'skip' if they are in the chain
                         foreach (var alias in storeAliases.Where(alias => certChainAliases.Contains(alias)))
+                        {
                             certAliasLookup[alias] = "skip";
+                        }
                     }
                 }
                 else
@@ -197,12 +196,13 @@ public abstract class InventoryBase : JobBase
                 //check if the alias is a private key
                 if (jStoreDs.IsKeyEntry(certAlias))
                 {
+                    hasPrivateKeyJks = true;
                 }
-
                 var pKey = jStoreDs.GetKey(certAlias);
                 if (pKey != null)
                 {
                     Logger.LogDebug("Found private key for alias '{Alias}'", certAlias);
+                    hasPrivateKeyJks = true;
                 }
 
                 StringBuilder certChainPem;
@@ -210,8 +210,7 @@ public abstract class InventoryBase : JobBase
                 if (certChain != null)
                 {
                     Logger.LogDebug("Certificate chain found for alias '{Alias}'", certAlias);
-                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain",
-                        certAlias);
+                    Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain", certAlias);
                     foreach (var cert in certChain)
                     {
                         certChainPem = new StringBuilder();
@@ -220,7 +219,6 @@ public abstract class InventoryBase : JobBase
                         certChainPem.AppendLine("-----END CERTIFICATE-----");
                         certChainList.Add(certChainPem.ToString());
                     }
-
                     Logger.LogTrace("Certificate chain for alias '{Alias}': {Chain}", certAlias, certChainList);
                 }
 
@@ -242,14 +240,156 @@ public abstract class InventoryBase : JobBase
                     certChainPem.AppendLine("-----END CERTIFICATE-----");
                     certChainList.Add(certChainPem.ToString());
                 }
-
                 Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
-                if (certAliasLookup[certAlias] != "skip") jksInventoryDict[fullAlias] = certChainList;
+                if (certAliasLookup[certAlias] != "skip")
+                {
+                    jksInventoryDict[fullAlias] = certChainList;    
+                }
+                
             }
         }
-
         return jksInventoryDict;
     }
+    
+    // protected Dictionary<string, List<string>> HandleJKSSecretV2(JobConfiguration config, List<string> allowedKeys)
+    // {
+    //     Logger.LogDebug("Enter HandleJKSSecret()");
+    //     Logger.LogDebug("Attempting to serialize JKS store");
+    //     var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
+    //     //getJksBytesFromKubeSecret
+    //     Logger.LogDebug("Attempting to get JKS bytes from K8S secret " + KubeSecretName + " in namespace " +
+    //                     KubeNamespace);
+    //     var k8sData = KubeClient.GetJksSecret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
+    //
+    //     var jksInventoryDict = new Dictionary<string, List<string>>();
+    //     // iterate through the keys in the secret and add them to the jks store
+    //     Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
+    //     foreach (var (keyName, keyBytes) in k8sData.Inventory)
+    //     {
+    //         Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
+    //                         KubeNamespace + " and key " + keyName);
+    //         var keyPassword = GetK8SStorePassword(k8sData.Secret);
+    //         var passwordHash = GetSha256Hash(keyPassword);
+    //         Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
+    //         var keyAlias = keyName;
+    //         Logger.LogTrace("Key alias: {Alias}", keyAlias);
+    //         Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
+    //         var sourceIsPkcs12 = false; //This refers to if the JKS store is actually a PKCS12 store
+    //         Pkcs12Store jStoreDs;
+    //         try
+    //         {
+    //             jStoreDs = jksStore.ToPkcs12(keyBytes, keyName, keyPassword);
+    //         }
+    //         catch (JkSisPkcs12Exception)
+    //         {
+    //             sourceIsPkcs12 = true;
+    //             var pkcs12Store = new Pkcs12CertificateStoreSerializer(keyBytes, keyPassword);
+    //             jStoreDs = pkcs12Store.ToPkcs12(keyBytes, keyPassword);
+    //             // return HandlePkcs12Secret(config);
+    //         }
+    //
+    //         // create a list of certificate chains in PEM format
+    //
+    //         Logger.LogDebug("Iterating through aliases in JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
+    //         var certAliasLookup = new Dictionary<string, string>();
+    //         //make a copy of jStoreDs.Aliases so we can remove items from it
+    //
+    //         foreach (var certAlias in jStoreDs.Aliases)
+    //         {
+    //             if (certAliasLookup.TryGetValue(certAlias, out var certAliasSubject))
+    //                 if (certAliasSubject == "skip")
+    //                 {
+    //                     Logger.LogTrace("Certificate alias: {Alias} already exists in lookup with subject '{Subject}'",
+    //                         certAlias, certAliasSubject);
+    //                     continue;
+    //                 }
+    //
+    //             Logger.LogTrace("Certificate alias: {Alias}", certAlias);
+    //             var certChainList = new List<string>();
+    //
+    //             Logger.LogDebug("Attempting to get certificate chain for alias '{Alias}'", certAlias);
+    //             var certChain = jStoreDs.GetCertificateChain(certAlias);
+    //
+    //             if (certChain != null)
+    //             {
+    //                 certAliasLookup[certAlias] = certChain[0].Certificate.SubjectDN.ToString();
+    //                 if (sourceIsPkcs12 && certChain.Length > 0)
+    //                 {
+    //                     // This is a PKCS12 store that was created as a JKS so we need to check that the aliases aren't the same as the cert chain
+    //                     // If they are the same then we need to only use the chain and break out of the loop
+    //                     var certChainAliases = certChain.Select(cert => cert.Certificate.SubjectDN.ToString()).ToList();
+    //                     // Remove leaf certificate from chain
+    //                     certChainAliases.RemoveAt(0);
+    //                     var storeAliases = jStoreDs.Aliases.ToList();
+    //                     storeAliases.Remove(certAlias);
+    //                     // Iterate though the aliases and add them to the lookup as 'skip' if they are in the chain
+    //                     foreach (var alias in storeAliases.Where(alias => certChainAliases.Contains(alias)))
+    //                         certAliasLookup[alias] = "skip";
+    //                 }
+    //             }
+    //             else
+    //             {
+    //                 certAliasLookup[certAlias] = "skip";
+    //             }
+    //
+    //             var fullAlias = keyAlias + "/" + certAlias;
+    //             Logger.LogTrace("Full alias: {Alias}", fullAlias);
+    //             //check if the alias is a private key
+    //             if (jStoreDs.IsKeyEntry(certAlias))
+    //             {
+    //             }
+    //
+    //             var pKey = jStoreDs.GetKey(certAlias);
+    //             if (pKey != null)
+    //             {
+    //                 Logger.LogDebug("Found private key for alias '{Alias}'", certAlias);
+    //             }
+    //
+    //             StringBuilder certChainPem;
+    //
+    //             if (certChain != null)
+    //             {
+    //                 Logger.LogDebug("Certificate chain found for alias '{Alias}'", certAlias);
+    //                 Logger.LogDebug("Iterating through certificate chain for alias '{Alias}' to build PEM chain",
+    //                     certAlias);
+    //                 foreach (var cert in certChain)
+    //                 {
+    //                     certChainPem = new StringBuilder();
+    //                     certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+    //                     certChainPem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+    //                     certChainPem.AppendLine("-----END CERTIFICATE-----");
+    //                     certChainList.Add(certChainPem.ToString());
+    //                 }
+    //
+    //                 Logger.LogTrace("Certificate chain for alias '{Alias}': {Chain}", certAlias, certChainList);
+    //             }
+    //
+    //             if (certChainList.Count != 0)
+    //             {
+    //                 Logger.LogDebug("Adding certificate chain for alias '{Alias}' to inventory", certAlias);
+    //                 jksInventoryDict[fullAlias] = certChainList;
+    //                 continue;
+    //             }
+    //
+    //             Logger.LogDebug("Attempting to get leaf certificate for alias '{Alias}'", certAlias);
+    //             var leaf = jStoreDs.GetCertificate(certAlias);
+    //             if (leaf != null)
+    //             {
+    //                 Logger.LogDebug("Leaf certificate found for alias '{Alias}'", certAlias);
+    //                 certChainPem = new StringBuilder();
+    //                 certChainPem.AppendLine("-----BEGIN CERTIFICATE-----");
+    //                 certChainPem.AppendLine(Convert.ToBase64String(leaf.Certificate.GetEncoded()));
+    //                 certChainPem.AppendLine("-----END CERTIFICATE-----");
+    //                 certChainList.Add(certChainPem.ToString());
+    //             }
+    //
+    //             Logger.LogDebug("Adding leaf certificate for alias '{Alias}' to inventory", certAlias);
+    //             if (certAliasLookup[certAlias] != "skip") jksInventoryDict[fullAlias] = certChainList;
+    //         }
+    //     }
+    //
+    //     return jksInventoryDict;
+    // }
     
     private bool validInvCert(string cert, string alias = "")
     {
@@ -300,11 +440,14 @@ public abstract class InventoryBase : JobBase
             }
 
             Logger.LogDebug("Adding cert to inventoryItems");
+            var thumbprint = cert.Contains("BEGIN CERTIFICATE")
+                ? new X509Certificate2(Encoding.UTF8.GetBytes(cert)).Thumbprint
+                : new X509Certificate2(Convert.FromBase64String(cert)).Thumbprint;
             inventoryItems.Add(new CurrentInventoryItem
             {
                 ItemStatus = OrchestratorInventoryItemStatus
                     .Unknown, //There are other statuses, but Command can determine how to handle new vs modified certificates
-                Alias = "",
+                Alias = thumbprint,
                 PrivateKeyEntry =
                     hasPrivateKey, //You will not pass the private key back, but you can identify if the main certificate of the chain contains a private key in the store
                 UseChainLevel =

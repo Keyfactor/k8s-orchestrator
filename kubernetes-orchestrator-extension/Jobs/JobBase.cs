@@ -870,6 +870,19 @@ public abstract class JobBase
                     ? storeProperties["CertificateDataFieldName"]
                     : DefaultJksSecretFieldName;
                 break;
+            case "opaque":
+            case "opaque_secret":
+            case "tls":
+            case "tls_secret":
+                SeparateChain = storeProperties.ContainsKey("SeparateChain")
+                    ? storeProperties["SeparateChain"]
+                    : false;
+                Logger.LogTrace("SeparateChain: {SeparateChain}", SeparateChain);
+                IncludeCertChain = storeProperties.ContainsKey("IncludeCertChain")
+                    ? storeProperties["IncludeCertChain"]
+                    : true;
+                Logger.LogTrace("IncludeCertChain: {IncludeCertChain}", IncludeCertChain);
+                break;
         }
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");

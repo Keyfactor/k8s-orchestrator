@@ -75,7 +75,6 @@ public abstract class ManagementBase : JobBase
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
         Logger.LogTrace("{Message}",
             string.IsNullOrEmpty(certPassword) ? "CertPassword is empty" : "CertPassword is not empty");
-        
     }
 
     public JobResult ProcessJob(ManagementJobConfiguration config)

@@ -22,7 +22,7 @@ using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
 {
-    class JksCertificateStoreSerializer : CertificateStoreSerializer
+    class JksCertificateStoreSerializer : ICertificateStoreSerializer
     {
         private readonly ILogger _logger;
         public JksCertificateStoreSerializer(string storeProperties)
@@ -30,7 +30,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             _logger = LogHandler.GetClassLogger(GetType());
         }
 
-        public Pkcs12Store ToPkcs12(byte[] storeContents, string storePath, string storePassword)
+        public Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword)
         {
             _logger.LogDebug("Entering DeserializeRemoteCertificateStore");
             var storeBuilder = new Pkcs12StoreBuilder();
@@ -117,6 +117,44 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             _logger.LogDebug("Returning Pkcs12Store");
             return pkcs12StoreNew;
         }
+
+        // public JksStore ConvertPkcs12toJks(byte[] jksBytes, string jksPassword, byte[] pkcs12Bytes, string pkcs12Password)
+        // {
+        //     // Attempt to load JKS store as JksStore
+        //     var jksStore = new JksStore();
+        //     try
+        //     {
+        //         _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'", jksPassword ?? "null");
+        //         using (var ms = new MemoryStream(jksBytes))
+        //         {
+        //             jksStore.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
+        //         }
+        //         _logger.LogDebug("JKS store loaded");
+        //     }
+        //     catch (Exception ex)
+        //     {
+        //         _logger.LogError("Error loading JKS store: {Ex}", ex.Message);
+        //         // Attempt to read JKS store as Pkcs12Store
+        //         try
+        //         {
+        //             _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password '{Pass}'", jksPassword ?? "null");
+        //             var pkcs12Store = new Pkcs12StoreBuilder().Build();
+        //             using (var ms = new MemoryStream(jksBytes))
+        //             {
+        //                 pkcs12Store.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
+        //             }
+        //             _logger.LogDebug("JKS store loaded as Pkcs12Store");
+        //             // return pkcs12Store;
+        //             throw new JkSisPkcs12Exception("JKS store is actually a Pkcs12Store");
+        //         }
+        //         catch (Exception ex2)
+        //         {
+        //             _logger.LogError("Error loading JKS store as Jks or Pkcs12Store: {Ex}", ex2.Message);
+        //             throw;
+        //         }
+        //     }
+        //     
+        // }
         
         public byte[] CreateOrUpdateJks(byte[] newPkcs12Bytes, string newCertPassword, string alias, byte[] existingStore = null, string existingStorePassword = null,
             bool remove = false)

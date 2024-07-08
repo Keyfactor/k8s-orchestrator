@@ -50,8 +50,10 @@ public class Management : ManagementBase, IManagementJobExtension
                 KubeSecretName,
                 KubeNamespace,
                 KubeSecretType,
-                true, //todo: is this useful?
-                JobConfig.Overwrite
+                true,
+                JobConfig.Overwrite,
+                false,
+                SeparateChain
             );
             if (createResponse == null)
             {

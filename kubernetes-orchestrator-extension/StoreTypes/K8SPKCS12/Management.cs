@@ -92,17 +92,19 @@ public class Management : ManagementBase, IManagementJobExtension
         {
             var existingK8SSecretData = ReadSecret();
             var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-            var newJksStore = _serializedStore.CreateOrUpdateStore(newCertBytes, JobConfig.JobCertificate.PrivateKeyPassword, JobCertObj.Alias, existingK8SSecretData, StorePassword);
+            // var newJksStore = _serializedStore.CreateOrUpdateStore(newCertBytes, JobConfig.JobCertificate.PrivateKeyPassword, JobCertObj.Alias, existingK8SSecretData, StorePassword);
             if (_secret.Inventory == null || _secret.Inventory.Count == 0)
             {
                 Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
                 _secret.Inventory = new Dictionary<string, byte[]>();
-                _secret.Inventory.Add(K8SSecretFieldName, newJksStore);
+                // _secret.Inventory.Add(K8SSecretFieldName, newJksStore);
+                _secret.Inventory.Add(K8SSecretFieldName, null);
             }
             else
             {
                 Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
-                _secret.Inventory[K8SSecretFieldName] = newJksStore;
+                // _secret.Inventory[K8SSecretFieldName] = newJksStore;
+                _secret.Inventory[K8SSecretFieldName] = null;
             }
             // update the secret
             Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
