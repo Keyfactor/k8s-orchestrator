@@ -21,10 +21,10 @@
     <PackageReference Include="Keyfactor.Logging" Version="1.1.1" />
     <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.2.0" />
     <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
-    <PackageReference Include="Keyfactor.PKI" Version="5.0.0" />
-    <PackageReference Include="KubernetesClient" Version="11.0.21" />
+    <PackageReference Include="Keyfactor.PKI" Version="5.5.0" />
+    <PackageReference Include="KubernetesClient" Version="14.0.2" />
 <!--    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />-->
-    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="5.0.1" />
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.0" />
   </ItemGroup>
 
 </Project>

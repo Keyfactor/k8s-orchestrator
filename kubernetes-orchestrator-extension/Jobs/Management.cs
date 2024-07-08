@@ -1,4 +1,4 @@
-﻿// Copyright 2023 Keyfactor
+﻿// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography.X509Certificates;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
@@ -17,7 +16,6 @@ using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
-using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -26,7 +24,7 @@ public class Management : JobBase, IManagementJobExtension
 {
     public Management(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
 
     //Job Entry Point
@@ -229,12 +227,12 @@ public class Management : JobBase, IManagementJobExtension
         {
             Logger.LogDebug("StorePassword is not null or empty so setting StorePassword to config.CertificateStoreDetails.StorePassword");
             StorePassword = config.CertificateStoreDetails.StorePassword;
-            var hashedStorePassword = GetSHA256Hash(StorePassword);
+            var hashedStorePassword = GetSha256Hash(StorePassword);
             Logger.LogTrace("hashedStorePassword: {Hash}", hashedStorePassword);
         }
         Logger.LogDebug("Getting store password");
-        var sPass = getK8SStorePassword(k8sData.Secret);
-        var hashedSPass = GetSHA256Hash(sPass);
+        var sPass = GetK8SStorePassword(k8sData.Secret);
+        var hashedSPass = GetSha256Hash(sPass);
         Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         try
@@ -316,7 +314,7 @@ public class Management : JobBase, IManagementJobExtension
             StorePassword = config.CertificateStoreDetails.StorePassword;
         }
         Logger.LogDebug("Getting store password");
-        var sPass = getK8SStorePassword(k8sData.Secret);
+        var sPass = GetK8SStorePassword(k8sData.Secret);
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
@@ -578,6 +576,16 @@ public class Management : JobBase, IManagementJobExtension
                 // Split alias by / and get second to last element KubeSecretType
                 //pattern: namespace/secrets/secret_type/secert_name
                 var clusterSplitAlias = jobCertObj.Alias.Split("/");
+                
+                // Check splitAlias length
+                if (clusterSplitAlias.Length < 3)
+                {
+                    var invalidAliasErrMsg = "Invalid alias format for K8SCluster store type. Alias";
+                    Logger.LogError(invalidAliasErrMsg);
+                    Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
+                    return FailJob(invalidAliasErrMsg, config.JobHistoryId);
+                }
+                
                 KubeSecretType = clusterSplitAlias[^2];
                 KubeSecretName = clusterSplitAlias[^1];
                 KubeNamespace = clusterSplitAlias[0];
@@ -621,14 +629,6 @@ public class Management : JobBase, IManagementJobExtension
         var kubeHost = KubeClient.GetHost();
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
-
-        var cert = new K8SJobCertificate
-        {
-            Alias = certAlias,
-            StorePassword = config.CertificateStoreDetails.StorePassword,
-            PasswordIsK8SSecret = PasswordIsK8SSecret,
-            StorePasswordPath = StorePasswordPath
-        };
 
         switch (secretType)
         {

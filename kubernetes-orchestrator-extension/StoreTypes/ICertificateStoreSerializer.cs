@@ -5,18 +5,36 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
-using System.Collections.Generic;
-using Keyfactor.Extensions.Orchestrator.K8S.Models;
+using Keyfactor.Logging;
+using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes
 {
-    interface ICertificateStoreSerializer
+    public abstract class CertificateStoreSerializer
     {
-        Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword);
+        protected CertificateStoreSerializer(byte[] storeContent, string storePassword, string storePath = null)
+        {
+            Logger = LogHandler.GetClassLogger(GetType());
+            Logger.MethodEntry();
+            StoreContent = storeContent;
+            StorePassword = storePassword;
+            StorePath = storePath;
+            Logger.MethodExit();
+        }
 
-        List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath, string storeFileName, string storePassword);
+        protected readonly ILogger Logger;
+        public string StorePath { get; set; }
+        public byte[] StoreContent { get; }
+        public string StorePassword { get; }
 
-        string GetPrivateKeyPath();
+        public abstract T Deserialize<T>(byte[] storeContents = null, string storePassword = null)
+            where T : CertificateStoreSerializer;
+
+        public abstract byte[] Serialize();
+        public abstract void Create();
+        public abstract void Update();
+        public abstract void Delete();
     }
 }
