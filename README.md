@@ -704,7 +704,7 @@ kfutil store-types create --name K8SCluster
 | IncludeCertChain | Include Certificate Chain | Bool   |          | `true`         | Will default to `true` if not set. If set to `false` only leaf cert will be deployed.                                                                |
 | SeparateChain    | Separate Chain            | Bool   |          | `false`        | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets. |
 
-![k8sns_advanced.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_advanced.png)
+![k8scluster_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8scluster_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
@@ -763,6 +763,7 @@ kfutil store-types create --name K8SNS
 | IncludeCertChain | Include Certificate Chain | Bool   |          | `true`        | Will default to `true` if not set. If set to `false` only leaf cert will be deployed.                                                                |
 | SeparateChain    | Separate Chain            | Bool   |          | `false`       | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for `Opaque` and `tls` secrets. |
 
+![k8sns_custom_fields.png](docs%2Fscreenshots%2Fstore_types%2Fk8sns_custom_fields.png)
 
 ##### UI Entry Parameters Tab:
 Empty
