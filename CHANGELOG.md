@@ -1,3 +1,8 @@
+# 1.1.2
+
+## Bug Fixes
+- fix(management): Management jobs for `K8STLSSecret` and `K8SSecret` types handle ECC keys.
+
 # 1.1.1
 
 ## Features
