@@ -1,4 +1,4 @@
-﻿// Copyright 2023 Keyfactor
+﻿// Copyright 2024 Keyfactor
 // Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 // Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,7 +26,7 @@ public class Management : JobBase, IManagementJobExtension
 {
     public Management(IPAMSecretResolver resolver)
     {
-        Resolver = resolver;
+        _resolver = resolver;
     }
 
     //Job Entry Point
@@ -578,6 +578,16 @@ public class Management : JobBase, IManagementJobExtension
                 // Split alias by / and get second to last element KubeSecretType
                 //pattern: namespace/secrets/secret_type/secert_name
                 var clusterSplitAlias = jobCertObj.Alias.Split("/");
+                
+                // Check splitAlias length
+                if (clusterSplitAlias.Length < 3)
+                {
+                    var invalidAliasErrMsg = "Invalid alias format for K8SCluster store type. Alias";
+                    Logger.LogError(invalidAliasErrMsg);
+                    Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
+                    return FailJob(invalidAliasErrMsg, config.JobHistoryId);
+                }
+                
                 KubeSecretType = clusterSplitAlias[^2];
                 KubeSecretName = clusterSplitAlias[^1];
                 KubeNamespace = clusterSplitAlias[0];
