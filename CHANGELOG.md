@@ -5,6 +5,7 @@
 - fix(manifest): Update store-type definitions to include params `IncludeCertChain` and `SeparateChain`
 - fix(docs): Update screenshots for `K8SCluster` and `K8SNS` store types custom fields.
 
+
 # 1.1.1
 
 ## Features
