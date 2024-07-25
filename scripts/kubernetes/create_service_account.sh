@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-set -e
-
 unset KUBECONFIG
-kubectl apply -f ./kubernetes_svc_account.yaml
+kubectl apply -f ./kubernetes_svc_account.yml
 
 # Define the name of the Kubernetes namespace where the service account resides
 NAMESPACE="${K8S_NAMESPACE:-default}"
@@ -22,10 +20,8 @@ echo "CLUSTER_API_SERVER: $CLUSTER_API_SERVER"
 
 # Get the service account token
 
-SA_TOKEN=$(kubectl get secrets -n "$NAMESPACE" | grep -i "$SA_NAME" | awk '{print $1}')
-#echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug
-SA_TOKEN=$(kubectl get "secret/$SA_TOKEN" -n "$NAMESPACE" -o json | jq -r '.data.token' | base64 --decode)
-#echo "SA_TOKEN: $SA_TOKEN" 
+SA_TOKEN=$(kubectl get secrets -n $NAMESPACE | grep -i $SA_NAME | awk '{print $1}')
+SA_TOKEN=$(kubectl get secret/$SA_TOKEN -n $NAMESPACE -o json | jq -r '.data.token' | base64 --decode)
 
 ### NOTE - If you have more than one cluster, you may need to change the index of the array ###
 CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[0].cluster."certificate-authority-data"')
@@ -61,7 +57,6 @@ users:
 
 # Save only the service account context to a JSON file
 kubectl config view --raw -o json --kubeconfig=kubeconfig > "${SA_NAME}-context.json"
-echo "${SA_NAME}-context.json has been created. Please copy and paste the content as the 'ServerPassword' value on your certificate store definition."
 
 # Set the KUBECONFIG environment variable to point to the new kubeconfig file
 export KUBECONFIG=$PWD/kubeconfig

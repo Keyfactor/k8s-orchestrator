@@ -35,4 +35,4 @@ users:
     token: $SA_TOKEN" > kubeconfig
     
 kubectl config view --raw -o json --kubeconfig=kubeconfig > "${SA_NAME}-context.json"
-echo "${SA_NAME}-context.json has been created. Please copy and paste the content as the 'ServerPassword' value on your certificate store definition."
+echo "${SA_NAME}-context.json has been created. Please copy and paste the content as the 'KubeSvcCreds' value on your certificate store definition."
