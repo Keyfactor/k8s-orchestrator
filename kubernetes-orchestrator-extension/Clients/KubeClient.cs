@@ -1726,14 +1726,21 @@ public class KubeCertificateManagerClient
 
         // Get the private key
         var keyEntry = store.GetKey(alias);
-        var privateKeyParams = (RsaPrivateCrtKeyParameters)keyEntry.Key;
+        var privateKeyParams = keyEntry.Key;
+
+        var pemType = privateKeyParams switch
+        {
+            RsaPrivateCrtKeyParameters => "RSA PRIVATE KEY",
+            ECPrivateKeyParameters => "EC PRIVATE KEY",
+            _ => throw new Exception("Unsupported private key type.")
+        };
 
         // Convert the private key to PEM format
         var sw = new StringWriter();
         var pemWriter = new PemWriter(sw);
         var privateKeyInfo = PrivateKeyInfoFactory.CreatePrivateKeyInfo(privateKeyParams);
         var privateKeyBytes = privateKeyInfo.ToAsn1Object().GetEncoded();
-        var pemObject = new PemObject("RSA PRIVATE KEY", privateKeyBytes);
+        var pemObject = new PemObject(pemType, privateKeyBytes);
         pemWriter.WriteObject(pemObject);
         pemWriter.Writer.Flush();
 

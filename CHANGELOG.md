@@ -1,7 +1,10 @@
 # 1.1.2
 
-## Fixes
-- fix(pam): Fixed issue with 'remote' PAM not being able to execute unless the input was empty, making 'remote' PAM impossible. 
+## Bug Fixes
+- fix(management): Management jobs for `K8STLSSecret` and `K8SSecret` types handle ECC keys.
+- fix(manifest): Update store-type definitions to include params `IncludeCertChain` and `SeparateChain`
+- fix(docs): Update screenshots for `K8SCluster` and `K8SNS` store types custom fields.
+
 
 # 1.1.1
 

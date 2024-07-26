@@ -196,7 +196,7 @@
             },
             {
               "Name": "PasswordIsK8SSecret",
-              "DisplayName": "PasswordIsK8SSecret",
+              "DisplayName": "Password Is K8S Secret",
               "Type": "Bool",
               "DependsOn": "",
               "DefaultValue": "false",
@@ -209,36 +209,12 @@
               "DependsOn": "",
               "DefaultValue": null,
               "Required": false
-            },
-            {
-              "Name": "ServerUsername",
-              "DisplayName": "Server Username",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": false
-            },
-            {
-              "Name": "ServerPassword",
-              "DisplayName": "Server Password",
-              "Type": "Secret",
-              "DependsOn": "",
-              "DefaultValue": null,
-              "Required": true
-            },
-            {
-              "Name": "ServerUseSsl",
-              "DisplayName": "Use SSL",
-              "Type": "Bool",
-              "DependsOn": "",
-              "DefaultValue": "true",
-              "Required": true
             }
           ],
           "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
-            "StoreRequired": true,
+            "StoreRequired": false,
             "Style": "Default"
           },
           "StorePathType": "",
@@ -323,14 +299,6 @@
               "Required": true
             },
             {
-              "Name": "KubeSecretKey",
-              "DisplayName": "Kube Secret Key",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "pfx",
-              "Required": false
-            },
-            {
               "Name": "CertificateDataFieldName",
               "DisplayName": "CertificateDataFieldName",
               "Type": "String",
@@ -382,7 +350,7 @@
           "EntryParameters": null,
           "PasswordOptions": {
             "EntrySupported": false,
-            "StoreRequired": true,
+            "StoreRequired": false,
             "Style": "Default"
           },
           "StorePathType": "",
