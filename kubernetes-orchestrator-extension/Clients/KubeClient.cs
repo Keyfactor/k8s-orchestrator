@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -16,6 +17,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s;
 using k8s.Autorest;
+using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -82,6 +84,11 @@ public class KubeCertificateManagerClient
     private K8SConfiguration ParseKubeConfig(string kubeconfig)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
+        if (string.IsNullOrEmpty(kubeconfig))
+        {
+            _logger.LogWarning("kubeconfig is null or empty, returning empty K8SConfiguration object");
+            throw new KubeConfigException("kubeconfig is null or empty, unable to create client");
+        }
         var k8SConfiguration = new K8SConfiguration();
         // test if kubeconfig is base64 encoded
         _logger.LogDebug("Testing if kubeconfig is base64 encoded");
@@ -94,6 +101,7 @@ public class KubeCertificateManagerClient
         catch
         {
             // not base64 encoded so do nothing
+            _logger.LogDebug("Kubeconfig is not base64 encoded");
         }
 
         // check if json is escaped

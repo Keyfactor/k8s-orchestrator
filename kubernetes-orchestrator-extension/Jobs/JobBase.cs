@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -603,17 +604,18 @@ public abstract class JobBase
             }
             Logger.LogTrace("ServerUsername: " + ServerUsername);
         }
+        else
+        {
+            Logger.LogDebug("ServerUsername is not empty, calling ResolvePamField()");
+            ServerUsername = ResolvePamField("ServerUsername", ServerUsername);
+        }
         if (string.IsNullOrEmpty(ServerPassword))
         {
             Logger.LogDebug("ServerPassword is empty.");
             try
             {
                 Logger.LogDebug("Attempting to resolve ServerPassword from store properties or PAM provider.");
-                ServerPassword = storeProperties.ContainsKey("ServerPassword") ? (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]) : "";
-                if (string.IsNullOrEmpty(ServerPassword))
-                {
-                    ServerPassword = (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]);
-                }
+                ServerPassword = (string)ResolvePamField("ServerPassword", storeProperties["ServerPassword"]);
                 // Logger.LogTrace("ServerPassword: " + ServerPassword);
             }
             catch (Exception e)
@@ -626,6 +628,11 @@ public abstract class JobBase
                 throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid.");
             }
 
+        }
+        else
+        {
+            Logger.LogDebug("ServerPassword is not empty, calling ResolvePamField()");
+            ServerPassword = (string)ResolvePamField("ServerPassword", ServerPassword);
         }
         if (string.IsNullOrEmpty(StorePassword))
         {
@@ -651,6 +658,11 @@ public abstract class JobBase
             }
 
         }
+        else
+        {
+            Logger.LogDebug("StorePassword is not empty, calling ResolvePamField()");
+            StorePassword = (string)ResolvePamField("StorePassword", StorePassword);
+        }
         // var storePassword = ResolvePamField("Store Password", storeProperties.CertificateStoreDetails.StorePassword);
         //
         // if (storePassword != null)
@@ -667,13 +679,13 @@ public abstract class JobBase
             // logger.LogTrace($"KubeSvcCreds: {localCertStore.KubeSvcCreds}"); //Do not log passwords
         }
 
-        // if (string.IsNullOrEmpty(KubeSvcCreds))
-        // {
-        //     const string credsErr =
-        //         "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
-        //     Logger.LogError(credsErr);
-        //     throw new AuthenticationException(credsErr);
-        // }
+        if (string.IsNullOrEmpty(KubeSvcCreds))
+        {
+            const string credsErr =
+                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
+            Logger.LogError(credsErr);
+            throw new ConfigurationException(credsErr);
+        }
 
         switch (KubeSecretType)
         {
@@ -815,8 +827,20 @@ public abstract class JobBase
 
     protected string ResolvePamField(string name, string value)
     {
-        Logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
-        return Resolver.Resolve(name);
+        try
+        {
+            Logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
+            return Resolver.Resolve(value);
+        }
+        catch (Exception e)
+        {
+            Logger.LogError($"Unable to resolve PAM field {name}. Returning original value.");
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            return value;
+        }
+
     }
 
     protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)

@@ -1,3 +1,8 @@
+# 1.1.2
+
+## Bug Fixes
+- fix(base): Add additional logging to debug issue with K8SNS store type.
+
 # 1.1.1
 
 ## Features
