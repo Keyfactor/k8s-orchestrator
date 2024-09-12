@@ -37,12 +37,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
 
 public class KubeCertificateManagerClient
 {
-
     private ILogger _logger;
-
-    private string ConfigJson { get; set; }
-
-    private K8SConfiguration ConfigObj { get; set; }
 
     public KubeCertificateManagerClient(string kubeconfig)
     {
@@ -59,6 +54,10 @@ public class KubeCertificateManagerClient
         }
     }
 
+    private string ConfigJson { get; set; }
+
+    private K8SConfiguration ConfigObj { get; }
+
     private IKubernetes Client { get; set; }
 
     public string GetClusterName()
@@ -66,13 +65,14 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entered GetClusterName()");
         try
         {
+            _logger.LogTrace("Returning cluster name from ConfigObj");
             return ConfigObj.Clusters.FirstOrDefault()?.Name;
         }
         catch (Exception)
         {
+            _logger.LogWarning("Error getting cluster name from ConfigObj attempting to return client base uri");
             return GetHost();
         }
-
     }
 
     public string GetHost()
@@ -81,39 +81,50 @@ public class KubeCertificateManagerClient
         return Client.BaseUri.ToString();
     }
 
-    private K8SConfiguration ParseKubeConfig(string kubeconfig)
+    private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
+        var k8SConfiguration = new K8SConfiguration();
+
+        _logger.LogTrace("Checking if kubeconfig is null or empty");
         if (string.IsNullOrEmpty(kubeconfig))
         {
-            _logger.LogWarning("kubeconfig is null or empty, returning empty K8SConfiguration object");
-            throw new KubeConfigException("kubeconfig is null or empty, unable to create client");
+            _logger.LogError("kubeconfig is null or empty");
+            throw new KubeConfigException(
+                "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
         }
-        var k8SConfiguration = new K8SConfiguration();
-        // test if kubeconfig is base64 encoded
-        _logger.LogDebug("Testing if kubeconfig is base64 encoded");
+
         try
         {
+            // test if kubeconfig is base64 encoded
+            _logger.LogDebug("Testing if kubeconfig is base64 encoded");
             var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
             kubeconfig = decodedKubeconfig;
             _logger.LogDebug("Successfully decoded kubeconfig from base64");
         }
         catch
         {
-            // not base64 encoded so do nothing
-            _logger.LogDebug("Kubeconfig is not base64 encoded");
+            _logger.LogTrace("Kubeconfig is not base64 encoded");
         }
 
-        // check if json is escaped
+        _logger.LogTrace("Checking if kubeconfig is escaped JSON");
         if (kubeconfig.StartsWith("\\"))
         {
-            _logger.LogDebug("Unescaping kubeconfig JSON");
+            _logger.LogDebug("Un-escaping kubeconfig JSON");
             kubeconfig = kubeconfig.Replace("\\", "");
             kubeconfig = kubeconfig.Replace("\\n", "\n");
+            _logger.LogDebug("Successfully un-escaped kubeconfig JSON");
         }
 
         // parse kubeconfig as a dictionary of string, string
-        if (!kubeconfig.StartsWith("{")) return k8SConfiguration;
+        if (!kubeconfig.StartsWith("{"))
+        {
+            _logger.LogError("kubeconfig is not a JSON object");
+            throw new KubeConfigException(
+                "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
+            // return k8SConfiguration;
+        }
+
 
         _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
 
@@ -140,6 +151,24 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Entering foreach loop to parse clusters...");
         foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString() ?? string.Empty))
         {
+            _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
+            // get environment variable for skip tls verify and convert to bool
+            var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
+            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
+                skipTlsEnvStr);
+            if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
+                (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+            {
+                if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
+                _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
+                if (skipTlsVerifyEnv && !skipTLSVerify)
+                {
+                    _logger.LogWarning(
+                        "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
+                    skipTLSVerify = true;
+                }
+            }
+
             var clusterObj = new Cluster
             {
                 Name = clusterMetadata["name"]?.ToString(),
@@ -147,12 +176,14 @@ public class KubeCertificateManagerClient
                 {
                     Server = clusterMetadata["cluster"]?["server"]?.ToString(),
                     CertificateAuthorityData = clusterMetadata["cluster"]?["certificate-authority-data"]?.ToString(),
-                    SkipTlsVerify = false
+                    SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name, clusterObj.ClusterEndpoint);
+            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
+                clusterObj.ClusterEndpoint);
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
+
         _logger.LogTrace("Finished parsing clusters");
 
         _logger.LogDebug("Parsing users");
@@ -172,6 +203,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("Adding user {Name} to K8SConfiguration object", userObj.Name);
             k8SConfiguration.Users = new List<User> { userObj };
         }
+
         _logger.LogTrace("Finished parsing users");
 
         _logger.LogDebug("Parsing contexts");
@@ -192,8 +224,10 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("Adding context '{Name}' to K8SConfiguration object", contextObj.Name);
             k8SConfiguration.Contexts = new List<Context> { contextObj };
         }
+
         _logger.LogTrace("Finished parsing contexts");
         _logger.LogDebug("Finished parsing kubeconfig");
+
         return k8SConfiguration;
     }
 
@@ -218,25 +252,35 @@ public class KubeCertificateManagerClient
         KubernetesClientConfiguration config;
         if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
         {
-            _logger.LogDebug("Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
-            config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
-            _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
+            try
+            {
+                _logger.LogDebug(
+                    "Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
+                config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
+                _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
+            }
+            catch (Exception e)
+            {
+                _logger.LogError("Error building config from config object: {Error}", e.Message);
+                config = KubernetesClientConfiguration.BuildDefaultConfig();
+            }
         }
-        else if (credentialFileName == "") // If no config defined in store parameters, use default config. This should never happen though.
+        else if (string.IsNullOrEmpty(credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
         {
-            _logger.LogWarning("No config defined in store parameters, using default config. This should never happen though");
+            _logger.LogWarning(
+                "No config defined in store parameters, using default config. This should never happen!");
             config = KubernetesClientConfiguration.BuildDefaultConfig();
             _logger.LogDebug("Finished calling BuildDefaultConfig()");
         }
         else
         {
-            // Logger.LogDebug($"Attempting to load config from file {credentialFileName}");
-            config = KubernetesClientConfiguration.BuildConfigFromConfigFile(strWorkPath != null && !credentialFileName.Contains(strWorkPath)
-                ? Path.Join(strWorkPath, credentialFileName)
-                : // Else attempt to load config from file
-                credentialFileName); // Else attempt to load config from file
+            _logger.LogDebug("Calling BuildConfigFromConfigFile()");
+            config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
+                strWorkPath != null && !credentialFileName.Contains(strWorkPath)
+                    ? Path.Join(strWorkPath, credentialFileName)
+                    : // Else attempt to load config from file
+                    credentialFileName); // Else attempt to load config from file
             _logger.LogDebug("Finished calling BuildConfigFromConfigFile()");
-
         }
 
         _logger.LogDebug("Creating Kubernetes client");
@@ -260,7 +304,7 @@ public class KubeCertificateManagerClient
 
     public X509Certificate2 FindCertificateByThumbprint(X509Certificate2Collection certificates, string thumbprint)
     {
-        X509Certificate2 foundCertificate = certificates
+        var foundCertificate = certificates
             .OfType<X509Certificate2>()
             .FirstOrDefault(cert => cert.Thumbprint == thumbprint);
 
@@ -269,16 +313,18 @@ public class KubeCertificateManagerClient
 
     public X509Certificate2 FindCertificateByAlias(X509Certificate2Collection certificates, string alias)
     {
-        X509Certificate2 foundCertificate = certificates
+        var foundCertificate = certificates
             .OfType<X509Certificate2>()
-            .FirstOrDefault(cert => cert.SubjectName.Name.Contains(alias));
+            .FirstOrDefault(cert => cert.SubjectName.Name != null && cert.SubjectName.Name.Contains(alias));
 
         return foundCertificate;
     }
 
-    public V1Secret RemoveFromPKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName, string secretType, string certdataFieldName,
+    public V1Secret RemoveFromPKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName,
+        string namespaceName, string secretType, string certDataFieldName,
         string storePasswd, V1Secret k8SSecretData,
-        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "", string passwordFieldName = "password",
+        bool append = false, bool overwrite = true, bool passwdIsK8SSecret = false, string passwordSecretPath = "",
+        string passwordFieldName = "password",
         string[] certdataFieldNames = null)
     {
         _logger.LogTrace("Entered UpdatePKCS12SecretStore()");
@@ -290,7 +336,7 @@ public class KubeCertificateManagerClient
         var existingPkcs12 = new X509Certificate2Collection();
         var newPkcs12Collection = new X509Certificate2Collection();
         var k8sCollection = new X509Certificate2Collection();
-        byte[] storePasswordBytes = Encoding.UTF8.GetBytes("");
+        var storePasswordBytes = Encoding.UTF8.GetBytes("");
 
         if (existingPkcs12DataObj?.Data == null)
         {
@@ -300,19 +346,18 @@ public class KubeCertificateManagerClient
         {
             _logger.LogTrace("existingPkcs12DataObj.Data is not null");
 
-            // KeyValuePair<string, byte[]> updated_data = new KeyValuePair<string, byte[]>();
-
             foreach (var fieldName in existingPkcs12DataObj?.Data.Keys)
             {
                 //check if key is in certdataFieldNames
                 //if fieldname contains a . then split it and use the last part
                 var searchFieldName = fieldName;
-                certdataFieldName = fieldName;
+                certDataFieldName = fieldName;
                 if (fieldName.Contains("."))
                 {
                     var splitFieldName = fieldName.Split(".");
                     searchFieldName = splitFieldName[splitFieldName.Length - 1];
                 }
+
                 if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
 
                 _logger.LogTrace($"Adding cert '{fieldName}' to existingPkcs12");
@@ -327,25 +372,30 @@ public class KubeCertificateManagerClient
                         var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
                         storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
                         var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString, X509KeyStorageFlags.Exportable);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
+                            X509KeyStorageFlags.Exportable);
                     }
                     else
                     {
                         storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                            Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
                 {
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
                 else
                 {
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
             }
+
             if (existingPkcs12.Count > 0)
             {
                 // Check if overwrite is true, if so, replace existing cert with new cert
@@ -353,7 +403,7 @@ public class KubeCertificateManagerClient
                 {
                     _logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
 
-                    X509Certificate2 foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
+                    var foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
                     if (foundCertificate != null)
                     {
                         // Certificate found
@@ -386,28 +436,26 @@ public class KubeCertificateManagerClient
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
-                { certdataFieldName, p12bytes }
+                { certDataFieldName, p12bytes }
             }
         };
         switch (string.IsNullOrEmpty(storePasswd))
         {
-            case false when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is empty
+            case false
+                when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
+                : // password is not empty and passwordSecretPath is empty
             {
                 _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "password";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
                 break;
             }
-            case false when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is not empty
+            case false
+                when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
+                : // password is not empty and passwordSecretPath is not empty
             {
                 _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "passwordSecretPath";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
                 // Lookup password secret path on cluster to see if it exists
@@ -416,24 +464,32 @@ public class KubeCertificateManagerClient
                 // Assume secret pattern is namespace/secretName
                 var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
                 var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                _logger.LogDebug(
+                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                 try
                 {
-                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    var passwordSecret =
+                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
                     // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                    _logger.LogDebug($"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     // Update secret
-                    _logger.LogDebug($"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret, passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug($"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
+                        passwordSecretName, passwordSecretNamespace);
+                    _logger.LogDebug(
+                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                 }
                 catch (HttpOperationException e)
                 {
-                    _logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogError(
+                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     _logger.LogError(e.Message);
                     // Attempt to create a new secret
-                    _logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     var passwordSecretData = new V1Secret
                     {
                         Metadata = new V1ObjectMeta
@@ -446,9 +502,11 @@ public class KubeCertificateManagerClient
                             { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
                         }
                     };
-                    var createdPasswordSecret = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    var createdPasswordSecret =
+                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
                     _logger.LogDebug("Successfully created secret " + passwordSecretPath);
                 }
+
                 break;
             }
         }
@@ -463,9 +521,11 @@ public class KubeCertificateManagerClient
         return updatedSecret;
     }
 
-    public V1Secret UpdatePKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName, string secretType, string certdataFieldName,
+    public V1Secret UpdatePKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName,
+        string secretType, string certdataFieldName,
         string storePasswd, V1Secret k8SSecretData,
-        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "", string passwordFieldName = "password",
+        bool append = false, bool overwrite = true, bool passwdIsK8sSecret = false, string passwordSecretPath = "",
+        string passwordFieldName = "password",
         string[] certdataFieldNames = null, bool remove = false)
     {
         _logger.LogTrace("Entered UpdatePKCS12SecretStore()");
@@ -479,7 +539,7 @@ public class KubeCertificateManagerClient
         var existingPkcs12 = new X509Certificate2Collection();
         var newPkcs12Collection = new X509Certificate2Collection();
         var k8sCollection = new X509Certificate2Collection();
-        byte[] storePasswordBytes = Encoding.UTF8.GetBytes("");
+        var storePasswordBytes = Encoding.UTF8.GetBytes("");
 
         if (existingPkcs12DataObj?.Data == null)
         {
@@ -501,6 +561,7 @@ public class KubeCertificateManagerClient
                     var splitFieldName = fieldName.Split(".");
                     searchFieldName = splitFieldName[splitFieldName.Length - 1];
                 }
+
                 if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
 
                 certdataFieldName = fieldName;
@@ -516,31 +577,36 @@ public class KubeCertificateManagerClient
                         var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
                         storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
                         var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString, X509KeyStorageFlags.Exportable);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
+                            X509KeyStorageFlags.Exportable);
                     }
                     else
                     {
                         storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                            Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
                 {
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
                 else
                 {
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
+                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
             }
+
             if (existingPkcs12.Count > 0)
             {
                 // create x509Certificate2 from jobCertificate.CertBytes
                 if (remove)
                 {
-                    X509Certificate2 foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
+                    var foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
                     if (foundCertificate != null)
                     {
                         // Certificate found
@@ -551,7 +617,8 @@ public class KubeCertificateManagerClient
                 }
                 else
                 {
-                    var newCert = new X509Certificate2(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
+                    var newCert = new X509Certificate2(jobCertificate.CertBytes, storePasswd,
+                        X509KeyStorageFlags.Exportable);
                     var newCertCn = newCert.GetNameInfo(X509NameType.SimpleName, false);
                     //import jobCertificate.CertBytes into existingPkcs12
 
@@ -560,12 +627,13 @@ public class KubeCertificateManagerClient
                     {
                         _logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
 
-                        X509Certificate2 foundCertificate = FindCertificateByCN(existingPkcs12, newCertCn);
+                        var foundCertificate = FindCertificateByCN(existingPkcs12, newCertCn);
                         if (foundCertificate != null)
                         {
                             // Certificate found
                             // replace the found certificate with the new certificate
-                            _logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
+                            _logger.LogTrace(
+                                "Certificate found, replacing the found certificate with the new certificate");
                             existingPkcs12.Remove(foundCertificate);
                             existingPkcs12.Add(newCert);
                         }
@@ -579,6 +647,7 @@ public class KubeCertificateManagerClient
                         }
                     }
                 }
+
                 _logger.LogTrace("Importing jobCertificate.CertBytes into existingPkcs12");
                 k8sCollection = existingPkcs12;
             }
@@ -587,7 +656,6 @@ public class KubeCertificateManagerClient
                 newPkcs12Collection.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
                 k8sCollection = newPkcs12Collection;
             }
-
         }
 
         _logger.LogTrace("Creating V1Secret object");
@@ -624,23 +692,21 @@ public class KubeCertificateManagerClient
 
         switch (string.IsNullOrEmpty(storePasswd))
         {
-            case false when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is empty
+            case false
+                when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
+                : // password is not empty and passwordSecretPath is empty
             {
                 _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "password";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
                 break;
             }
-            case false when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret: // password is not empty and passwordSecretPath is not empty
+            case false
+                when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
+                : // password is not empty and passwordSecretPath is not empty
             {
                 _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "passwordSecretPath";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
                 // Lookup password secret path on cluster to see if it exists
@@ -649,24 +715,32 @@ public class KubeCertificateManagerClient
                 // Assume secret pattern is namespace/secretName
                 var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
                 var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                _logger.LogDebug(
+                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                 try
                 {
-                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    var passwordSecret =
+                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
                     // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                    _logger.LogDebug($"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     // Update secret
-                    _logger.LogDebug($"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret, passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug($"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
+                        passwordSecretName, passwordSecretNamespace);
+                    _logger.LogDebug(
+                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                 }
                 catch (HttpOperationException e)
                 {
-                    _logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogError(
+                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     _logger.LogError(e.Message);
                     // Attempt to create a new secret
-                    _logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     var passwordSecretData = new V1Secret
                     {
                         Metadata = new V1ObjectMeta
@@ -679,9 +753,11 @@ public class KubeCertificateManagerClient
                             { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
                         }
                     };
-                    var createdPasswordSecret = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    var createdPasswordSecret =
+                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
                     _logger.LogDebug("Successfully created secret " + passwordSecretPath);
                 }
+
                 break;
             }
         }
@@ -697,8 +773,10 @@ public class KubeCertificateManagerClient
     }
 
     public V1Secret CreateOrUpdateCertificateStoreSecret(K8SJobCertificate jobCertificate, string secretName,
-        string namespaceName, string secretType, bool overwrite = false, string certDataFieldName = "pkcs12", string passwordFieldName = "password",
-        string passwordSecretPath = "", bool passwordIsK8SSecret = false, string password = "", string[] allowedKeys = null, bool remove = false)
+        string namespaceName, string secretType, bool overwrite = false, string certDataFieldName = "pkcs12",
+        string passwordFieldName = "password",
+        string passwordSecretPath = "", bool passwordIsK8SSecret = false, string password = "",
+        string[] allowedKeys = null, bool remove = false)
     {
         var storePasswd = string.IsNullOrEmpty(password) ? jobCertificate.Password : password;
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
@@ -710,11 +788,8 @@ public class KubeCertificateManagerClient
             case "pfx":
             case "jks":
                 if (remove)
-                {
                     k8SSecretData = new V1Secret();
-                }
                 else
-                {
                     k8SSecretData = CreateOrUpdatePKCS12Secret(secretName,
                         namespaceName,
                         jobCertificate,
@@ -723,7 +798,6 @@ public class KubeCertificateManagerClient
                         passwordFieldName,
                         passwordSecretPath,
                         allowedKeys);
-                }
                 break;
             default:
                 k8SSecretData = new V1Secret();
@@ -747,7 +821,8 @@ public class KubeCertificateManagerClient
             _logger.LogWarning("Error while attempting to create secret: " + e.Message);
             if (e.Message.Contains("Conflict") || e.Message.Contains("Unprocessable"))
             {
-                _logger.LogDebug($"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
+                _logger.LogDebug(
+                    $"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
                 _logger.LogTrace("Calling UpdateSecretStore()");
                 switch (secretType)
                 {
@@ -769,16 +844,18 @@ public class KubeCertificateManagerClient
                             null,
                             remove);
                     default:
-                        return UpdateSecretStore(secretName, namespaceName, secretType, "", "", k8SSecretData, false, overwrite);
+                        return UpdateSecretStore(secretName, namespaceName, secretType, "", "", k8SSecretData, false,
+                            overwrite);
                 }
-
             }
         }
+
         _logger.LogError("Unable to create secret for unknown reason.");
         return k8SSecretData;
     }
 
-    public V1Secret CreateOrUpdateCertificateStoreSecret(string keyPem, string certPem, List<string> chainPem, string secretName,
+    public V1Secret CreateOrUpdateCertificateStoreSecret(string keyPem, string certPem, List<string> chainPem,
+        string secretName,
         string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove = false)
     {
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
@@ -806,11 +883,14 @@ public class KubeCertificateManagerClient
             _logger.LogWarning("Error while attempting to create secret: " + e.Message);
             if (e.Message.Contains("Conflict"))
             {
-                _logger.LogDebug($"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
+                _logger.LogDebug(
+                    $"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
                 _logger.LogTrace("Calling UpdateSecretStore()");
-                return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append, overwrite);
+                return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append,
+                    overwrite);
             }
         }
+
         _logger.LogError("Unable to create secret for unknown reason.");
         return null;
     }
@@ -820,82 +900,80 @@ public class KubeCertificateManagerClient
     {
         try
         {
+            var storeBuilder = new Pkcs12StoreBuilder();
+            var certs = storeBuilder.Build();
 
-            Pkcs12StoreBuilder storeBuilder = new Pkcs12StoreBuilder();
-            Pkcs12Store certs = storeBuilder.Build();
+            var newCertBytes = pkcs12bytes;
 
-            byte[] newCertBytes = pkcs12bytes;
+            var newEntry = storeBuilder.Build();
 
-            Pkcs12Store newEntry = storeBuilder.Build();
+            var cert = new X509Certificate2(newCertBytes, currentPassword, X509KeyStorageFlags.Exportable);
+            var binaryCert = cert.Export(X509ContentType.Pkcs12, currentPassword);
 
-            X509Certificate2 cert = new X509Certificate2(newCertBytes, currentPassword, X509KeyStorageFlags.Exportable);
-            byte[] binaryCert = cert.Export(X509ContentType.Pkcs12, currentPassword);
-
-            using (MemoryStream ms = new MemoryStream(string.IsNullOrEmpty(currentPassword) ? binaryCert : newCertBytes))
+            using (var ms = new MemoryStream(string.IsNullOrEmpty(currentPassword) ? binaryCert : newCertBytes))
             {
                 newEntry.Load(ms, string.IsNullOrEmpty(currentPassword) ? new char[0] : currentPassword.ToCharArray());
             }
 
-            string checkAliasExists = string.Empty;
-            string alias = cert.Thumbprint;
-            foreach (string newEntryAlias in newEntry.Aliases)
+            var checkAliasExists = string.Empty;
+            var alias = cert.Thumbprint;
+            foreach (var newEntryAlias in newEntry.Aliases)
             {
                 if (!newEntry.IsKeyEntry(newEntryAlias))
                     continue;
 
                 checkAliasExists = newEntryAlias;
 
-                if (certs.ContainsAlias(alias))
-                {
-                    certs.DeleteEntry(alias);
-                }
+                if (certs.ContainsAlias(alias)) certs.DeleteEntry(alias);
                 certs.SetKeyEntry(alias, newEntry.GetKey(newEntryAlias), newEntry.GetCertificateChain(newEntryAlias));
             }
 
             if (string.IsNullOrEmpty(checkAliasExists))
             {
-                Org.BouncyCastle.X509.X509Certificate bcCert = DotNetUtilities.FromX509Certificate(cert);
-                X509CertificateEntry bcEntry = new X509CertificateEntry(bcCert);
-                if (certs.ContainsAlias(alias))
-                {
-                    certs.DeleteEntry(alias);
-                }
+                var bcCert = DotNetUtilities.FromX509Certificate(cert);
+                var bcEntry = new X509CertificateEntry(bcCert);
+                if (certs.ContainsAlias(alias)) certs.DeleteEntry(alias);
                 certs.SetCertificateEntry(alias, bcEntry);
             }
 
-            using (MemoryStream outStream = new MemoryStream())
+            using (var outStream = new MemoryStream())
             {
-                certs.Save(outStream, string.IsNullOrEmpty(newPassword) ? new char[0] : newPassword.ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+                certs.Save(outStream, string.IsNullOrEmpty(newPassword) ? new char[0] : newPassword.ToCharArray(),
+                    new SecureRandom());
             }
+
             return certs;
         }
         catch (Exception ex)
         {
-            throw new Exception($"Error attempting to add certficate for store path=StorePath, file name=StoreFileName.", ex);
+            throw new Exception("Error attempting to add certficate for store path=StorePath, file name=StoreFileName.",
+                ex);
         }
-
     }
 
-    public X509Certificate2Collection CreatePKCS12Collection(X509Certificate2Collection certificateCollection, string currentPassword, string newPassword)
+    public X509Certificate2Collection CreatePKCS12Collection(X509Certificate2Collection certificateCollection,
+        string currentPassword, string newPassword)
     {
         // Iterate over the certificates in the collection
-        foreach (X509Certificate2 certificate in certificateCollection)
+        foreach (var certificate in certificateCollection)
         {
             // Export the private key to a byte array
-            byte[] privateKeyBytes = certificate.Export(X509ContentType.Pkcs12, currentPassword);
+            var privateKeyBytes = certificate.Export(X509ContentType.Pkcs12, currentPassword);
 
             // Import the private key with the new password
-            X509Certificate2 newCertificate = new X509Certificate2(privateKeyBytes, newPassword, X509KeyStorageFlags.Exportable);
+            var newCertificate = new X509Certificate2(privateKeyBytes, newPassword, X509KeyStorageFlags.Exportable);
 
             // Replace the certificate in the collection with the new certificate
-            int index = certificateCollection.IndexOf(certificate);
+            var index = certificateCollection.IndexOf(certificate);
             certificateCollection.RemoveAt(index);
             certificateCollection.Insert(index, newCertificate);
         }
+
         return certificateCollection;
     }
 
-    private V1Secret CreateOrUpdatePKCS12Secret(string secretName, string namespaceName, K8SJobCertificate certObj, string secretFieldName, string password,
+    private V1Secret CreateOrUpdatePKCS12Secret(string secretName, string namespaceName, K8SJobCertificate certObj,
+        string secretFieldName, string password,
         string passwordFieldName, string passwordSecretPath = "", string[] allowedKeys = null)
     {
         _logger.LogTrace("Entered CreateOrUpdatePKCS12Secret()");
@@ -909,10 +987,7 @@ public class KubeCertificateManagerClient
         catch (HttpOperationException e)
         {
             _logger.LogDebug("Error while attempting to read existing secret: " + e.Message);
-            if (e.Message.Contains("Not Found"))
-            {
-                _logger.LogDebug("No existing secret found.");
-            }
+            if (e.Message.Contains("Not Found")) _logger.LogDebug("No existing secret found.");
             existingSecret = null;
         }
 
@@ -933,7 +1008,7 @@ public class KubeCertificateManagerClient
                 false,
                 passwordSecretPath,
                 passwordFieldName,
-                allowedKeys); 
+                allowedKeys);
         }
 
         _logger.LogDebug("Attempting to create new secret...");
@@ -948,7 +1023,7 @@ public class KubeCertificateManagerClient
         var pkcs12Data = CreatePKCS12Collection(certObj.Pkcs12, password, passwordToWrite);
 
         byte[] p12Bytes;
-        using (MemoryStream stream = new MemoryStream())
+        using (var stream = new MemoryStream())
         {
             pkcs12Data.Save(stream, passwordToWrite.ToCharArray(), new SecureRandom());
 
@@ -958,10 +1033,7 @@ public class KubeCertificateManagerClient
             // Use the pkcs12Bytes as desired
         }
 
-        if (string.IsNullOrEmpty(secretFieldName))
-        {
-            secretFieldName = "pkcs12";
-        }
+        if (string.IsNullOrEmpty(secretFieldName)) secretFieldName = "pkcs12";
         var k8SSecretData = new V1Secret
         {
             Metadata = new V1ObjectMeta
@@ -978,13 +1050,11 @@ public class KubeCertificateManagerClient
         switch (string.IsNullOrEmpty(password))
         {
             case false
-                when certObj.PasswordIsK8SSecret && string.IsNullOrEmpty(certObj.StorePasswordPath): // This means the password is expected to be on the secret so add it
+                when certObj.PasswordIsK8SSecret && string.IsNullOrEmpty(certObj.StorePasswordPath)
+                : // This means the password is expected to be on the secret so add it
             {
                 _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "password";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
 
                 // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
 
@@ -994,10 +1064,7 @@ public class KubeCertificateManagerClient
             case false when !string.IsNullOrEmpty(passwordSecretPath):
             {
                 _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName))
-                {
-                    passwordFieldName = "password";
-                }
+                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
                 // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
                 // Lookup password secret path on cluster to see if it exists
@@ -1006,18 +1073,22 @@ public class KubeCertificateManagerClient
                 // Assume secret pattern is namespace/secretName
                 var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
                 var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                _logger.LogDebug(
+                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                 try
                 {
-                    var passwordSecret = Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                    var passwordSecret =
+                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
                     password = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
                 }
                 catch (HttpOperationException e)
                 {
-                    _logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogError(
+                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     _logger.LogError(e.Message);
                     // Attempt to create a new secret
-                    _logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug(
+                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
                     // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
                     var passwordSecretData = new V1Secret
                     {
@@ -1032,21 +1103,22 @@ public class KubeCertificateManagerClient
                         }
                     };
                     _logger.LogDebug("Calling CreateNamespacedSecret()");
-                    var passwordSecretResponse = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                    var passwordSecretResponse =
+                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
                     _logger.LogDebug("Finished calling CreateNamespacedSecret()");
                     _logger.LogDebug("Successfully created secret " + passwordSecretPath);
                 }
+
                 break;
             }
         }
+
         _logger.LogTrace("Exiting CreateNewSecret()");
         return k8SSecretData;
-
     }
 
     public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
     {
-
         // Lookup password secret path on cluster to see if it exists
         _logger.LogDebug("Attempting to lookup password secret path on cluster...");
         var splitPasswordPath = passwordSecretPath.Split("/");
@@ -1058,13 +1130,11 @@ public class KubeCertificateManagerClient
         return passwordSecretResponse;
     }
 
-    public V1Secret CreateOrUpdateBuddyPass(string secretName, string passwordFieldName, string passwordSecretPath, string password)
+    public V1Secret CreateOrUpdateBuddyPass(string secretName, string passwordFieldName, string passwordSecretPath,
+        string password)
     {
         _logger.LogDebug("Adding password secret path to secret...");
-        if (string.IsNullOrEmpty(passwordFieldName))
-        {
-            passwordFieldName = "password";
-        }
+        if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
         // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
         // Lookup password secret path on cluster to see if it exists
@@ -1088,7 +1158,8 @@ public class KubeCertificateManagerClient
         };
         try
         {
-            var passwordSecretResponse = Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+            var passwordSecretResponse =
+                Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
             return passwordSecretResponse;
         }
         catch (HttpOperationException e)
@@ -1096,17 +1167,20 @@ public class KubeCertificateManagerClient
             _logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
             _logger.LogError(e.Message);
             // Attempt to create a new secret
-            _logger.LogDebug($"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+            _logger.LogDebug(
+                $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
 
             _logger.LogDebug("Calling CreateNamespacedSecret()");
-            var passwordSecretResponse = Client.CoreV1.ReplaceNamespacedSecret(passwordSecretData, secretName, passwordSecretNamespace);
+            var passwordSecretResponse =
+                Client.CoreV1.ReplaceNamespacedSecret(passwordSecretData, secretName, passwordSecretNamespace);
             _logger.LogDebug("Finished calling CreateNamespacedSecret()");
             _logger.LogDebug("Successfully created secret " + passwordSecretPath);
             return passwordSecretResponse;
         }
     }
 
-    private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem, List<string> chainPem, string secretType, bool separateChain = false)
+    private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem,
+        List<string> chainPem, string secretType, bool separateChain = false)
     {
         _logger.LogTrace("Entered CreateNewSecret()");
         _logger.LogDebug("Attempting to create new secret...");
@@ -1147,8 +1221,8 @@ public class KubeCertificateManagerClient
 
                     Data = new Dictionary<string, byte[]>
                     {
-                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) }, 
-                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) } 
+                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
                     }
                 };
                 break;
@@ -1159,7 +1233,6 @@ public class KubeCertificateManagerClient
                     {
                         Name = secretName,
                         NamespaceProperty = namespaceName
-
                     },
 
                     Type = "kubernetes.io/tls",
@@ -1174,29 +1247,24 @@ public class KubeCertificateManagerClient
             default:
                 throw new NotImplementedException(
                     $"Secret type {secretType} not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.");
-
         }
+
         if (chainPem is { Count: > 0 })
         {
             var caCert = chainPem.Where(cer => cer != certPem).Aggregate("", (current, cer) => current + cer);
             if (separateChain)
-            {
-                k8SSecretData.Data.Add("ca.crt", Encoding.UTF8.GetBytes(caCert));    
-            }
+                k8SSecretData.Data.Add("ca.crt", Encoding.UTF8.GetBytes(caCert));
             else
-            {
                 //update tls.crt w/ full chain
                 k8SSecretData.Data["tls.crt"] = Encoding.UTF8.GetBytes(certPem + caCert);
-            }
-            
         }
 
         _logger.LogTrace("Exiting CreateNewSecret()");
         return k8SSecretData;
-
     }
 
-    private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret, V1Secret newSecret)
+    private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret,
+        V1Secret newSecret)
     {
         _logger.LogTrace("Entered UpdateOpaqueSecret()");
 
@@ -1206,28 +1274,32 @@ public class KubeCertificateManagerClient
         //check if existing secret has ca.crt and if new secret has ca.crt
         if (existingSecret.Data.ContainsKey("ca.crt") && newSecret.Data.ContainsKey("ca.crt"))
         {
-            _logger.LogDebug("Existing secret '{Namespace}/{Name}' has ca.crt adding chain to this field", namespaceName, secretName);
+            _logger.LogDebug("Existing secret '{Namespace}/{Name}' has ca.crt adding chain to this field",
+                namespaceName, secretName);
             _logger.LogTrace("existing ca.crt:\n {CaCrt}", existingSecret.Data["ca.crt"]);
             existingSecret.Data["ca.crt"] = newSecret.Data["ca.crt"];
             _logger.LogTrace("new ca.crt:\n {CaCrt}", newSecret.Data["ca.crt"]);
-            
         }
         else
         {
             //Append to tls.crt
-            _logger.LogDebug("Existing secret '{Namespace}/{Name}' does not have ca.crt, appending to tls.crt", namespaceName, secretName);
+            _logger.LogDebug("Existing secret '{Namespace}/{Name}' does not have ca.crt, appending to tls.crt",
+                namespaceName, secretName);
             if (newSecret.Data.TryGetValue("ca.crt", out var value))
             {
                 _logger.LogDebug("Appending ca.crt to tls.crt");
                 existingSecret.Data["tls.crt"] =
-                    Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]) + Encoding.UTF8.GetString(value));
+                    Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]) +
+                                           Encoding.UTF8.GetString(value));
                 _logger.LogTrace("New tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
             }
             else
             {
-                _logger.LogDebug("No chain was provided, only updating leaf certificate for '{Namespace}/{Name}'", namespaceName, secretName);
+                _logger.LogDebug("No chain was provided, only updating leaf certificate for '{Namespace}/{Name}'",
+                    namespaceName, secretName);
                 _logger.LogTrace("existing tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
-                existingSecret.Data["tls.crt"] = Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]));
+                existingSecret.Data["tls.crt"] =
+                    Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]));
                 _logger.LogTrace("updated tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
             }
         }
@@ -1240,19 +1312,20 @@ public class KubeCertificateManagerClient
         return secretResponse;
     }
 
-    private V1Secret UpdateOpaqueSecretMultiple(string secretName, string namespaceName, V1Secret existingSecret, string certPem, string keyPem)
+    private V1Secret UpdateOpaqueSecretMultiple(string secretName, string namespaceName, V1Secret existingSecret,
+        string certPem, string keyPem)
     {
         _logger.LogTrace("Entered UpdateOpaqueSecret()");
 
         var existingCerts = existingSecret.Data.ContainsKey("certificates")
             ? Encoding.UTF8.GetString(existingSecret.Data["certificates"])
-            : ""; 
+            : "";
 
         _logger.LogTrace("Existing certificates: " + existingCerts);
 
         var existingKeys = existingSecret.Data.ContainsKey("tls.key")
             ? Encoding.UTF8.GetString(existingSecret.Data["tls.key"])
-            : ""; 
+            : "";
         // Logger.LogTrace("Existing private keys: " + existingKeys);
 
         if (existingCerts.Contains(certPem) && existingKeys.Contains(keyPem))
@@ -1272,6 +1345,7 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("Adding comma to existing certificates");
                 newCerts += ",";
             }
+
             _logger.LogTrace("Adding certificate to existing certificates");
             newCerts += certPem;
 
@@ -1288,6 +1362,7 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("Adding comma to existing private keys");
                 newKeys += ",";
             }
+
             _logger.LogTrace("Adding private key to existing private keys");
             newKeys += keyPem;
 
@@ -1303,7 +1378,8 @@ public class KubeCertificateManagerClient
         return secretResponse;
     }
 
-    private V1Secret UpdateSecretStore(string secretName, string namespaceName, string secretType, string certPem, string keyPem, V1Secret newData, bool append,
+    private V1Secret UpdateSecretStore(string secretName, string namespaceName, string secretType, string certPem,
+        string keyPem, V1Secret newData, bool append,
         bool overwrite = false)
     {
         _logger.LogTrace("Entered UpdateSecretStore()");
@@ -1349,12 +1425,14 @@ public class KubeCertificateManagerClient
                 return secretResponse;
             }
             default:
-                var dErrMsg = $"Secret type not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.";
+                var dErrMsg =
+                    $"Secret type not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.";
                 _logger.LogError(dErrMsg);
                 _logger.LogTrace("Exiting UpdateSecretStore()");
                 throw new NotImplementedException(dErrMsg);
         }
     }
+
     public V1Secret GetCertificateStoreSecret(string secretName, string namespaceName)
     {
         _logger.LogTrace("Entered GetCertificateStoreSecret()");
@@ -1378,6 +1456,7 @@ public class KubeCertificateManagerClient
                 _logger.LogDebug("Removing leading comma from existing certificates.");
                 existingEntries = existingEntries.Substring(1);
             }
+
             if (existingEntries.EndsWith(","))
             {
                 _logger.LogDebug("Removing trailing comma from existing certificates.");
@@ -1389,6 +1468,7 @@ public class KubeCertificateManagerClient
             // Didn't find existing key for whatever reason so no need to delete.
             _logger.LogWarning("Unable to find existing certificate in opaque secret. No need to remove.");
         }
+
         _logger.LogTrace("Exiting CleanOpaqueStore()");
         return existingEntries;
     }
@@ -1416,11 +1496,11 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Parsing existing certificates from secret into a string.");
         foreach (var sKey in existingSecret.Data.Keys)
         {
-            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]); 
+            var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]);
             _logger.LogTrace("existingCerts: " + existingCerts);
 
             _logger.LogDebug("Parsing existing private keys from secret into a string.");
-            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]); 
+            var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]);
             // Logger.LogTrace("existingKeys: " + existingKeys);
 
             _logger.LogDebug("Splitting existing certificates into an array.");
@@ -1443,6 +1523,7 @@ public class KubeCertificateManagerClient
                     _logger.LogDebug("Found empty certificate string. Skipping.");
                     continue;
                 }
+
                 _logger.LogDebug("Creating X509Certificate2 from certificate string.");
                 var sCert = new X509Certificate2();
                 try
@@ -1451,7 +1532,8 @@ public class KubeCertificateManagerClient
                 }
                 catch (Exception e)
                 {
-                    _logger.LogWarning($"Unable to create X509Certificate2 from string in '{sKey}' field. Skipping. Error: {e.Message}");
+                    _logger.LogWarning(
+                        $"Unable to create X509Certificate2 from string in '{sKey}' field. Skipping. Error: {e.Message}");
                     continue;
                 }
 
@@ -1473,16 +1555,17 @@ public class KubeCertificateManagerClient
                     {
                         // Didn't find existing key for whatever reason so no need to delete.
                         // Find the corresponding key the the keys array and by checking if the private key corresponds to the cert public key.
-                        _logger.LogWarning($"Unable to find corresponding private key in opaque secret for certificate {sCert.Thumbprint}. No need to remove.");
+                        _logger.LogWarning(
+                            $"Unable to find corresponding private key in opaque secret for certificate {sCert.Thumbprint}. No need to remove.");
                     }
-
                 }
+
                 _logger.LogTrace("Incrementing pkey index...");
                 index++; //Currently keys are assumed to be in the same order as certs.
             }
 
             _logger.LogDebug("Updating existing secret with new certificate data.");
-            existingSecret.Data[sKey] = Encoding.UTF8.GetBytes(existingCerts); 
+            existingSecret.Data[sKey] = Encoding.UTF8.GetBytes(existingCerts);
             _logger.LogDebug("Updating existing secret with new key data.");
             try
             {
@@ -1490,19 +1573,22 @@ public class KubeCertificateManagerClient
             }
             catch (Exception)
             {
-                _logger.LogWarning("Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");
-            } 
+                _logger.LogWarning(
+                    "Unable to update private_keys in opaque secret. This is expected if the secret did not contain private keys to begin with.");
+            }
 
 
             // Update Kubernetes secret
-            _logger.LogDebug($"Updating secret {secretName} in namespace {namespaceName} on {GetHost()} with new certificate data.");
+            _logger.LogDebug(
+                $"Updating secret {secretName} in namespace {namespaceName} on {GetHost()} with new certificate data.");
             _logger.LogTrace("Calling ReplaceNamespacedSecret()");
         }
 
         return Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
     }
 
-    public V1Status DeleteCertificateStoreSecret(string secretName, string namespaceName, string storeType, string alias)
+    public V1Status DeleteCertificateStoreSecret(string secretName, string namespaceName, string storeType,
+        string alias)
     {
         _logger.LogTrace("Entered DeleteCertificateStoreSecret()");
         _logger.LogTrace("secretName: " + secretName);
@@ -1515,7 +1601,8 @@ public class KubeCertificateManagerClient
             case "secret":
             case "opaque":
                 // check the current inventory and only remove the cert if it is found else throw not found exception
-                _logger.LogDebug($"Attempting to delete certificate from opaque secret {secretName} in namespace {namespaceName} on {GetHost()}");
+                _logger.LogDebug(
+                    $"Attempting to delete certificate from opaque secret {secretName} in namespace {namespaceName} on {GetHost()}");
                 _logger.LogTrace("Calling DeleteCertificateStoreSecret()");
                 // _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
                 return Client.CoreV1.DeleteNamespacedSecret(
@@ -1550,6 +1637,7 @@ public class KubeCertificateManagerClient
                 throw new NotImplementedException(dErrMsg);
         }
     }
+
     public List<string> DiscoverCertificates()
     {
         _logger.LogTrace("Entered DiscoverCertificates()");
@@ -1572,10 +1660,7 @@ public class KubeCertificateManagerClient
                 ? Encoding.UTF8.GetString(cr.Spec.Request, 0, cr.Spec.Request.Length)
                 : "";
 
-            if (utfCsr != "")
-            {
-                _logger.LogTrace("utfCsr: " + utfCsr);
-            }
+            if (utfCsr != "") _logger.LogTrace("utfCsr: " + utfCsr);
             if (utfCert == "")
             {
                 _logger.LogWarning("CSR has not been signed yet. Skipping.");
@@ -1625,6 +1710,7 @@ public class KubeCertificateManagerClient
         var certificateParser = new X509CertificateParser();
         return certificateParser.ReadCertificate(derData);
     }
+
     public X509Certificate ReadPemCertificate(string pemString)
     {
         using var reader = new StringReader(pemString);
@@ -1635,7 +1721,6 @@ public class KubeCertificateManagerClient
         var certificateBytes = pemObject.Content;
         var certificateParser = new X509CertificateParser();
         return certificateParser.ReadCertificate(certificateBytes);
-
     }
 
     public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password)
@@ -1644,10 +1729,7 @@ public class KubeCertificateManagerClient
         // Get the first private key entry
         var alias = store.Aliases.FirstOrDefault(entryAlias => store.IsKeyEntry(entryAlias));
 
-        if (alias == null)
-        {
-            throw new Exception("No private key found in the provided PFX/P12 file.");
-        }
+        if (alias == null) throw new Exception("No private key found in the provided PFX/P12 file.");
 
         // Get the private key
         var keyEntry = store.GetKey(alias);
@@ -1672,14 +1754,12 @@ public class KubeCertificateManagerClient
 
         PemObject pemObject;
         while ((pemObject = pemReader.ReadPemObject()) != null)
-        {
             if (pemObject.Type == "CERTIFICATE")
             {
                 var certificateParser = new X509CertificateParser();
                 var certificate = certificateParser.ReadCertificate(pemObject.Content);
                 certificates.Add(certificate);
             }
-        }
 
         return certificates;
     }
@@ -1692,43 +1772,51 @@ public class KubeCertificateManagerClient
         pemWriter.WriteObject(pemObject);
         pemWriter.Writer.Flush();
         return stringWriter.ToString();
-
     }
 
-    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default", bool namespaceIsStore = false, bool clusterIsStore = false)
+    public List<string> DiscoverSecrets(string[] allowedKeys, string secType, string ns = "default",
+        bool namespaceIsStore = false, bool clusterIsStore = false)
     {
         // Get a list of all namespaces
         _logger.LogTrace("Entered DiscoverSecrets()");
         V1NamespaceList namespaces;
         var clusterName = GetClusterName() ?? GetHost();
+        _logger.LogTrace("clusterName: {ClusterName}", clusterName);
 
-        var nsList = new string[] { };
+        var nsList = Array.Empty<string>();
 
         var locations = new List<string>();
 
         if (secType == "cluster")
         {
-            _logger.LogTrace("Discovering K8S cluster secrets from k8s cluster resources and returning only a single location.");
+            _logger.LogTrace(
+                "Discovering K8S cluster secrets from k8s cluster resources and returning only a single location");
             locations.Add($"{clusterName}");
             return locations;
         }
 
 
-        _logger.LogDebug("Attempting to list k8s namespaces from " + clusterName);
+        _logger.LogDebug("Attempting to list k8s namespaces from {ClusterName}", clusterName);
+        _logger.LogTrace("Client BaseUrl: {BaseUrl}", Client.BaseUri);
+        _logger.LogDebug("Calling CoreV1.ListNamespace()");
         namespaces = Client.CoreV1.ListNamespace();
-        _logger.LogTrace("namespaces.Items.Count: " + namespaces.Items.Count);
-        _logger.LogTrace("namespaces.Items: " + namespaces.Items);
+        
+        _logger.LogDebug("returned from CoreV1.ListNamespace()");
+        _logger.LogTrace("namespaces.Items.Count: {Count}", namespaces.Items.Count);
+        _logger.LogTrace("namespaces.Items: {Items}", namespaces.Items.ToString());
 
-        nsList = ns.Contains(",") ? ns.Split(",") : new[] { ns };
-        foreach (var nsLI in nsList)
+        nsList = ns.Contains(',') ? ns.Split(",") : new[] { ns };
+        foreach (var nsLi in nsList)
         {
+            _logger.LogTrace("Iterating through namespace list {NamespaceList}", nsLi);
             var secretsList = new List<string>();
-            _logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace.");
+            _logger.LogTrace("Entering foreach loop to list all secrets in each returned namespace");
             foreach (var nsObj in namespaces.Items)
             {
-                if (nsLI != "all" && nsLI != nsObj.Metadata.Name)
+                if (nsLi != "all" && nsLi != nsObj.Metadata.Name)
                 {
-                    _logger.LogWarning("Skipping namespace " + nsObj.Metadata.Name + " because it does not match the namespace filter.");
+                    _logger.LogWarning(
+                        "Skipping namespace '{Namespace}' because it does not match the namespace filter", nsObj.Metadata.Name);
                     continue;
                 }
 
@@ -1751,7 +1839,6 @@ public class KubeCertificateManagerClient
                 }
 
                 foreach (var secret in secrets.Items)
-                {
                     if (secret.Type.ToLower() is "kubernetes.io/tls" or "opaque" or "pkcs12" or "p12" or "pfx" or "jks")
                     {
                         _logger.LogTrace("secret.Type: " + secret.Type);
@@ -1767,9 +1854,11 @@ public class KubeCertificateManagerClient
                             case "kubernetes.io/tls":
                                 if (secType != "kubernetes.io/tls" && secType != "tls")
                                 {
-                                    _logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
+                                    _logger.LogWarning("Skipping secret " + secret.Metadata.Name +
+                                                       " because it is not of type " + secType);
                                     continue;
                                 }
+
                                 _logger.LogDebug("Attempting to parse TLS certificate from secret");
                                 var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
                                 _logger.LogTrace("certData: " + certData);
@@ -1778,17 +1867,20 @@ public class KubeCertificateManagerClient
                                 var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
 
                                 _logger.LogDebug("Attempting to convert TLS certificate to X509Certificate2 object");
-                                // _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
 
+                                // _ = new X509Certificate2(secretData.Data["tls.crt"]); // Check if cert is valid
                                 var cLocation = $"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}";
-                                _logger.LogDebug($"Adding certificate location {cLocation} to list of discovered certificates");
+                                _logger.LogDebug(
+                                    $"Adding certificate location {cLocation} to list of discovered certificates");
                                 locations.Add(cLocation);
                                 secretsList.Add(certData);
                                 break;
                             case "Opaque":
-                                if (secType != "Opaque" && secType != "pkcs12" && secType != "p12" && secType != "pfx" && secType != "jks")
+                                if (secType != "Opaque" && secType != "pkcs12" && secType != "p12" &&
+                                    secType != "pfx" && secType != "jks")
                                 {
-                                    _logger.LogWarning("Skipping secret " + secret.Metadata.Name + " because it is not of type " + secType);
+                                    _logger.LogWarning("Skipping secret " + secret.Metadata.Name +
+                                                       " because it is not of type " + secType);
                                     continue;
                                 }
 
@@ -1796,13 +1888,16 @@ public class KubeCertificateManagerClient
                                 _logger.LogDebug("Attempting to parse certificate from opaque secret");
                                 if (secretData.Data == null || secret.Data.Keys == null)
                                 {
-                                    _logger.LogWarning("secretData.Data is null for secret '" + secret.Metadata.Name + "'. Skipping secret.");
+                                    _logger.LogWarning("secretData.Data is null for secret '" + secret.Metadata.Name +
+                                                       "'. Skipping secret.");
                                     continue;
                                 }
+
                                 _logger.LogTrace("Entering foreach loop to check if any allowed keys exist in secret");
                                 foreach (var dataKey in secretData.Data.Keys)
                                 {
-                                    _logger.LogDebug("Checking if secret key " + dataKey + " is in list of allowed keys" + allowedKeys);
+                                    _logger.LogDebug("Checking if secret key " + dataKey +
+                                                     " is in list of allowed keys" + allowedKeys);
                                     _logger.LogTrace("dataKey: " + dataKey);
                                     try
                                     {
@@ -1810,49 +1905,57 @@ public class KubeCertificateManagerClient
                                         var dataKeyArray = dataKey.Split(".");
                                         var extension = dataKeyArray[^1];
 
-                                        _logger.LogDebug("Checking if key " + extension + " is in list of allowed keys" + allowedKeys);
+                                        _logger.LogDebug("Checking if key " + extension +
+                                                         " is in list of allowed keys" + allowedKeys);
                                         _logger.LogTrace("extension: " + extension);
 
 
                                         if (!allowedKeys.Contains(extension))
                                         {
-                                            _logger.LogTrace("Extension " + extension + " is not in list of allowed keys" + allowedKeys);
+                                            _logger.LogTrace("Extension " + extension +
+                                                             " is not in list of allowed keys" + allowedKeys);
                                             if (!allowedKeys.Contains(dataKey))
                                             {
-                                                _logger.LogDebug("Skipping secret field" + dataKey + " because it is not in the list of allowed keys" + allowedKeys);
+                                                _logger.LogDebug("Skipping secret field" + dataKey +
+                                                                 " because it is not in the list of allowed keys" +
+                                                                 allowedKeys);
                                                 continue;
                                             }
                                         }
-                                        
+
                                         _logger.LogDebug("Secret field '" + dataKey + "' is an allowed key.");
                                         _logger.LogDebug("Attempting to parse certificate from opaque secret data");
                                         // Attempt to read data as PEM
                                         if (secType != "pkcs12" && secType != "jks")
                                         {
-                                            
                                             var certs = Encoding.UTF8.GetString(secretData.Data[dataKey]);
                                             _logger.LogTrace("certs: " + certs);
                                             var certObj = ReadPemCertificate(certs);
                                             if (certObj == null)
                                             {
-                                                _logger.LogDebug("Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                                                _logger.LogDebug(
+                                                    "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
                                                 // Attempt to read data as DER
                                                 certObj = ReadDerCertificate(certs);
                                                 if (certObj == null)
                                                 {
-                                                    _logger.LogDebug("Failed to parse certificate from opaque secret data as DER. Skipping secret {Name}", secret?.Metadata?.Name);
+                                                    _logger.LogDebug(
+                                                        "Failed to parse certificate from opaque secret data as DER. Skipping secret {Name}",
+                                                        secret?.Metadata?.Name);
                                                     continue;
                                                 }
-                                            }    
+                                            }
                                         }
                                         else if (secType == "pkcs12" || secType == "jks")
                                         {
-                                            _logger.LogDebug("Discovery does not support store password for pkcs12 or jks secrets. Assuming secret '{Name}' with matching key '{Key} is valid ", secret?.Metadata?.Name, dataKey);
+                                            _logger.LogDebug(
+                                                "Discovery does not support store password for pkcs12 or jks secrets. Assuming secret '{Name}' with matching key '{Key} is valid ",
+                                                secret?.Metadata?.Name, dataKey);
                                         }
-                                        
 
-                                        locations.Add($"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
 
+                                        locations.Add(
+                                            $"{clusterName}/{nsObj.Metadata.Name}/secrets/{secret.Metadata.Name}");
                                     }
                                     catch (Exception e)
                                     {
@@ -1861,13 +1964,12 @@ public class KubeCertificateManagerClient
                                         _logger.LogTrace(e.StackTrace);
                                     }
                                 }
+
                                 _logger.LogTrace("Exiting foreach loop to check if any allowed keys exist in secret");
                                 break;
                         }
                     }
-                }
             }
-
         }
 
         _logger.LogTrace("locations: " + locations);
@@ -1897,7 +1999,8 @@ public class KubeCertificateManagerClient
         public Dictionary<string, byte[]> Inventory;
     }
 
-    public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null, string passwordPath = null, List<string> allowedKeys = null)
+    public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null,
+        string passwordPath = null, List<string> allowedKeys = null)
     {
         _logger.LogTrace("Entered GetJKSSecret()");
         _logger.LogTrace("secretName: " + secretName);
@@ -1915,17 +2018,14 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
 
                 allowedKeys ??= new List<string>() { "jks", "JKS", "Jks" };
-                
+
                 var secretData = new Dictionary<string, byte[]>();
 
                 foreach (var secretFieldName in secret?.Data.Keys)
                 {
                     _logger.LogTrace("secretFieldName: {Name}", secretFieldName);
                     var sField = secretFieldName;
-                    if (secretFieldName.Contains('.'))
-                    {
-                        sField = secretFieldName.Split(".")[^1];
-                    }
+                    if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
                     var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
 
                     if (!isJksField) continue;
@@ -1935,7 +2035,8 @@ public class KubeCertificateManagerClient
                     _logger.LogTrace("data: " + data);
                     secretData.Add(secretFieldName, data);
                 }
-                var output = new JksSecret()
+
+                var output = new JksSecret
                 {
                     Secret = secret,
                     SecretPath = $"{namespaceName}/secrets/{secretName}",
@@ -1950,11 +2051,9 @@ public class KubeCertificateManagerClient
             }
 
             throw new InvalidK8SSecretException($"K8S secret {namespaceName}/secrets/{secretName} is empty.");
-
         }
         catch (HttpOperationException e)
         {
-
             if (e.Response.StatusCode != HttpStatusCode.NotFound) throw e;
 
             // var output = new JksSecret()
@@ -1969,13 +2068,16 @@ public class KubeCertificateManagerClient
             // };
             // _logger.LogTrace("Exiting GetJKSSecret()");
             // return output;
-            _logger.LogError("K8S secret {SecretName} not found in namespace {NamespaceName}", secretName, namespaceName);
+            _logger.LogError("K8S secret {SecretName} not found in namespace {NamespaceName}", secretName,
+                namespaceName);
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
+
         return new JksSecret();
     }
 
-    public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null, string passwordPath = null, List<string> allowedKeys = null)
+    public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null,
+        string passwordPath = null, List<string> allowedKeys = null)
     {
         _logger.LogTrace("Entered GetPKCS12Secret()");
         _logger.LogTrace("secretName: " + secretName);
@@ -1990,7 +2092,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
             _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
 
-            allowedKeys ??= new List<string>() { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
+            allowedKeys ??= new List<string> { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
 
 
             var secretData = new Dictionary<string, byte[]>();
@@ -1999,10 +2101,7 @@ public class KubeCertificateManagerClient
             {
                 _logger.LogTrace("secretFieldName: " + secretFieldName);
                 var sField = secretFieldName;
-                if (secretFieldName.Contains('.'))
-                {
-                    sField = secretFieldName.Split(".")[^1];
-                }
+                if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
                 var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
 
                 if (!isPkcs12Field) continue;
@@ -2012,7 +2111,8 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("data: " + data);
                 secretData.Add(secretFieldName, data);
             }
-            var output = new Pkcs12Secret()
+
+            var output = new Pkcs12Secret
             {
                 Secret = secret,
                 SecretPath = $"{namespaceName}/secrets/{secretName}",
@@ -2032,6 +2132,7 @@ public class KubeCertificateManagerClient
 
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
+
         return new Pkcs12Secret();
     }
 
@@ -2076,7 +2177,7 @@ public class KubeCertificateManagerClient
         var distinguishedName = new X500DistinguishedName(name);
 
         _logger.LogDebug("Generating private key and CSR");
-        using var rsa = RSA.Create(4096);  
+        using var rsa = RSA.Create(4096);
 
         _logger.LogDebug("Exporting private key and public key");
         var pkey = rsa.ExportPkcs8PrivateKey();
@@ -2091,7 +2192,7 @@ public class KubeCertificateManagerClient
             X509KeyUsageFlags.DataEncipherment | X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DigitalSignature,
             false));
         request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
+            new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
         request.CertificateExtensions.Add(sanBuilder.Build());
         var csr = request.CreateSigningRequest();
         var csrPem = "-----BEGIN CERTIFICATE REQUEST-----\r\n" +
@@ -2175,9 +2276,7 @@ public class KubeCertificateManagerClient
         catch (HttpOperationException e)
         {
             if (e.Response.StatusCode == HttpStatusCode.NotFound)
-            {
                 return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
-            }
             _logger.LogError("Error checking if secret {Name} exists in namespace {Namespace}: {Message}",
                 kubeSecretName, kubeNamespace, e.Message);
         }
@@ -2204,10 +2303,7 @@ public class KubeCertificateManagerClient
         };
 
         s1.Data ??= new Dictionary<string, byte[]>();
-        foreach (var inventoryItem in k8SData.Inventory)
-        {
-            s1.Data[inventoryItem.Key] = inventoryItem.Value;
-        }
+        foreach (var inventoryItem in k8SData.Inventory) s1.Data[inventoryItem.Key] = inventoryItem.Value;
 
         // Create secret if it doesn't exist
         try
@@ -2217,9 +2313,7 @@ public class KubeCertificateManagerClient
         catch (HttpOperationException e)
         {
             if (e.Response.StatusCode == HttpStatusCode.NotFound)
-            {
                 return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
-            }
         }
 
         // Replace existing secret
