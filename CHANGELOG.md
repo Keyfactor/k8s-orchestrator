@@ -1,9 +1,20 @@
+# 1.1.3
+
+## Bug Fixes
+- fix(client): Provide useful error message when credentials are empty and/or invalid format.
+- fix(base): Prevent uninitialized client reference in `JobBase`.
+
+## Chores:
+- chore(deps): Bump `Keyfactor.Logging` to `v1.1.2`.
+- chore(deps): Bump `Keyfactor.PKI` to `v5.5.0`.
+
 # 1.1.2
 
 ## Bug Fixes
 - fix(management): Management jobs for `K8STLSSecret` and `K8SSecret` types handle ECC keys.
 - fix(manifest): Update store-type definitions to include params `IncludeCertChain` and `SeparateChain`
 - fix(docs): Update screenshots for `K8SCluster` and `K8SNS` store types custom fields.
+- fix(client): Handle skip TLS flag when passed to a job.
 
 
 # 1.1.1
