@@ -18,7 +18,7 @@
 
   <ItemGroup>
       <PackageReference Include="keyfactor.extensions.pam.utilities" Version="1.0.2" />
-      <PackageReference Include="Keyfactor.Logging" Version="1.2.0" />
+      <PackageReference Include="Keyfactor.Logging" Version="1.1.2" />
       <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.2.0" />
       <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
       <PackageReference Include="Keyfactor.PKI" Version="5.5.0" />
