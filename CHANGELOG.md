@@ -1,3 +1,13 @@
+# 1.1.3
+
+## Bug Fixes
+- fix(base): Add additional logging to debug issue with K8SNS store type.
+- fix(client): Handle skip TLS flag when passed to a job.
+
+## Chores:
+- chore(deps): Bump `Keyfactor.Logging` to `v1.1.2`
+- chore(deps): Bump `Keyfactor.PKI` to `v5.5.0`
+
 # 1.1.2
 
 ## Bug Fixes
