@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -173,7 +174,8 @@ public class KubeCertificateManagerClient
                     SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name, clusterObj.ClusterEndpoint);
+            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
+                clusterObj.ClusterEndpoint);
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
 
@@ -220,7 +222,7 @@ public class KubeCertificateManagerClient
 
         _logger.LogTrace("Finished parsing contexts");
         _logger.LogDebug("Finished parsing kubeconfig");
-        
+
         return k8SConfiguration;
     }
 
@@ -1977,6 +1979,28 @@ public class KubeCertificateManagerClient
         return locations;
     }
 
+    public struct JksSecret
+    {
+        public string SecretPath;
+        public string SecretFieldName;
+        public V1Secret Secret;
+        public string Password;
+        public string PasswordPath;
+        public List<string> AllowedKeys;
+        public Dictionary<string, byte[]> Inventory;
+    }
+
+    public struct Pkcs12Secret
+    {
+        public string SecretPath;
+        public string SecretFieldName;
+        public V1Secret Secret;
+        public string Password;
+        public string PasswordPath;
+        public List<string> AllowedKeys;
+        public Dictionary<string, byte[]> Inventory;
+    }
+
     public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null,
         string passwordPath = null, List<string> allowedKeys = null)
     {
@@ -2289,34 +2313,5 @@ public class KubeCertificateManagerClient
 
         // Replace existing secret
         return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
-    }
-
-    public struct JksSecret
-    {
-        public string SecretPath;
-        public string SecretFieldName;
-        public V1Secret Secret;
-        public string Password;
-        public string PasswordPath;
-        public List<string> AllowedKeys;
-        public Dictionary<string, byte[]> Inventory;
-    }
-
-    public struct Pkcs12Secret
-    {
-        public string SecretPath;
-        public string SecretFieldName;
-        public V1Secret Secret;
-        public string Password;
-        public string PasswordPath;
-        public List<string> AllowedKeys;
-        public Dictionary<string, byte[]> Inventory;
-    }
-
-    public struct CsrObject
-    {
-        public string Csr;
-        public string PrivateKey;
-        public string PublicKey;
     }
 }

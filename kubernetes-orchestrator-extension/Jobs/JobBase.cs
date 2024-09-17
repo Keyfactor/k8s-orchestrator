@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -826,6 +827,14 @@ public abstract class JobBase
             KubeSvcCreds = ServerPassword;
         }
 
+        if (string.IsNullOrEmpty(KubeSvcCreds))
+        {
+            const string credsErr =
+                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
+            Logger.LogError(credsErr);
+            throw new ConfigurationException(credsErr);
+        }
+
         switch (KubeSecretType)
         {
             case "pfx":
@@ -991,6 +1000,25 @@ public abstract class JobBase
             Logger.LogError("Unknown error constructing canonical store path {Error}", e.Message);
             return StorePath;
         }
+
+    }
+
+    protected string ResolvePamField(string name, string value)
+    {
+        try
+        {
+            Logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
+            return Resolver.Resolve(value);
+        }
+        catch (Exception e)
+        {
+            Logger.LogError($"Unable to resolve PAM field {name}. Returning original value.");
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            return value;
+        }
+
     }
 
     protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
