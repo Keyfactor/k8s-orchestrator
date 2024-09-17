@@ -51,12 +51,12 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
             Logger.LogInformation($"Inventory for store type: {config.Capability}");
 
-            Logger.LogDebug($"Server: {KubeClient.GetHost()}");
-            Logger.LogDebug($"Store Path: {StorePath}");
-            Logger.LogDebug("KubeSecretType: " + KubeSecretType);
-            Logger.LogDebug("KubeSecretName: " + KubeSecretName);
-            Logger.LogDebug("KubeNamespace: " + KubeNamespace);
-            Logger.LogDebug("Host: " + KubeClient.GetHost());
+            Logger.LogDebug("Server: {Host}", KubeClient.GetHost());
+            Logger.LogDebug("Store Path: {StorePath}", StorePath);
+            Logger.LogDebug("KubeSecretType: {KubeSecretType}", KubeSecretType);
+            Logger.LogDebug("KubeSecretName: {KubeSecretName}", KubeSecretName);
+            Logger.LogDebug("KubeNamespace: {KubeNamespace}", KubeNamespace);
+            Logger.LogDebug("Host: {Host}", KubeClient.GetHost());
 
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
             
