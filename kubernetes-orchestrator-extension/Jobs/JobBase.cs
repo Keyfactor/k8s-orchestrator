@@ -877,15 +877,15 @@ public abstract class JobBase
         }
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
-        // KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
-        //
-        // Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
-        // KubeHost = KubeClient.GetHost();
-        // Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
-        //
-        // Logger.LogTrace("Getting cluster name from KubeClient");
-        // KubeCluster = KubeClient.GetClusterName();
-        // Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
+        KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+        
+        Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
+        KubeHost = KubeClient.GetHost();
+        Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
+        
+        Logger.LogTrace("Getting cluster name from KubeClient");
+        KubeCluster = KubeClient.GetClusterName();
+        Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
 
         if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath) && !Capability.Contains("NS") &&
             !Capability.Contains("Cluster"))
