@@ -85,14 +85,15 @@ public class KubeCertificateManagerClient
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
         var k8SConfiguration = new K8SConfiguration();
-        
+
         _logger.LogTrace("Checking if kubeconfig is null or empty");
         if (string.IsNullOrEmpty(kubeconfig))
         {
             _logger.LogError("kubeconfig is null or empty");
-            throw new KubeConfigException("kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
+            throw new KubeConfigException(
+                "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
         }
-        
+
         try
         {
             // test if kubeconfig is base64 encoded
@@ -119,10 +120,11 @@ public class KubeCertificateManagerClient
         if (!kubeconfig.StartsWith("{"))
         {
             _logger.LogError("kubeconfig is not a JSON object");
-            throw new KubeConfigException("kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh"); 
+            throw new KubeConfigException(
+                "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
             // return k8SConfiguration;
-        } 
-            
+        }
+
 
         _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
 
@@ -152,18 +154,21 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
             // get environment variable for skip tls verify and convert to bool
             var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
-            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}", skipTlsEnvStr);
-            if (!string.IsNullOrEmpty(skipTlsEnvStr) && (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
+                skipTlsEnvStr);
+            if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
+                (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
             {
                 if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
                 _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
                 if (skipTlsVerifyEnv && !skipTLSVerify)
                 {
-                    _logger.LogWarning("Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
+                    _logger.LogWarning(
+                        "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
                     skipTLSVerify = true;
                 }
             }
-            
+
             var clusterObj = new Cluster
             {
                 Name = clusterMetadata["name"]?.ToString(),
@@ -242,7 +247,7 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Calling ParseKubeConfig()");
         var k8SConfiguration = ParseKubeConfig(kubeconfig);
         _logger.LogDebug("Finished calling ParseKubeConfig()");
-        
+
         // use k8sConfiguration over credentialFileName
         KubernetesClientConfiguration config;
         if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
@@ -260,7 +265,9 @@ public class KubeCertificateManagerClient
                 config = KubernetesClientConfiguration.BuildDefaultConfig();
             }
         }
-        else if (string.IsNullOrEmpty(credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
+        else if
+            (string.IsNullOrEmpty(
+                credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
         {
             _logger.LogWarning(
                 "No config defined in store parameters, using default config. This should never happen!");
@@ -1802,7 +1809,7 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Client BaseUrl: {BaseUrl}", Client.BaseUri);
         _logger.LogDebug("Calling CoreV1.ListNamespace()");
         namespaces = Client.CoreV1.ListNamespace();
-        
+
         _logger.LogDebug("returned from CoreV1.ListNamespace()");
         _logger.LogTrace("namespaces.Items.Count: {Count}", namespaces.Items.Count);
         _logger.LogTrace("namespaces.Items: {Items}", namespaces.Items.ToString());
@@ -1818,7 +1825,8 @@ public class KubeCertificateManagerClient
                 if (nsLi != "all" && nsLi != nsObj.Metadata.Name)
                 {
                     _logger.LogWarning(
-                        "Skipping namespace '{Namespace}' because it does not match the namespace filter", nsObj.Metadata.Name);
+                        "Skipping namespace '{Namespace}' because it does not match the namespace filter",
+                        nsObj.Metadata.Name);
                     continue;
                 }
 
@@ -2194,7 +2202,7 @@ public class KubeCertificateManagerClient
             X509KeyUsageFlags.DataEncipherment | X509KeyUsageFlags.KeyEncipherment | X509KeyUsageFlags.DigitalSignature,
             false));
         request.CertificateExtensions.Add(
-            new X509EnhancedKeyUsageExtension(new OidCollection { new("1.3.6.1.5.5.7.3.1") }, false));
+            new X509EnhancedKeyUsageExtension(new OidCollection { new Oid("1.3.6.1.5.5.7.3.1") }, false));
         request.CertificateExtensions.Add(sanBuilder.Build());
         var csr = request.CreateSigningRequest();
         var csrPem = "-----BEGIN CERTIFICATE REQUEST-----\r\n" +
@@ -2313,5 +2321,12 @@ public class KubeCertificateManagerClient
 
         // Replace existing secret
         return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+    }
+
+    public struct CsrObject
+    {
+        public string Csr;
+        public string PrivateKey;
+        public string PublicKey;
     }
 }
