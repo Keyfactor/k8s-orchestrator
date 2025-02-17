@@ -1,3 +1,8 @@
+# 1.2.0
+
+## Features
+- feat(client): Retry interrupted connections to k8s cluster. 
+
 # 1.1.3
 
 ## Bug Fixes
@@ -15,7 +20,6 @@
 - fix(manifest): Update store-type definitions to include params `IncludeCertChain` and `SeparateChain`
 - fix(docs): Update screenshots for `K8SCluster` and `K8SNS` store types custom fields.
 - fix(client): Handle skip TLS flag when passed to a job.
-
 
 # 1.1.1
 
