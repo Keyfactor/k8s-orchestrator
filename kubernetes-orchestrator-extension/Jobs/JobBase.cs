@@ -443,13 +443,13 @@ public abstract class JobBase
 
     private static bool IsNamespaceStore(string capability)
     {
-        return capability != null && string.IsNullOrEmpty(capability) &&
+        return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SNS", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsClusterStore(string capability)
     {
-        return capability != null && string.IsNullOrEmpty(capability) &&
+        return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SCLUSTER", StringComparison.OrdinalIgnoreCase);
     }
 
