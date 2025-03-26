@@ -1237,7 +1237,22 @@ public abstract class JobBase
 
             Logger.LogDebug("Attempting to read K8S buddy secret");
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
-            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
+            if (k8sPasswordObj?.Data == null)
+            {
+                Logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}", passwordSecretName, passwordNamespace);
+                throw new InvalidK8SSecretException($"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
+            }
+            Logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
+
+            if (!k8sPasswordObj.Data.TryGetValue(PasswordFieldName, out storePasswordBytes) ||
+                storePasswordBytes == null)
+            {
+                Logger.LogError("Unable to find password field {FieldName}", PasswordFieldName);
+                throw new InvalidK8SSecretException(
+                    $"Unable to find password field '{PasswordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
+                );
+            }
+
             // var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
             // Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             if (storePasswordBytes == null)
