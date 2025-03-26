@@ -230,12 +230,12 @@ public class Management : JobBase, IManagementJobExtension
             Logger.LogDebug("StorePassword is not null or empty so setting StorePassword to config.CertificateStoreDetails.StorePassword");
             StorePassword = config.CertificateStoreDetails.StorePassword;
             var hashedStorePassword = GetSHA256Hash(StorePassword);
-            Logger.LogTrace("hashedStorePassword: {Hash}", hashedStorePassword);
+            // Logger.LogTrace("hashedStorePassword: {Hash}", hashedStorePassword);
         }
         Logger.LogDebug("Getting store password");
         var sPass = getK8SStorePassword(k8sData.Secret);
         var hashedSPass = GetSHA256Hash(sPass);
-        Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
+        // Logger.LogTrace("hashedStorePassword: {Hash}", hashedSPass);
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         try
         {
