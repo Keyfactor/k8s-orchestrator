@@ -494,7 +494,7 @@ public abstract class JobBase
                 {
                     Logger.LogInformation(
                         "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath}`",
-                        sPathParts[0]);
+                        sPathParts[0],sPathParts[0]);
                     KubeSecretName = sPathParts[0];
                 }
                 else
