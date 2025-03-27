@@ -1,3 +1,6 @@
+# 1.2.1
+- fix(management): `K8SNS` management jobs handle `storepath` parsed length is less than expected.
+
 # 1.2.0
 
 ## Features
