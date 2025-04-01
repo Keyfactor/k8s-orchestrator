@@ -1200,8 +1200,6 @@ public abstract class JobBase
         if (!string.IsNullOrEmpty(StorePassword))
         {
             Logger.LogDebug("Using provided 'StorePassword'");
-            // var passwordHash = GetSHA256Hash(StorePassword);
-            // Logger.LogTrace("Password hash: " + passwordHash);
             storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
         }
         else if (!string.IsNullOrEmpty(StorePasswordPath))
@@ -1237,9 +1235,22 @@ public abstract class JobBase
 
             Logger.LogDebug("Attempting to read K8S buddy secret");
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
-            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
-            // var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
-            // Logger.LogTrace("Password hash: {Pwd}", passwordHash);
+            if (k8sPasswordObj?.Data == null)
+            {
+                Logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}", passwordSecretName, passwordNamespace);
+                throw new InvalidK8SSecretException($"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
+            }
+            Logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
+
+            if (!k8sPasswordObj.Data.TryGetValue(PasswordFieldName, out storePasswordBytes) ||
+                storePasswordBytes == null)
+            {
+                Logger.LogError("Unable to find password field {FieldName}", PasswordFieldName);
+                throw new InvalidK8SSecretException(
+                    $"Unable to find password field '{PasswordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
+                );
+            }
+            
             if (storePasswordBytes == null)
             {
                 Logger.LogError("Password not found in K8S buddy secret");
@@ -1253,8 +1264,6 @@ public abstract class JobBase
         {
             Logger.LogDebug("Attempting to read password from PasswordFieldName");
             storePasswordBytes = value1;
-            // var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
-            // Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             if (storePasswordBytes == null)
             {
                 Logger.LogError("Password not found in K8S secret");
@@ -1280,9 +1289,6 @@ public abstract class JobBase
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
-        // Logger.LogTrace("Store password: {Pwd}", storePassword);
-        // var passwordHash2 = GetSHA256Hash(storePassword);
-        // Logger.LogTrace("Password hash: {Pwd}", passwordHash2);
         Logger.LogDebug("Returning store password");
         return storePassword;
     }
