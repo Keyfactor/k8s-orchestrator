@@ -23,8 +23,8 @@
   "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
   "about": {
     "orchestrator": {
-      "keyfactor_platform_version": "10.x",
-      "UOFramework": "10.x",
+      "keyfactor_platform_version": "24.4",
+      "UOFramework": "12.4",
       "pam_support": true,
       "win": {
         "supportsCreateStore": true,
