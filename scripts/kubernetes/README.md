@@ -1,7 +1,7 @@
 # Keyfactor Kubernetes Orchestrator Service Account Definition
 
 This document describes the Kubernetes Service Account definition for the Keyfactor Kubernetes Orchestrator Extension to fully function. 
-Please note that this is only an example and you may need to modify the script and service account definition to suit your environment.
+Please note that this is only an example, you may need to modify the script and service account definition to suit your environment.
 
 ## Table of Contents
 - [Keyfactor Kubernetes Orchestrator Service Account Definition](#keyfactor-kubernetes-orchestrator-service-account-definition)
