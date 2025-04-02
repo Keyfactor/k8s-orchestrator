@@ -71,7 +71,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -83,7 +83,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -126,7 +126,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -167,7 +167,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -207,11 +207,11 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -262,7 +262,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -335,7 +335,7 @@
               "DisplayName": "Kube Secret Name",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -343,11 +343,11 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -380,7 +380,7 @@
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -388,7 +388,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -414,7 +414,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -447,7 +447,7 @@
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -455,7 +455,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -481,7 +481,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
