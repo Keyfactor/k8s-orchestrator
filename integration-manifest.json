@@ -21,6 +21,7 @@
   "update_catalog": true,
   "support_level": "kf-supported",
   "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
+  "release_project": "kubernetes-orchestrator-extension\\Keyfactor.Orchestrators.K8S.csproj",
   "about": {
     "orchestrator": {
       "keyfactor_platform_version": "24.4",
@@ -71,7 +72,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -83,7 +84,7 @@
               "Required": true
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -126,7 +127,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -167,7 +168,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -207,11 +208,11 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -262,7 +263,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -335,7 +336,7 @@
               "DisplayName": "Kube Secret Name",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -343,11 +344,11 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -380,7 +381,7 @@
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -388,7 +389,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -414,7 +415,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -447,7 +448,7 @@
               "DisplayName": "KubeNamespace",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -455,7 +456,7 @@
               "DisplayName": "KubeSecretName",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -481,7 +482,7 @@
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
