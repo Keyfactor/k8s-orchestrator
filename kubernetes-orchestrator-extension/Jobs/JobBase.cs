@@ -443,13 +443,13 @@ public abstract class JobBase
 
     private static bool IsNamespaceStore(string capability)
     {
-        return capability != null && string.IsNullOrEmpty(capability) &&
+        return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SNS", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsClusterStore(string capability)
     {
-        return capability != null && string.IsNullOrEmpty(capability) &&
+        return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SCLUSTER", StringComparison.OrdinalIgnoreCase);
     }
 
@@ -494,7 +494,7 @@ public abstract class JobBase
                 {
                     Logger.LogInformation(
                         "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath}`",
-                        sPathParts[0]);
+                        sPathParts[0],sPathParts[0]);
                     KubeSecretName = sPathParts[0];
                 }
                 else
