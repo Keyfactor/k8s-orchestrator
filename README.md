@@ -92,9 +92,7 @@ should all require unique credentials.*
 ### K8SNS
 
 The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single 
-Keyfactor Command certificate store using an alias pattern of 
-
-**NOTE**: This store type will only inventory K8S secrets that contain the keys `tls.crt` and `tls.key`.
+Keyfactor Command certificate store using an alias pattern of
 </details>
 
 <details><summary>K8SPKCS12 (K8SPKCS12)</summary>
@@ -206,13 +204,15 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SCert Advanced Tab](docsource/images/K8SCert-advanced-store-type-dialog.png)
 
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
+
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
     | KubeNamespace | KubeNamespace |  | String | default | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String | None | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
     | KubeSecretType | KubeSecretType |  | String | cert | ✅ Checked |
 
     The Custom Fields tab should look like this:
@@ -270,6 +270,8 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     The Advanced tab should look like this:
 
     ![K8SCluster Advanced Tab](docsource/images/K8SCluster-advanced-store-type-dialog.png)
+
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
 
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
@@ -335,18 +337,20 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SJKS Advanced Tab](docsource/images/K8SJKS-advanced-store-type-dialog.png)
 
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
+
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
     | KubeNamespace | KubeNamespace |  | String | default | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String | None | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
     | KubeSecretType | KubeSecretType |  | String | jks | ✅ Checked |
     | CertificateDataFieldName | CertificateDataFieldName |  | String | .jks | ✅ Checked |
     | PasswordFieldName | PasswordFieldName |  | String | password | 🔲 Unchecked |
     | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
-    | StorePasswordPath | StorePasswordPath |  | String | None | 🔲 Unchecked |
+    | StorePasswordPath | StorePasswordPath |  | String |  | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -403,6 +407,8 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     The Advanced tab should look like this:
 
     ![K8SNS Advanced Tab](docsource/images/K8SNS-advanced-store-type-dialog.png)
+
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
 
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
@@ -469,6 +475,8 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SPKCS12 Advanced Tab](docsource/images/K8SPKCS12-advanced-store-type-dialog.png)
 
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
+
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
@@ -479,8 +487,8 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     | PasswordFieldName | Password Field Name |  | String | password | 🔲 Unchecked |
     | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
     | KubeNamespace | Kube Namespace |  | String | default | 🔲 Unchecked |
-    | KubeSecretName | Kube Secret Name |  | String | None | 🔲 Unchecked |
-    | StorePasswordPath | StorePasswordPath |  | String | None | 🔲 Unchecked |
+    | KubeSecretName | Kube Secret Name |  | String |  | 🔲 Unchecked |
+    | StorePasswordPath | StorePasswordPath |  | String |  | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -538,13 +546,15 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SSecret Advanced Tab](docsource/images/K8SSecret-advanced-store-type-dialog.png)
 
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
+
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String | None | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String | None | 🔲 Unchecked |
+    | KubeNamespace | KubeNamespace |  | String |  | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
     | KubeSecretType | KubeSecretType |  | String | secret | ✅ Checked |
     | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
     | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
@@ -605,13 +615,15 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8STLSSecr Advanced Tab](docsource/images/K8STLSSecr-advanced-store-type-dialog.png)
 
+    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
+
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String | None | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String | None | 🔲 Unchecked |
+    | KubeNamespace | KubeNamespace |  | String |  | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
     | KubeSecretType | KubeSecretType |  | String | tls_secret | ✅ Checked |
     | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
     | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
@@ -743,7 +755,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
 <details><summary>K8SCluster (K8SCluster)</summary>
 
-In order for certificates of type `Opaque` and/or `kubernetes.io/tls` to be inventoried in `K8SCLUSTER` store types, they must
+In order for certificates of type `Opaque` and/or `kubernetes.io/tls` to be inventoried in `K8SCluster` store types, they must
 have specific keys in the Kubernetes secret.
 - Required keys: `tls.crt` or `ca.crt`
 - Additional keys: `tls.key`
