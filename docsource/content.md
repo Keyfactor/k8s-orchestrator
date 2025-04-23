@@ -35,10 +35,6 @@ The service account token can be provided to the extension in one of two ways:
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
 information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
 
-## Post Installation
-
-TODO Post Installation is an optional section. If this section doesn't seem necessary on initial glance, please delete it. Refer to the docs on [Confluence](https://keyfactor.atlassian.net/wiki/x/SAAyHg) for more info
-
 ## Discovery
 
 **NOTE:** To use discovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` 
