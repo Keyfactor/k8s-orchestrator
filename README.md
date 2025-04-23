@@ -60,8 +60,9 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
 ### K8SCert
 
-The `K8SCert` store type is used to manage Kubernetes certificates of type `certificates.k8s.io/v1`. *NOTE* only 
-`inventory` of these resources is supported with this extension. To provision these certs use the 
+The `K8SCert` store type is used to manage Kubernetes certificates of type `certificates.k8s.io/v1`. 
+
+**NOTE**: only `inventory` and `discovery` of these resources is supported with this extension. To provision these certs use the 
 [k8s-csr-signer](https://github.com/Keyfactor/k8s-csr-signer).
 </details>
 
@@ -204,16 +205,16 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SCert Advanced Tab](docsource/images/K8SCert-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String | default | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
-    | KubeSecretType | KubeSecretType |  | String | cert | ✅ Checked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretType | KubeSecretType | This defaults to and must be `csr` | String | cert | ✅ Checked |
 
     The Custom Fields tab should look like this:
 
@@ -271,15 +272,15 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SCluster Advanced Tab](docsource/images/K8SCluster-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
-    | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
+    | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -319,7 +320,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     | Needs Server | ✅ Checked | Determines if a target server name is required when creating store |
     | Blueprint Allowed | 🔲 Unchecked | Determines if store type may be included in an Orchestrator blueprint |
     | Uses PowerShell | 🔲 Unchecked | Determines if underlying implementation is PowerShell |
-    | Requires Store Password | 🔲 Unchecked | Enables users to optionally specify a store password when defining a Certificate Store. |
+    | Requires Store Password | ✅ Checked | Enables users to optionally specify a store password when defining a Certificate Store. |
     | Supports Entry Password | 🔲 Unchecked | Determines if an individual entry within a store can have a password. |
 
     The Basic tab should look like this:
@@ -337,16 +338,16 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SJKS Advanced Tab](docsource/images/K8SJKS-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String | default | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
-    | KubeSecretType | KubeSecretType |  | String | jks | ✅ Checked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretType | KubeSecretType | This defaults to and must be `jks` | String | jks | ✅ Checked |
     | CertificateDataFieldName | CertificateDataFieldName |  | String | .jks | ✅ Checked |
     | PasswordFieldName | PasswordFieldName |  | String | password | 🔲 Unchecked |
     | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
@@ -408,16 +409,16 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SNS Advanced Tab](docsource/images/K8SNS-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
     | KubeNamespace | Kube Namespace |  | String | default | 🔲 Unchecked |
-    | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
-    | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
+    | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
+    | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -457,7 +458,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     | Needs Server | ✅ Checked | Determines if a target server name is required when creating store |
     | Blueprint Allowed | 🔲 Unchecked | Determines if store type may be included in an Orchestrator blueprint |
     | Uses PowerShell | 🔲 Unchecked | Determines if underlying implementation is PowerShell |
-    | Requires Store Password | 🔲 Unchecked | Enables users to optionally specify a store password when defining a Certificate Store. |
+    | Requires Store Password | ✅ Checked | Enables users to optionally specify a store password when defining a Certificate Store. |
     | Supports Entry Password | 🔲 Unchecked | Determines if an individual entry within a store can have a password. |
 
     The Basic tab should look like this:
@@ -475,14 +476,14 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SPKCS12 Advanced Tab](docsource/images/K8SPKCS12-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeSecretType | Kube Secret Type |  | String | pkcs12 | ✅ Checked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | KubeSecretType | Kube Secret Type | This defaults to and must be `pkcs12` | String | pkcs12 | ✅ Checked |
     | CertificateDataFieldName | CertificateDataFieldName |  | String | .p12 | ✅ Checked |
     | PasswordFieldName | Password Field Name |  | String | password | 🔲 Unchecked |
     | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
@@ -546,18 +547,18 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8SSecret Advanced Tab](docsource/images/K8SSecret-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String |  | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
-    | KubeSecretType | KubeSecretType |  | String | secret | ✅ Checked |
-    | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
-    | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretType | KubeSecretType | This defaults to and must be `secret` | String | secret | ✅ Checked |
+    | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
+    | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -615,18 +616,18 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
     ![K8STLSSecr Advanced Tab](docsource/images/K8STLSSecr-advanced-store-type-dialog.png)
 
-    > For Keyfactor **Command versions 24.4 and later**, a Certificate Format dropdown is available with PFX and PEM options. Ensure that **PFX** is selected, as this determines the format of new and renewed certificates sent to the Orchestrator during a Management job. Currently, all Keyfactor-supported Orchestrator extensions support only PFX.
-
     #### Custom Fields Tab
     Custom fields operate at the certificate store level and are used to control how the orchestrator connects to the remote target server containing the certificate store to be managed. The following custom fields should be added to the store type:
 
     | Name | Display Name | Description | Type | Default Value/Options | Required |
     | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-    | KubeNamespace | KubeNamespace |  | String |  | 🔲 Unchecked |
-    | KubeSecretName | KubeSecretName |  | String |  | 🔲 Unchecked |
-    | KubeSecretType | KubeSecretType |  | String | tls_secret | ✅ Checked |
-    | SeparateChain | Separate Certificate Chain |  | Bool | false | 🔲 Unchecked |
-    | IncludeCertChain | Include Certificate Chain |  | Bool | true | 🔲 Unchecked |
+    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
+    | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+    | KubeSecretType | KubeSecretType | This defaults to and must be `tls_secret` | String | tls_secret | ✅ Checked |
+    | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
+    | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
 
     The Custom Fields tab should look like this:
 
@@ -672,13 +673,15 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
     Refer to [Starting/Restarting the Universal Orchestrator service](https://software.keyfactor.com/Core-OnPrem/Current/Content/InstallingAgents/NetCoreOrchestrator/StarttheService.htm).
 
 
+6. **(optional) PAM Integration** 
 
-> The above installation steps can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/InstallingAgents/NetCoreOrchestrator/CustomExtensions.htm?Highlight=extensions).
+    The Kubernetes Universal Orchestrator extension is compatible with all supported Keyfactor PAM extensions to resolve PAM-eligible secrets. PAM extensions running on Universal Orchestrators enable secure retrieval of secrets from a connected PAM provider.
+
+    To configure a PAM provider, [reference the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam) to select an extension, and follow the associated instructions to install it on the Universal Orchestrator (remote).
 
 
-## Post Installation
+> The above installation steps can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/InstallingAgents/NetCoreOrchestrator/CustomExtensions.htm?Highlight=extensions).
 
-TODO Post Installation is an optional section. If this section doesn't seem necessary on initial glance, please delete it. Refer to the docs on [Confluence](https://keyfactor.atlassian.net/wiki/x/SAAyHg) for more info
 
 
 ## Defining Certificate Stores
@@ -706,14 +709,14 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
         | Client Machine |  |
         | Store Path |  |
         | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
-        | KubeNamespace |  |
-        | KubeSecretName |  |
-        | KubeSecretType |  |
-
-
-        
+        | ServerUsername | This should be no value or `kubeconfig` |
+        | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+        | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+        | KubeSecretName | The name of the K8S secret object. |
+        | KubeSecretType | This defaults to and must be `csr` |
 
     </details>
+
 
 * **Using kfutil**
     
@@ -734,12 +737,12 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
         | Client Machine |  |
         | Store Path |  |
         | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
-        | KubeNamespace |  |
-        | KubeSecretName |  |
-        | KubeSecretType |  |
+        | ServerUsername | This should be no value or `kubeconfig` |
+        | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+        | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+        | KubeSecretName | The name of the K8S secret object. |
+        | KubeSecretType | This defaults to and must be `csr` |
 
-
-        
 
     3. **Import the CSV file to create the certificate stores** 
 
@@ -748,7 +751,24 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
         ```
     </details>
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -768,7 +788,24 @@ have specific keys in the Kubernetes secret.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -792,7 +829,25 @@ the certificate alias in the `jks` data store.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+                | StorePassword | Password to use when reading/writing to store |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -813,7 +868,24 @@ have specific keys in the Kubernetes secret.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -837,7 +909,25 @@ the certificate alias in the `pkcs12` data store.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+                | StorePassword | Password to use when reading/writing to store |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -851,7 +941,24 @@ the Kubernetes secret.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
@@ -865,7 +972,24 @@ the Kubernetes secret.
 
 
 
-> The content in this section can be supplimented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
+
+
+        <details><summary>Attributes eligible for retrieval by a PAM Provider on the Universal Orchestrator</summary>
+
+        If a PAM provider was installed _on the Universal Orchestrator_ in the [Installation](#Installation) section, the following parameters can be configured for retrieval _on the Universal Orchestrator_.
+                | Attribute | Description |
+                | --------- | ----------- |
+                | ServerUsername | This should be no value or `kubeconfig` |
+                | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
+
+
+        Please refer to the **Universal Orchestrator (remote)** usage section ([PAM providers on the Keyfactor Integration Catalog](https://keyfactor.github.io/integrations-catalog/content/pam)) for your selected PAM provider for instructions on how to load attributes orchestrator-side.
+
+        > Any secret can be rendered by a PAM provider _installed on the Keyfactor Command server_. The above parameters are specific to attributes that can be fetched by an installed PAM provider running on the Universal Orchestrator server itself.
+        </details>
+
+
+> The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
 </details>
