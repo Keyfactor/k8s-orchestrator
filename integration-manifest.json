@@ -21,10 +21,11 @@
   "update_catalog": true,
   "support_level": "kf-supported",
   "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
+  "release_project": "kubernetes-orchestrator-extension\\Keyfactor.Orchestrators.K8S.csproj",
   "about": {
     "orchestrator": {
-      "keyfactor_platform_version": "10.x",
-      "UOFramework": "10.x",
+      "keyfactor_platform_version": "24.4",
+      "UOFramework": "12.4",
       "pam_support": true,
       "win": {
         "supportsCreateStore": true,
@@ -59,8 +60,27 @@
           },
           "Properties": [
             {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
               "Name": "KubeNamespace",
               "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
@@ -69,21 +89,23 @@
             {
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `csr`",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "cert",
               "Required": true
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -112,8 +134,27 @@
           },
           "Properties": [
             {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
               "Name": "SeparateChain",
               "DisplayName": "Separate Certificate Chain",
+              "Description": "Whether to store the certificate chain separately from the certificate.",
               "Type": "Bool",
               "DefaultValue": "false",
               "Required": false
@@ -121,12 +162,13 @@
             {
               "Name": "IncludeCertChain",
               "DisplayName": "Include Certificate Chain",
+              "Description": "Whether to include the certificate chain in the certificate.",
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -155,8 +197,27 @@
           },
           "Properties": [
             {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
               "Name": "KubeNamespace",
               "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "default",
@@ -165,14 +226,16 @@
             {
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `jks`",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "jks",
@@ -207,14 +270,14 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
-            "StoreRequired": false,
+            "StoreRequired": true,
             "Style": "Default"
           },
           "StorePathType": "",
@@ -240,6 +303,24 @@
           },
           "Properties": [
             {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
               "Name": "KubeNamespace",
               "DisplayName": "Kube Namespace",
               "Type": "String",
@@ -250,6 +331,7 @@
             {
               "Name": "SeparateChain",
               "DisplayName": "Separate Certificate Chain",
+              "Description": "Whether to store the certificate chain separately from the certificate.",
               "Type": "Bool",
               "DefaultValue": "false",
               "Required": false
@@ -257,12 +339,13 @@
             {
               "Name": "IncludeCertChain",
               "DisplayName": "Include Certificate Chain",
+              "Description": "Whether to include the certificate chain in the certificate.",
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -291,8 +374,27 @@
           },
           "Properties": [
             {
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
               "Name": "KubeSecretType",
               "DisplayName": "Kube Secret Type",
+              "Description": "This defaults to and must be `pkcs12`",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "pkcs12",
@@ -335,7 +437,7 @@
               "DisplayName": "Kube Secret Name",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
@@ -343,14 +445,14 @@
               "DisplayName": "StorePasswordPath",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
-            "StoreRequired": false,
+            "StoreRequired": true,
             "Style": "Default"
           },
           "StorePathType": "",
@@ -376,24 +478,45 @@
           },
           "Properties": [
             {
-              "Name": "KubeNamespace",
-              "DisplayName": "KubeNamespace",
-              "Type": "String",
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
+              "Name": "KubeNamespace",
+              "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
+              "Type": "String",
+              "DependsOn": "",
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `secret`",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "secret",
@@ -402,6 +525,7 @@
             {
               "Name": "SeparateChain",
               "DisplayName": "Separate Certificate Chain",
+              "Description": "Whether to store the certificate chain separately from the certificate.",
               "Type": "Bool",
               "DefaultValue": "false",
               "Required": false
@@ -409,12 +533,13 @@
             {
               "Name": "IncludeCertChain",
               "DisplayName": "Include Certificate Chain",
+              "Description": "Whether to include the certificate chain in the certificate.",
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
@@ -443,24 +568,45 @@
           },
           "Properties": [
             {
-              "Name": "KubeNamespace",
-              "DisplayName": "KubeNamespace",
-              "Type": "String",
+              "Name": "ServerUsername",
+              "DisplayName": "Server Username",
+              "Description": "This should be no value or `kubeconfig`",
+              "Type": "Secret",
               "DependsOn": "",
               "DefaultValue": null,
+              "Required": false
+            },
+            {
+              "Name": "ServerPassword",
+              "DisplayName": "Server Password",
+              "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+              "Type": "Secret",
+              "DependsOn": "",
+              "DefaultValue": null,
+              "Required": true
+            },
+            {
+              "Name": "KubeNamespace",
+              "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
+              "Type": "String",
+              "DependsOn": "",
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
               "Type": "String",
               "DependsOn": "",
-              "DefaultValue": null,
+              "DefaultValue": "",
               "Required": false
             },
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `tls_secret`",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "tls_secret",
@@ -469,6 +615,7 @@
             {
               "Name": "SeparateChain",
               "DisplayName": "Separate Certificate Chain",
+              "Description": "Whether to store the certificate chain separately from the certificate.",
               "Type": "Bool",
               "DefaultValue": "false",
               "Required": false
@@ -476,12 +623,13 @@
             {
               "Name": "IncludeCertChain",
               "DisplayName": "Include Certificate Chain",
+              "Description": "Whether to include the certificate chain in the certificate.",
               "Type": "Bool",
               "DefaultValue": "true",
               "Required": false
             }
           ],
-          "EntryParameters": null,
+          "EntryParameters": [],
           "PasswordOptions": {
             "EntrySupported": false,
             "StoreRequired": false,
