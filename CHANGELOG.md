@@ -1,4 +1,12 @@
+# 1.2.2
+
+## Bug Fixes
+- fix(storetypes): `K8SJKS` and `K8SPKCS12` storetypes using a separate `k8s` secret for store password does not crash
+on missing or invalid secret field name. 
+
 # 1.2.1
+
+## Bug Fixes
 - fix(management): `K8SNS` management jobs handle `storepath` parsed length is less than expected.
 
 # 1.2.0
