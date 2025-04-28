@@ -1027,102 +1027,6 @@ public abstract class JobBase
             return value;
         }
     }
-
-    protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
-    {
-        Logger.LogDebug("Entered GetKeyBytes()");
-        Logger.LogTrace("Key algo: {KeyAlgo}", certObj.GetKeyAlgorithm());
-        Logger.LogTrace("Has private key: {HasPrivateKey}", certObj.HasPrivateKey);
-        Logger.LogTrace("Pub key: {PublicKey}", certObj.GetPublicKey());
-
-        byte[] keyBytes;
-
-        try
-        {
-            switch (certObj.GetKeyAlgorithm())
-            {
-                case "RSA":
-                    Logger.LogDebug("Attempting to export private key as RSA");
-                    Logger.LogTrace("GetRSAPrivateKey().ExportRSAPrivateKey(): ");
-                    keyBytes = certObj.GetRSAPrivateKey()?.ExportRSAPrivateKey();
-                    Logger.LogTrace("ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "ECDSA":
-                    Logger.LogDebug("Attempting to export private key as ECDSA");
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportECPrivateKey(): ");
-                    keyBytes = certObj.GetECDsaPrivateKey()?.ExportECPrivateKey();
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "DSA":
-                    Logger.LogDebug("Attempting to export private key as DSA");
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): ");
-                    keyBytes = certObj.GetDSAPrivateKey()?.ExportPkcs8PrivateKey();
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                default:
-                    Logger.LogWarning("Unknown key algorithm, attempting to export as PKCS12");
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword)");
-                    keyBytes = certObj.Export(X509ContentType.Pkcs12, certPassword);
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword) complete");
-                    break;
-            }
-
-            if (keyBytes != null) return keyBytes;
-
-            Logger.LogError("Unable to parse private key");
-
-            throw new InvalidKeyException($"Unable to parse private key from certificate '{certObj.Thumbprint}'");
-        }
-        catch (Exception e)
-        {
-            Logger.LogError("Unknown error getting key bytes, but we're going to try a different method");
-            Logger.LogError("{Message}", e.Message);
-            Logger.LogTrace("{Message}", e.ToString());
-            Logger.LogTrace("{Trace}", e.StackTrace);
-            try
-            {
-                if (certObj.HasPrivateKey)
-                    try
-                    {
-                        Logger.LogDebug("Attempting to export private key as PKCS8");
-                        Logger.LogTrace("ExportPkcs8PrivateKey()");
-                        keyBytes = certObj.PrivateKey.ExportPkcs8PrivateKey();
-                        Logger.LogTrace("ExportPkcs8PrivateKey() complete");
-                        // Logger.LogTrace("keyBytes: " + keyBytes);
-                        // Logger.LogTrace("Converted to string: " + Encoding.UTF8.GetString(keyBytes));
-                        return keyBytes;
-                    }
-                    catch (Exception e2)
-                    {
-                        Logger.LogError(
-                            "Unknown error exporting private key as PKCS8, but we're going to try a a final method ");
-                        Logger.LogError(e2.Message);
-                        Logger.LogTrace(e2.ToString());
-                        Logger.LogTrace(e2.StackTrace);
-                        //attempt to export encrypted pkcs8
-                        Logger.LogDebug("Attempting to export encrypted PKCS8 private key");
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey()");
-                        keyBytes = certObj.PrivateKey.ExportEncryptedPkcs8PrivateKey(certPassword,
-                            new PbeParameters(
-                                PbeEncryptionAlgorithm.Aes128Cbc,
-                                HashAlgorithmName.SHA256,
-                                1));
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey() complete");
-                        return keyBytes;
-                    }
-            }
-            catch (Exception ie)
-            {
-                Logger.LogError("Unknown error exporting private key as PKCS8, returning null");
-                Logger.LogError("{Message}", ie.Message);
-                Logger.LogTrace("{Message}", ie.ToString());
-                Logger.LogTrace("{Trace}", ie.StackTrace);
-            }
-
-            return Array.Empty<byte>();
-        }
-    }
-
     protected static JobResult FailJob(string message, long jobHistoryId)
     {
         return new JobResult
@@ -1200,8 +1104,6 @@ public abstract class JobBase
         if (!string.IsNullOrEmpty(StorePassword))
         {
             Logger.LogDebug("Using provided 'StorePassword'");
-            // var passwordHash = GetSHA256Hash(StorePassword);
-            // Logger.LogTrace("Password hash: " + passwordHash);
             storePasswordBytes = Encoding.UTF8.GetBytes(StorePassword);
         }
         else if (!string.IsNullOrEmpty(StorePasswordPath))
@@ -1237,9 +1139,22 @@ public abstract class JobBase
 
             Logger.LogDebug("Attempting to read K8S buddy secret");
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
-            storePasswordBytes = k8sPasswordObj.Data[PasswordFieldName];
-            // var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
-            // Logger.LogTrace("Password hash: {Pwd}", passwordHash);
+            if (k8sPasswordObj?.Data == null)
+            {
+                Logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}", passwordSecretName, passwordNamespace);
+                throw new InvalidK8SSecretException($"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
+            }
+            Logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
+
+            if (!k8sPasswordObj.Data.TryGetValue(PasswordFieldName, out storePasswordBytes) ||
+                storePasswordBytes == null)
+            {
+                Logger.LogError("Unable to find password field {FieldName}", PasswordFieldName);
+                throw new InvalidK8SSecretException(
+                    $"Unable to find password field '{PasswordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
+                );
+            }
+            
             if (storePasswordBytes == null)
             {
                 Logger.LogError("Password not found in K8S buddy secret");
@@ -1253,8 +1168,6 @@ public abstract class JobBase
         {
             Logger.LogDebug("Attempting to read password from PasswordFieldName");
             storePasswordBytes = value1;
-            // var passwordHash = GetSHA256Hash(Encoding.UTF8.GetString(storePasswordBytes));
-            // Logger.LogTrace("Password hash: {Pwd}", passwordHash);
             if (storePasswordBytes == null)
             {
                 Logger.LogError("Password not found in K8S secret");
@@ -1280,9 +1193,6 @@ public abstract class JobBase
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
-        // Logger.LogTrace("Store password: {Pwd}", storePassword);
-        // var passwordHash2 = GetSHA256Hash(storePassword);
-        // Logger.LogTrace("Password hash: {Pwd}", passwordHash2);
         Logger.LogDebug("Returning store password");
         return storePassword;
     }
