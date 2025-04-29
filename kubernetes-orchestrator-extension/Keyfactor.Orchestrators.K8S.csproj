@@ -1,8 +1,8 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <TargetFramework>net6.0</TargetFramework>
+	<AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+    <TargetFrameworks>net6.0;net8.0</TargetFrameworks>
     <RootNamespace>Keyfactor.Extensions.Orchestrator.K8S</RootNamespace>
     <LangVersion>latest</LangVersion>
 	 <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
