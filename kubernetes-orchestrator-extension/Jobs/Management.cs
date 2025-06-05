@@ -52,6 +52,7 @@ public class Management : JobBase, IManagementJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Logger = LogHandler.GetClassLogger(GetType());
+        Logger.MethodEntry();
         K8SJobCertificate jobCertObj;
         try
         {
@@ -177,7 +178,7 @@ public class Management : JobBase, IManagementJobExtension
     
     private V1Secret HandleJksSecret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.LogDebug("Entering HandleJKSSecret()...");
+        Logger.MethodEntry();
         // get the jks store from the secret
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
@@ -203,13 +204,15 @@ public class Management : JobBase, IManagementJobExtension
         }
         // get newCert bytes from config.JobCertificate.Contents
         Logger.LogDebug("Attempting to get newCert bytes from config.JobCertificate.Contents");
-        var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
+        var newCertBytes = config.JobCertificate?.Contents == null
+            ? []
+            : Convert.FromBase64String(config.JobCertificate.Contents);
 
-        var alias = config.JobCertificate.Alias;
-        Logger.LogTrace("alias: " + alias);
+        var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
+        Logger.LogTrace("alias: {Alias}", alias);
         var existingDataFieldName = "jks";
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
-        if (alias.Contains('/'))
+        if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
         {
             Logger.LogDebug("alias contains a '/' so splitting on '/'...");
             var aliasParts = alias.Split("/");
@@ -235,7 +238,7 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Calling CreateOrUpdateJks()...");
         try
         {
-            var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate.PrivateKeyPassword, alias, existingData, sPass, remove);
+            var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate?.PrivateKeyPassword, alias, existingData, sPass, remove);
             if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
             {
                 Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");

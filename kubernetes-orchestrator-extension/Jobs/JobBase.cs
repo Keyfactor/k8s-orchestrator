@@ -362,6 +362,14 @@ public abstract class JobBase
         {
             pKeyPassword = "";
             Logger.LogDebug("Certificate {CertThumbprint} does have a password", jobCertObject.CertThumbprint);
+            
+            if (config.JobCertificate == null ||
+                string.IsNullOrEmpty(config.JobCertificate.Contents))
+            {
+                Logger.LogError("Job certificate contents are null or empty, cannot initialize job certificate");
+                return jobCertObject;
+            }
+            
             Logger.LogTrace("Calling Convert.FromBase64String()");
             byte[] certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
             Logger.LogTrace("Returned from Convert.FromBase64String()");
@@ -662,10 +670,14 @@ public abstract class JobBase
 
     private void InitializeProperties(dynamic storeProperties)
     {
-        Logger.LogTrace("Entered InitializeProperties()");
+        Logger.MethodEntry();
         if (storeProperties == null)
+        {
+            Logger.MethodExit();
             throw new ConfigurationException(
                 $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
+        }
+            
 
         // check if key is present and set values if not
         try
@@ -879,24 +891,43 @@ public abstract class JobBase
             case "jks":
                 Logger.LogInformation(
                     "Kubernetes certificate store type is 'jks'. Setting default values for 'PasswordFieldName' and 'CertificateDataFieldName'");
+                Logger.LogDebug("Parsing 'PasswordFieldName' from store properties");
                 PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName")
                     ? storeProperties["PasswordFieldName"]
                     : DefaultPFXPasswordSecretFieldName;
+                Logger.LogTrace("PasswordFieldName: {PasswordFieldName}", PasswordFieldName);
+                
+                Logger.LogDebug("Parsing 'PasswordIsSeparateSecret' from store properties");
                 PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
                     ? bool.Parse(storeProperties["PasswordIsSeparateSecret"])
                     : false;
+                Logger.LogTrace("PasswordIsSeparateSecret: {PasswordIsSeparateSecret}", PasswordIsSeparateSecret);
+                
+                Logger.LogDebug("Parsing 'StorePasswordPath' from store properties");
                 StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
                     ? storeProperties["StorePasswordPath"]
                     : "";
-                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret")
-                    ? storeProperties["PasswordIsK8SSecret"]
+                Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath);
+                
+                Logger.LogDebug("Parsing 'PasswordIsK8SSecret' from store properties");
+                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") &&
+                                      !string.IsNullOrEmpty(storeProperties["PasswordIsK8SSecret"]?.ToString())
+                    ? bool.Parse(storeProperties["PasswordIsK8SSecret"].ToString())
                     : false;
+                Logger.LogTrace("PasswordIsK8SSecret: {PasswordIsK8SSecret}", PasswordIsK8SSecret);
+                
+                Logger.LogDebug("Parsing 'KubeSecretPassword' from store properties");
                 KubeSecretPassword = storeProperties.ContainsKey("KubeSecretPassword")
                     ? storeProperties["KubeSecretPassword"]
                     : "";
+                Logger.LogTrace("KubeSecretPassword: {KubeSecretPassword}", KubeSecretPassword);
+                
+                Logger.LogDebug("Parsing 'CertificateDataFieldName' from store properties");
                 CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
                     ? storeProperties["CertificateDataFieldName"]
                     : DefaultJKSSecretFieldName;
+                Logger.LogTrace("CertificateDataFieldName: {CertificateDataFieldName}", CertificateDataFieldName);
+                
                 break;
         }
 
@@ -939,6 +970,7 @@ public abstract class JobBase
         Logger.LogWarning("KubeSecretName is empty, setting 'KubeSecretName' to StorePath");
         KubeSecretName = StorePath;
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
+        Logger.MethodExit();
     }
 
     public bool PasswordIsK8SSecret { get; set; } = false;

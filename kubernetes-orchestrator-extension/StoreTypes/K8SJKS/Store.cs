@@ -243,7 +243,10 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
                 _logger.LogDebug("Loading new Pkcs12Store from newPkcs12Bytes");
                 _logger.LogTrace("hashedNewCertPassword: {Pass}", hashedNewCertPassword ?? "null");
                 using var pkcs12Ms = new MemoryStream(newPkcs12Bytes);
-                newCert.Load(pkcs12Ms, string.IsNullOrEmpty(newCertPassword) ? Array.Empty<char>() : newCertPassword.ToCharArray());
+                if (pkcs12Ms.Length != 0)
+                {
+                    newCert.Load(pkcs12Ms, (newCertPassword ?? string.Empty).ToCharArray());
+                }
             }
             catch (Exception)
             {
