@@ -39,15 +39,15 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
 
             _logger.LogTrace("storePath: {Path}", storePath);
             // _logger.LogTrace("storePassword: {Pass}", storePassword ?? "null");
-            var hashedStorePassword = GetSha256Hash(storePassword);
-            _logger.LogTrace("hashedStorePassword: {Pass}", hashedStorePassword ?? "null");
+            // var hashedStorePassword = GetSha256Hash(storePassword);
+            // _logger.LogTrace("hashedStorePassword: {Pass}", hashedStorePassword ?? "null");
             
             var jksStore = new JksStore();
 
             _logger.LogDebug("Loading JKS store");
             try
             {
-                _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'", hashedStorePassword ?? "null");
+                _logger.LogTrace("Attempting to load JKS store w/ password");
                 using (var ms = new MemoryStream(storeContents))
                 {
                     jksStore.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
@@ -60,7 +60,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
                 // Attempt to read JKS store as Pkcs12Store
                 try
                 {
-                    _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password '{Pass}'", hashedStorePassword ?? "null");
+                    _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password");
                     using (var ms = new MemoryStream(storeContents))
                     {
                         pkcs12Store.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
