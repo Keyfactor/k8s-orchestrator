@@ -22,7 +22,7 @@ jobs:
       gpg_key: ${{ secrets.KF_GPG_PRIVATE_KEY }}
       gpg_pass: ${{ secrets.KF_GPG_PASSPHRASE }}
       scan_token: ${{ secrets.SAST_TOKEN }}
-      entra_username: ${{ secrets.ENTRA_USERNAME }}
-      entra_password: ${{ secrets.ENTRA_PASSWD }}
+      entra_username: ${{ secrets.DOCTOOL_ENTRA_USERNAME }}
+      entra_password: ${{ secrets.DOCTOOL_ENTRA_PASSWD }}
       command_client_id: ${{ secrets.COMMAND_CLIENT_ID }}
       command_client_secret: ${{ secrets.COMMAND_CLIENT_SECRET }}
