@@ -48,6 +48,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             try
             {
                 _logger.LogTrace("Attempting to load JKS store w/ password");
+                _logger.LogTrace("Attempting to load JKS store w/ password ${Pass}", storePassword); //TODO: Remove this line, it is for debugging purposes only
                 using (var ms = new MemoryStream(storeContents))
                 {
                     jksStore.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
@@ -56,7 +57,10 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS
             } catch (Exception ex)
             {
                 _logger.LogError("Error loading JKS store: {Ex}", ex.Message);
-                
+                if (ex.Message.Contains("password incorrect or store tampered with"))
+                {
+                    throw;
+                }
                 // Attempt to read JKS store as Pkcs12Store
                 try
                 {
