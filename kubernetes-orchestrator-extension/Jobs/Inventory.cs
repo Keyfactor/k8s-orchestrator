@@ -319,11 +319,17 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogDebug("Iterating through keys in K8S secret " + KubeSecretName + " in namespace " + KubeNamespace);
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
-            Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
-                            KubeNamespace + " and key " + keyName);
+            Logger.LogTrace("Key name: {KeyName}", keyName);
+            if (keyBytes == null || keyBytes.Length == 0)
+            {
+                Logger.LogWarning("Key '{KeyName}' in secret {Secret} is empty or null, skipping", keyName, KubeSecretName);
+                continue;
+            }
+            Logger.LogDebug("Attempting to get password for key '{Key}' in k8s namesapce {Namespace} in secret '{Secret}'", keyName,KubeNamespace, KubeSecretName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
             var passwordHash = GetSHA256Hash(keyPassword);
-            // Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
+            Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash); //TODO: Remove this line, it is for debugging purposes only
+            Logger.LogTrace("Password for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, keyPassword); //TODO: Remove this line, it is for debugging purposes only
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
@@ -953,7 +959,19 @@ public class Inventory : JobBase, IInventoryJobExtension
         // iterate through the keys in the secret and add them to the pkcs12 store
         foreach (var (keyName, keyBytes) in k8sData.Inventory)
         {
+            Logger.LogTrace("Key name: {KeyName}", keyName);
+            if (keyBytes == null || keyBytes.Length == 0)
+            {
+                Logger.LogWarning("Key '{KeyName}' in secret {Secret} is empty or null, skipping", keyName, KubeSecretName);
+                continue;
+            }
+            Logger.LogDebug("Attempting to get password for key '{Key}' in k8s namespace {Namespace} in secret '{Secret}'", keyName,KubeNamespace, KubeSecretName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
+            Logger.LogTrace("Password for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, keyPassword); //TODO: Remove this line, it is for debugging purposes only
+            var keyAlias = keyName;
+            Logger.LogTrace("Key alias: {Alias}", keyAlias);
+            Logger.LogDebug("Attempting to deserialize PKCS12 store '{Secret}/{Key}'", KubeSecretName, keyName);
+            
             var pStoreDs = pkcs12Store.DeserializeRemoteCertificateStore(keyBytes, keyName, keyPassword);
             // create a list of certificate chains in PEM format
             foreach (var certAlias in pStoreDs.Aliases)

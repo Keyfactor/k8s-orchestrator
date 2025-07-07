@@ -1124,13 +1124,23 @@ public class KubeCertificateManagerClient
     public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
     {
         // Lookup password secret path on cluster to see if it exists
+        _logger.MethodEntry();
         _logger.LogDebug("Attempting to lookup password secret path on cluster...");
         var splitPasswordPath = passwordSecretPath.Split("/");
+        _logger.LogDebug("Split password secret path: {Join}", string.Join(", ", splitPasswordPath));
         // Assume secret pattern is namespace/secretName
-        var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+        var passwordSecretName = splitPasswordPath[^1];
+        _logger.LogDebug("Password secret name: {PasswordSecretName}", passwordSecretName);
         var passwordSecretNamespace = splitPasswordPath[0];
-        _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}", passwordSecretName, passwordSecretNamespace);
+        
         var passwordSecretResponse = Client.CoreV1.ReadNamespacedSecret(secretName, passwordSecretNamespace);
+        if (passwordSecretResponse == null)
+        {
+            _logger.LogError("Unable to find secret {PasswordSecretName} in namespace {PasswordSecretNamespace}", passwordSecretName, passwordSecretNamespace);
+            throw new InvalidK8SSecretException($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        }
+        _logger.MethodExit();
         return passwordSecretResponse;
     }
 

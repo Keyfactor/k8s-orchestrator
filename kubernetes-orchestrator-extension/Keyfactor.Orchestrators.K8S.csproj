@@ -29,6 +29,10 @@
         <PackageReference Include="KubernetesClient" Version="14.0.2"/>
         <!--    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />-->
         <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.0"/>
+        <!--        <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />-->
+        <ProjectReference Include="../../bc-csharp/crypto/src/BouncyCastle.Crypto.csproj" />
+
+
     </ItemGroup>
 
 </Project>
