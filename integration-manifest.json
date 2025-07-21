@@ -19,7 +19,7 @@
     "keyfactor-universal-orchestrator"
   ],
   "update_catalog": true,
-  "support_level": "kf-supported",
+  "support_level": "community",
   "release_dir": "kubernetes-orchestrator-extension\\bin\\Release",
   "release_project": "kubernetes-orchestrator-extension\\Keyfactor.Orchestrators.K8S.csproj",
   "about": {
