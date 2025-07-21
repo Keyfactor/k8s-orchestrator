@@ -75,9 +75,9 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 This integration is compatible with Keyfactor Universal Orchestrator version 12.4 and later.
 
 ## Support
-The Kubernetes Universal Orchestrator extension is community open source and there is **no SLA**. Keyfactor will address issues as resources become available.
+The Kubernetes Universal Orchestrator extension If you have a support issue, please open a support ticket by either contacting your Keyfactor representative or via the Keyfactor Support Portal at https://support.keyfactor.com.
 
-> To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute bug fixes or additional enhancements, use the **[Pull requests](../../pulls)** tab.
+> To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute actual bug fixes or proposed enhancements, use the **[Pull requests](../../pulls)** tab.
 
 ## Requirements & Prerequisites
 
