@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -25,7 +24,6 @@ using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Org.BouncyCastle.Pkcs;
-using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
@@ -102,12 +100,14 @@ public class K8SJobCertificate
 
 public abstract class JobBase
 {
-    protected static readonly string[] SupportedKubeStoreTypes;
-
-    private static readonly string[] RequiredProperties;
     private const string DefaultPFXSecretFieldName = "pfx";
     private const string DefaultJKSSecretFieldName = "jks";
     private const string DefaultPFXPasswordSecretFieldName = "password";
+
+    protected const string CertChainSeparator = ",";
+    protected static readonly string[] SupportedKubeStoreTypes;
+
+    private static readonly string[] RequiredProperties;
 
     protected static readonly string[] TLSAllowedKeys;
     protected static readonly string[] OpaqueAllowedKeys;
@@ -115,17 +115,7 @@ public abstract class JobBase
     protected static readonly string[] Pkcs12AllowedKeys;
     protected static readonly string[] JksAllowedKeys;
 
-
-    protected internal bool SeparateChain { get; set; } =
-        false; //Don't arbitrarily change this to true without specifying BREAKING CHANGE in the release notes.
-
-    protected internal bool IncludeCertChain { get; set; } =
-        true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
-
-    protected internal string OperationType { get; set; }
-    protected internal bool SkipTlsValidation { get; set; } = false;
-
-    protected const string CertChainSeparator = ",";
+    protected IPAMSecretResolver _resolver;
 
     protected KubeCertificateManagerClient KubeClient;
 
@@ -143,11 +133,19 @@ public abstract class JobBase
         JksAllowedKeys = new[] { "jks" };
     }
 
+
+    protected internal bool SeparateChain { get; set; } =
+        false; //Don't arbitrarily change this to true without specifying BREAKING CHANGE in the release notes.
+
+    protected internal bool IncludeCertChain { get; set; } =
+        true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
+
+    protected internal string OperationType { get; set; }
+    protected internal bool SkipTlsValidation { get; set; }
+
     public K8SJobCertificate K8SCertificate { get; set; }
 
     protected internal string Capability { get; set; }
-
-    protected IPAMSecretResolver _resolver;
 
     public string StorePath { get; set; }
 
@@ -189,6 +187,10 @@ public abstract class JobBase
 
     public string KubeCluster { get; set; }
 
+    public bool PasswordIsK8SSecret { get; set; }
+
+    public object KubeSecretPassword { get; set; }
+
     protected void InitializeStore(InventoryJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
@@ -202,13 +204,17 @@ public abstract class JobBase
         // Logger.LogTrace("Properties: {Properties}", props); // Commented out to avoid logging sensitive information
 
         ServerUsername = config.ServerUsername;
-        ServerPassword = config.ServerPassword;
-        StorePassword = config.CertificateStoreDetails?.StorePassword;
-        StorePath = config.CertificateStoreDetails?.StorePath;
-        // StorePath = GetStorePath();
         Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
-        // Logger.LogTrace($"ServerPassword: {ServerPassword}"); // Commented out to avoid logging sensitive information
+
+        ServerPassword = config.ServerPassword;
+        if (!string.IsNullOrEmpty(ServerPassword)) Logger.LogTrace("ServerPassword: {ServerPassword}", "<redacted>");
+
+        StorePassword = config.CertificateStoreDetails?.StorePassword;
+        if (!string.IsNullOrEmpty(StorePassword)) Logger.LogTrace("StorePassword: {StorePassword}", "<redacted>");
+
+        StorePath = config.CertificateStoreDetails?.StorePath;
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
+
         Logger.LogDebug("Calling InitializeProperties()");
         InitializeProperties(props);
         Logger.LogDebug("Returned from InitializeStore()");
@@ -362,14 +368,14 @@ public abstract class JobBase
         {
             pKeyPassword = "";
             Logger.LogDebug("Certificate {CertThumbprint} does have a password", jobCertObject.CertThumbprint);
-            
+
             if (config.JobCertificate == null ||
                 string.IsNullOrEmpty(config.JobCertificate.Contents))
             {
                 Logger.LogError("Job certificate contents are null or empty, cannot initialize job certificate");
                 return jobCertObject;
             }
-            
+
             Logger.LogTrace("Calling Convert.FromBase64String()");
             byte[] certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
             Logger.LogTrace("Returned from Convert.FromBase64String()");
@@ -502,7 +508,7 @@ public abstract class JobBase
                 {
                     Logger.LogInformation(
                         "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath}`",
-                        sPathParts[0],sPathParts[0]);
+                        sPathParts[0], sPathParts[0]);
                     KubeSecretName = sPathParts[0];
                 }
                 else
@@ -677,7 +683,7 @@ public abstract class JobBase
             throw new ConfigurationException(
                 $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
         }
-            
+
 
         // check if key is present and set values if not
         try
@@ -743,7 +749,7 @@ public abstract class JobBase
         //check if storeProperties contains ServerUsername key
         Logger.LogInformation("Attempting to resolve 'ServerUsername' from store properties or PAM provider");
         var pamServerUsername =
-            (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
+            PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
         if (!string.IsNullOrEmpty(pamServerUsername))
         {
             Logger.LogInformation(
@@ -756,7 +762,7 @@ public abstract class JobBase
             Logger.LogInformation(
                 "ServerUsername not resolved from PAM provider, attempting to resolve 'Server Username' from store properties");
             pamServerUsername =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
+                PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
             if (!string.IsNullOrEmpty(pamServerUsername))
             {
                 Logger.LogInformation(
@@ -777,7 +783,7 @@ public abstract class JobBase
         {
             Logger.LogInformation("Attempting to resolve 'ServerPassword' from store properties or PAM provider");
             var pamServerPassword =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
+                PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
             if (!string.IsNullOrEmpty(pamServerPassword))
             {
                 Logger.LogInformation(
@@ -790,7 +796,7 @@ public abstract class JobBase
                 Logger.LogInformation(
                     "ServerPassword not resolved from PAM provider, attempting to resolve 'Server Password' from store properties");
                 pamServerPassword =
-                    (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
+                    PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
                 if (!string.IsNullOrEmpty(pamServerPassword))
                 {
                     Logger.LogInformation(
@@ -815,7 +821,7 @@ public abstract class JobBase
         {
             Logger.LogInformation("Attempting to resolve 'StorePassword' from store properties or PAM provider");
             var pamStorePassword =
-                (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
+                PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
             if (!string.IsNullOrEmpty(pamStorePassword))
             {
                 Logger.LogInformation(
@@ -827,7 +833,7 @@ public abstract class JobBase
                 Logger.LogInformation(
                     "StorePassword not resolved from PAM provider, attempting to resolve 'Store Password' from store properties");
                 pamStorePassword =
-                    (string)PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
+                    PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
                 if (!string.IsNullOrEmpty(pamStorePassword))
                 {
                     Logger.LogInformation(
@@ -838,9 +844,13 @@ public abstract class JobBase
         }
         catch (Exception e)
         {
-            Logger.LogError(
-                "Unable to resolve 'StorePassword' from store properties or PAM provider, defaulting to empty string");
-            StorePassword = "";
+            if (string.IsNullOrEmpty(StorePassword))
+            {
+                Logger.LogError(
+                    "Unable to resolve 'StorePassword' from store properties or PAM provider, defaulting to empty string");
+                StorePassword = "";
+            }
+
             Logger.LogError("{Message}", e.Message);
             Logger.LogTrace("{Message}", e.ToString());
             Logger.LogTrace("{Trace}", e.StackTrace);
@@ -896,38 +906,38 @@ public abstract class JobBase
                     ? storeProperties["PasswordFieldName"]
                     : DefaultPFXPasswordSecretFieldName;
                 Logger.LogTrace("PasswordFieldName: {PasswordFieldName}", PasswordFieldName);
-                
+
                 Logger.LogDebug("Parsing 'PasswordIsSeparateSecret' from store properties");
                 PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
                     ? bool.Parse(storeProperties["PasswordIsSeparateSecret"])
                     : false;
                 Logger.LogTrace("PasswordIsSeparateSecret: {PasswordIsSeparateSecret}", PasswordIsSeparateSecret);
-                
+
                 Logger.LogDebug("Parsing 'StorePasswordPath' from store properties");
                 StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
                     ? storeProperties["StorePasswordPath"]
                     : "";
                 Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath);
-                
+
                 Logger.LogDebug("Parsing 'PasswordIsK8SSecret' from store properties");
                 PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") &&
                                       !string.IsNullOrEmpty(storeProperties["PasswordIsK8SSecret"]?.ToString())
                     ? bool.Parse(storeProperties["PasswordIsK8SSecret"].ToString())
                     : false;
                 Logger.LogTrace("PasswordIsK8SSecret: {PasswordIsK8SSecret}", PasswordIsK8SSecret);
-                
+
                 Logger.LogDebug("Parsing 'KubeSecretPassword' from store properties");
                 KubeSecretPassword = storeProperties.ContainsKey("KubeSecretPassword")
                     ? storeProperties["KubeSecretPassword"]
                     : "";
                 Logger.LogTrace("KubeSecretPassword: {KubeSecretPassword}", KubeSecretPassword);
-                
+
                 Logger.LogDebug("Parsing 'CertificateDataFieldName' from store properties");
                 CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
                     ? storeProperties["CertificateDataFieldName"]
                     : DefaultJKSSecretFieldName;
                 Logger.LogTrace("CertificateDataFieldName: {CertificateDataFieldName}", CertificateDataFieldName);
-                
+
                 break;
         }
 
@@ -972,10 +982,6 @@ public abstract class JobBase
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.MethodExit();
     }
-
-    public bool PasswordIsK8SSecret { get; set; } = false;
-
-    public object KubeSecretPassword { get; set; }
 
     public string GetStorePath()
     {
@@ -1059,6 +1065,7 @@ public abstract class JobBase
             return value;
         }
     }
+
     protected static JobResult FailJob(string message, long jobHistoryId)
     {
         return new JobResult
@@ -1128,7 +1135,7 @@ public abstract class JobBase
 
     protected string getK8SStorePassword(V1Secret certData)
     {
-        Logger.LogDebug("Entered getK8SStorePassword()");
+        Logger.MethodEntry();
         Logger.LogDebug("Attempting to get store password from K8S secret");
         var storePasswordBytes = Array.Empty<byte>();
 
@@ -1142,20 +1149,22 @@ public abstract class JobBase
         {
             // Split password path into namespace and secret name
             Logger.LogDebug(
-                "Store password is null or empty and StorePasswordPath is set, attempting to read password from K8S buddy secret");
+                "StorePassword is null or empty and StorePasswordPath is set, attempting to read password from K8S buddy secret at {StorePasswordPath}",
+                StorePasswordPath);
             Logger.LogTrace("Password path: {Path}", StorePasswordPath);
             Logger.LogTrace("Splitting password path by /");
             var passwordPath = StorePasswordPath.Split("/");
             Logger.LogDebug("Password path length: {Len}", passwordPath.Length.ToString());
-            var passwordNamespace = "";
-            var passwordSecretName = "";
+
+            string passwordNamespace;
+            string passwordSecretName;
+
             if (passwordPath.Length == 1)
             {
                 Logger.LogDebug("Password path length is 1, using KubeNamespace");
                 passwordNamespace = KubeNamespace;
                 Logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
                 passwordSecretName = passwordPath[0];
-                Logger.LogTrace("Password secret name: {SecretName}", passwordSecretName);
             }
             else
             {
@@ -1163,9 +1172,9 @@ public abstract class JobBase
                 passwordNamespace = passwordPath[0];
                 Logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
                 passwordSecretName = passwordPath[^1];
-                Logger.LogTrace("Password secret name: {SecretName}", passwordSecretName);
             }
 
+            Logger.LogTrace("Password secret name: {SecretName}", passwordSecretName);
             Logger.LogTrace("Password secret name: {Name}", passwordSecretName);
             Logger.LogTrace("Password namespace: {Ns}", passwordNamespace);
 
@@ -1173,9 +1182,12 @@ public abstract class JobBase
             var k8sPasswordObj = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
             if (k8sPasswordObj?.Data == null)
             {
-                Logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}", passwordSecretName, passwordNamespace);
-                throw new InvalidK8SSecretException($"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
+                Logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}",
+                    passwordSecretName, passwordNamespace);
+                throw new InvalidK8SSecretException(
+                    $"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
             }
+
             Logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
 
             if (!k8sPasswordObj.Data.TryGetValue(PasswordFieldName, out storePasswordBytes) ||
@@ -1186,15 +1198,10 @@ public abstract class JobBase
                     $"Unable to find password field '{PasswordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
                 );
             }
-            
-            if (storePasswordBytes == null)
-            {
-                Logger.LogError("Password not found in K8S buddy secret");
-                throw new InvalidK8SSecretException(
-                    "Password not found in K8S buddy secret"); // todo: should this be thrown?
-            }
 
-            Logger.LogDebug("K8S buddy secret read successfully");
+            Logger.LogDebug(
+                "Successfully read password from K8S buddy secret '{SecretName}' in namespace '{Namespace}'",
+                passwordSecretName, passwordNamespace);
         }
         else if (certData != null && certData.Data.TryGetValue(PasswordFieldName, out var value1))
         {
@@ -1210,8 +1217,7 @@ public abstract class JobBase
         }
         else
         {
-            Logger.LogDebug("No password found");
-            var passwdEx = "";
+            string passwdEx;
             if (!string.IsNullOrEmpty(StorePasswordPath))
                 passwdEx = "Store secret '" + StorePasswordPath + "'did not contain key '" + CertificateDataFieldName +
                            "' or '" + PasswordFieldName + "'" +
@@ -1225,7 +1231,9 @@ public abstract class JobBase
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
-        Logger.LogDebug("Returning store password");
+        Logger.LogTrace("Store password bytes converted to string: {StorePassword}",
+            storePassword); //TODO: INSECURE COMMENT OUT
+        Logger.MethodExit();
         return storePassword;
     }
 
@@ -1246,7 +1254,7 @@ public abstract class JobBase
     protected string GetCertificatePem(Pkcs12Store store, string password, string alias = "")
     {
         Logger.LogDebug("Entered GetCertificatePem()");
-        if (string.IsNullOrEmpty(alias)) alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+        if (string.IsNullOrEmpty(alias)) alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
 
         Logger.LogDebug("Attempting to get certificate with alias {Alias}", alias);
         var cert = store.GetCertificate(alias).Certificate;
@@ -1294,7 +1302,7 @@ public abstract class JobBase
         if (string.IsNullOrEmpty(alias))
         {
             Logger.LogDebug("Alias is empty, attempting to get key entry alias");
-            alias = store.Aliases.Cast<string>().FirstOrDefault(store.IsKeyEntry);
+            alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
         }
 
         var chain = new List<string>();
