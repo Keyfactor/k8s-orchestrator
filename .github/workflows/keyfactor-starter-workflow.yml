@@ -18,7 +18,6 @@ jobs:
       command_base_api_path: ${{ vars.COMMAND_API_PATH }}
     secrets:
       token: ${{ secrets.V2BUILDTOKEN}}
-      APPROVE_README_PUSH: ${{ secrets.APPROVE_README_PUSH}}
       gpg_key: ${{ secrets.KF_GPG_PRIVATE_KEY }}
       gpg_pass: ${{ secrets.KF_GPG_PASSPHRASE }}
       scan_token: ${{ secrets.SAST_TOKEN }}
