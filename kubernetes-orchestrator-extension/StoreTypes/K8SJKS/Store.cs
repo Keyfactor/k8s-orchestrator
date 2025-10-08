@@ -38,8 +38,14 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         var pkcs12StoreNew = storeBuilder.Build();
 
         _logger.LogTrace("storePath: {Path}", storePath);
-        _logger.LogTrace("storePassword: {Pass}",
-            storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+        
+        if (string.IsNullOrEmpty(storePassword))
+        {
+            _logger.LogError("JKS store password is null or empty for store at path '{Path}'", storePath);
+            throw new ArgumentException("JKS store password is null or empty");
+        }
+        
+        _logger.LogTrace("storePassword: {Pass}", storePassword.Replace("\n","\\n")); //TODO: INSECURE - Remove this line, it is for debugging purposes only
         // var hashedStorePassword = GetSha256Hash(storePassword);
         // _logger.LogTrace("hashedStorePassword: {Pass}", hashedStorePassword ?? "null");
 
