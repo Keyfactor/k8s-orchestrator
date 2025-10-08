@@ -480,7 +480,10 @@ public class Management : JobBase, IManagementJobExtension
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
 
-        if (string.IsNullOrEmpty(certAlias)) certAlias = jobCertObj.CertThumbprint;
+        if (string.IsNullOrEmpty(certAlias) && !string.IsNullOrEmpty(jobCertObj.CertThumbprint))
+        {
+            certAlias = jobCertObj.CertThumbprint;
+        }
 
         Logger.LogTrace("secretType: " + secretType);
         Logger.LogTrace("certAlias: " + certAlias);
