@@ -9,9 +9,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
-using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
@@ -166,7 +166,8 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                     //make secretAllowedKeys unique
                     secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
 
-                    Logger.LogInformation("Discovering k8s secrets with allowed keys: `{AllowedKeys}` and type: `pkcs12`",
+                    Logger.LogInformation(
+                        "Discovering k8s secrets with allowed keys: `{AllowedKeys}` and type: `pkcs12`",
                         string.Join(",", secretAllowedKeys));
                     Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
                     locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "pkcs12",
@@ -211,7 +212,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //Status: 2=Success, 3=Warning, 4=Error
             Logger.LogError("Discovery job has failed due to an unknown error");
             Logger.LogError("{Message}", ex.Message);
-            Logger.LogTrace("{Message}",ex.ToString());
+            Logger.LogTrace("{Message}", ex.ToString());
             // iterate through the inner exceptions
             var inner = ex.InnerException;
             while (inner != null)
@@ -220,6 +221,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                 Logger.LogTrace("{Message}", inner.ToString());
                 inner = inner.InnerException;
             }
+
             Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job '{JobID}' with failure",
                 config.JobId);
             return FailJob(ex.Message, config.JobHistoryId);
@@ -238,7 +240,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             {
                 Result = OrchestratorJobStatusJobResult.Success,
                 JobHistoryId = config.JobHistoryId,
-                FailureMessage = "Discovered the following locations: " + string.Join(",\n", locations),
+                FailureMessage = "Discovered the following locations: " + string.Join(",\n", locations)
             };
         }
         catch (Exception ex)
@@ -254,6 +256,7 @@ public class Discovery : JobBase, IDiscoveryJobExtension
                 Logger.LogTrace("{Message}", inner.ToString());
                 inner = inner.InnerException;
             }
+
             Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job '{JobID}' with failure",
                 config.JobId);
             return FailJob(ex.Message, config.JobHistoryId);

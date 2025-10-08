@@ -27,6 +27,7 @@ public class Reenrollment : JobBase, IReenrollmentJobExtension
     {
         _resolver = resolver;
     }
+
     //Job Entry Point
     public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
     {
