@@ -50,7 +50,8 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         {
             // _logger.LogTrace("Attempting to load JKS store w/ password");
             _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'",
-                storePassword); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+                storePassword.Replace("\n","\\n")); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+            
             using (var ms = new MemoryStream(storeContents))
             {
                 jksStore.Load(ms, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());

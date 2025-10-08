@@ -917,7 +917,7 @@ public abstract class JobBase
                 StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
                     ? storeProperties["StorePasswordPath"]
                     : "";
-                Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath);
+                Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath); // TODO: Remove this it's insecure
 
                 Logger.LogDebug("Parsing 'PasswordIsK8SSecret' from store properties");
                 PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") &&
@@ -1231,6 +1231,9 @@ public abstract class JobBase
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
+        Logger.LogTrace("K8S Store Password show new lines: {StorePassword}", storePassword.Replace("\n","\\n"));
+        // remove any trailing new line characters from the string
+        storePassword = storePassword.TrimEnd('\n');
         Logger.LogTrace("Store password bytes converted to string: {StorePassword}",
             storePassword); //TODO: INSECURE COMMENT OUT
         Logger.MethodExit();
