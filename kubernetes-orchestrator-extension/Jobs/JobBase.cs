@@ -1233,7 +1233,7 @@ public abstract class JobBase
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
         Logger.LogTrace("K8S Store Password show new lines: {StorePassword}", storePassword.Replace("\n","\\n"));
         // remove any trailing new line characters from the string
-        storePassword = storePassword.TrimEnd('\n');
+        storePassword = storePassword.TrimEnd('\r','\n');
         Logger.LogTrace("Store password bytes converted to string: {StorePassword}",
             storePassword); //TODO: INSECURE COMMENT OUT
         Logger.MethodExit();
