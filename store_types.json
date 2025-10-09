@@ -15,6 +15,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -23,6 +24,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -31,6 +33,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
@@ -68,6 +71,7 @@
       {
         "Name": "KubeNamespace",
         "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "default",
@@ -76,6 +80,7 @@
       {
         "Name": "KubeSecretName",
         "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -84,6 +89,7 @@
       {
         "Name": "KubeSecretType",
         "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `jks`",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "jks",
@@ -124,6 +130,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -132,6 +139,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -140,6 +148,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
@@ -177,6 +186,7 @@
       {
         "Name": "KubeNamespace",
         "DisplayName": "Kube Namespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "default",
@@ -185,6 +195,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -193,6 +204,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -201,6 +213,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
@@ -238,6 +251,7 @@
       {
         "Name": "KubeSecretKey",
         "DisplayName": "Kube Secret Key",
+        "Description": "The field name to use when looking for PFX/PKCS12 data in the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "pfx",
@@ -246,6 +260,7 @@
       {
         "Name": "PasswordFieldName",
         "DisplayName": "Password Field Name",
+        "Description": "The field name to use when looking for the password to the PFX/PKCS12 data in the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "password",
@@ -254,6 +269,7 @@
       {
         "Name": "PasswordIsK8SSecret",
         "DisplayName": "Password Is K8S Secret",
+        "Description": "Indicates whether the password to the PFX/PKCS12 data is stored in a separate K8S secret object.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "false",
@@ -262,6 +278,7 @@
       {
         "Name": "KubeNamespace",
         "DisplayName": "Kube Namespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "default",
@@ -270,6 +287,7 @@
       {
         "Name": "KubeSecretName",
         "DisplayName": "Kube Secret Name",
+        "Description": "The name of the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -278,6 +296,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -286,6 +305,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -294,6 +314,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
@@ -302,6 +323,7 @@
       {
         "Name": "KubeSecretType",
         "DisplayName": "Kube Secret Type",
+        "Description": "This defaults to and must be `pkcs12`",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "pkcs12",
@@ -310,6 +332,7 @@
       {
         "Name": "StorePasswordPath",
         "DisplayName": "StorePasswordPath",
+        "Description": "The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>`",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -347,6 +370,7 @@
       {
         "Name": "KubeNamespace",
         "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -355,6 +379,7 @@
       {
         "Name": "KubeSecretName",
         "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -363,6 +388,7 @@
       {
         "Name": "KubeSecretType",
         "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `secret`",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "secret",
@@ -371,6 +397,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -379,6 +406,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -387,6 +415,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
@@ -424,6 +453,7 @@
       {
         "Name": "KubeNamespace",
         "DisplayName": "KubeNamespace",
+        "Description": "The K8S namespace to use to manage the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -432,6 +462,7 @@
       {
         "Name": "KubeSecretName",
         "DisplayName": "KubeSecretName",
+        "Description": "The name of the K8S secret object.",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": null,
@@ -440,6 +471,7 @@
       {
         "Name": "KubeSecretType",
         "DisplayName": "KubeSecretType",
+        "Description": "This defaults to and must be `tls_secret`",
         "Type": "String",
         "DependsOn": "",
         "DefaultValue": "tls_secret",
@@ -448,6 +480,7 @@
       {
         "Name": "ServerUsername",
         "DisplayName": "Server Username",
+        "Description": "This should be no value or `kubeconfig`",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -456,6 +489,7 @@
       {
         "Name": "ServerPassword",
         "DisplayName": "Server Password",
+        "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
         "Type": "Secret",
         "DependsOn": "",
         "DefaultValue": null,
@@ -464,6 +498,7 @@
       {
         "Name": "ServerUseSsl",
         "DisplayName": "Use SSL",
+        "Description": "Use SSL to connect to the K8S cluster API.",
         "Type": "Bool",
         "DependsOn": "",
         "DefaultValue": "true",
