@@ -3,6 +3,12 @@
 ## Bug Fixes
 - fix(storetypes): `K8SJKS` and `K8SPKCS12` storetypes using a separate `k8s` secret for store password does not crash
 on missing or invalid secret field name. 
+- fix(storetypes): `K8SJKS` where JKS files created using Keytool v20+ will be recognized as JKS files.
+- fix(storetypes): `K8SJKS` and `K8SPKCS12` store/buddy passwords ending with a `\n` character will be trimmed to not include the newline.
+
+## Chores:
+- chore(docs): Update documentation format
+- chore(deps): Bump `BouncyCastle.Cryptography` to `v2.6.2`. 
 
 # 1.2.1
 
