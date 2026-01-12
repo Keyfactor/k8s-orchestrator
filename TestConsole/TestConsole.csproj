@@ -7,11 +7,11 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\kubernetes-orchestrator-extension\Keyfactor.Orchestrators.K8S.csproj" />
+        <ProjectReference Include="..\kubernetes-orchestrator-extension\Keyfactor.Orchestrators.K8S.csproj"/>
     </ItemGroup>
 
     <ItemGroup>
-      <PackageReference Include="Moq" Version="4.20.72" />
+        <PackageReference Include="Moq" Version="4.20.72"/>
     </ItemGroup>
 
 </Project>
