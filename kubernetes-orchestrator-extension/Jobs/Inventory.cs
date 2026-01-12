@@ -59,7 +59,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogDebug("Host: {Host}", KubeClient.GetHost());
 
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
-            
+
             var hasPrivateKey = false;
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
@@ -89,7 +89,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                             KubeNamespace, KubeSecretName);
                         return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
                             "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
-                    } catch (Exception ex)
+                    }
+                    catch (Exception ex)
                     {
                         Logger.LogError("Inventory failed with exception: " + ex.Message);
                         Logger.LogTrace(ex.Message);
@@ -323,7 +324,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                             KubeNamespace + " and key " + keyName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
             var passwordHash = GetSHA256Hash(keyPassword);
-            Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash);
+            // Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash); //TODO: Insecure comment out!
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
