@@ -101,7 +101,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     {
         _logger.MethodEntry(LogLevel.Debug);
 
-        _logger.LogDebug("Creating or updating PKCS12 store for alias'{Alias}'", alias);
+        _logger.LogDebug("Creating or updating PKCS12 store for alias '{Alias}'", alias);
         // If existingStore is null, create a new store
         var storeBuilder = new Pkcs12StoreBuilder();
         var existingPkcs12Store = storeBuilder.Build();
