@@ -177,7 +177,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         jksStore.Save(outStream, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
 
         var storeInfo = new List<SerializedStoreInfo>
-            { new() { FilePath = storePath + storeFileName, Contents = outStream.ToArray() } };
+            { new() { FilePath = Path.Combine(storePath, storeFileName), Contents = outStream.ToArray() } };
 
         _logger.MethodExit();
         return storeInfo;
