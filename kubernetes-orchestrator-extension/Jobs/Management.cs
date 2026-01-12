@@ -565,7 +565,7 @@ public class Management : JobBase, IManagementJobExtension
 
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
-                Logger.LogDebug("Handling managment add job for K8SNS secret type '" + KubeSecretType + "(" +
+                Logger.LogDebug("Handling management add job for K8SNS secret type '" + KubeSecretType + "(" +
                                 jobCertObj.Alias + ")'...");
 
                 switch (KubeSecretType)
