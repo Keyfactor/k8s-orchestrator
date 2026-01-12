@@ -205,6 +205,50 @@ the Keyfactor Command Portal
 
    ![K8SCert Custom Fields Tab](docsource/images/K8SCert-custom-fields-store-type-dialog.png)
 
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### KubeNamespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8SCert Custom Field - KubeNamespace](docsource/images/K8SCert-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### KubeSecretName
+   The name of the K8S secret object.
+
+   ![K8SCert Custom Field - KubeSecretName](docsource/images/K8SCert-custom-field-KubeSecretName-dialog.png)
+
+
+
+   ###### KubeSecretType
+   This defaults to and must be `csr`
+
+   ![K8SCert Custom Field - KubeSecretType](docsource/images/K8SCert-custom-field-KubeSecretType-dialog.png)
+
+
+
+
+
    </details>
 </details>
 
@@ -306,6 +350,43 @@ the Keyfactor Command Portal
    The Custom Fields tab should look like this:
 
    ![K8SCluster Custom Fields Tab](docsource/images/K8SCluster-custom-fields-store-type-dialog.png)
+
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Separate Certificate Chain
+   Whether to store the certificate chain separately from the certificate.
+
+   ![K8SCluster Custom Field - SeparateChain](docsource/images/K8SCluster-custom-field-SeparateChain-dialog.png)
+
+
+
+   ###### Include Certificate Chain
+   Whether to include the certificate chain in the certificate.
+
+   ![K8SCluster Custom Field - IncludeCertChain](docsource/images/K8SCluster-custom-field-IncludeCertChain-dialog.png)
+
+
+
+
 
    </details>
 </details>
@@ -419,6 +500,78 @@ the Keyfactor Command Portal
 
    ![K8SJKS Custom Fields Tab](docsource/images/K8SJKS-custom-fields-store-type-dialog.png)
 
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### KubeNamespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8SJKS Custom Field - KubeNamespace](docsource/images/K8SJKS-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### KubeSecretName
+   The name of the K8S secret object.
+
+   ![K8SJKS Custom Field - KubeSecretName](docsource/images/K8SJKS-custom-field-KubeSecretName-dialog.png)
+
+
+
+   ###### KubeSecretType
+   This defaults to and must be `jks`
+
+   ![K8SJKS Custom Field - KubeSecretType](docsource/images/K8SJKS-custom-field-KubeSecretType-dialog.png)
+
+
+
+   ###### CertificateDataFieldName
+
+
+   ![K8SJKS Custom Field - CertificateDataFieldName](docsource/images/K8SJKS-custom-field-CertificateDataFieldName-dialog.png)
+
+
+
+   ###### PasswordFieldName
+
+
+   ![K8SJKS Custom Field - PasswordFieldName](docsource/images/K8SJKS-custom-field-PasswordFieldName-dialog.png)
+
+
+
+   ###### Password Is K8S Secret
+
+
+   ![K8SJKS Custom Field - PasswordIsK8SSecret](docsource/images/K8SJKS-custom-field-PasswordIsK8SSecret-dialog.png)
+
+
+
+   ###### StorePasswordPath
+
+
+   ![K8SJKS Custom Field - StorePasswordPath](docsource/images/K8SJKS-custom-field-StorePasswordPath-dialog.png)
+
+
+
+
+
    </details>
 </details>
 
@@ -522,6 +675,50 @@ the Keyfactor Command Portal
    The Custom Fields tab should look like this:
 
    ![K8SNS Custom Fields Tab](docsource/images/K8SNS-custom-fields-store-type-dialog.png)
+
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Kube Namespace
+
+
+   ![K8SNS Custom Field - KubeNamespace](docsource/images/K8SNS-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### Separate Certificate Chain
+   Whether to store the certificate chain separately from the certificate.
+
+   ![K8SNS Custom Field - SeparateChain](docsource/images/K8SNS-custom-field-SeparateChain-dialog.png)
+
+
+
+   ###### Include Certificate Chain
+   Whether to include the certificate chain in the certificate.
+
+   ![K8SNS Custom Field - IncludeCertChain](docsource/images/K8SNS-custom-field-IncludeCertChain-dialog.png)
+
+
+
+
 
    </details>
 </details>
@@ -635,6 +832,78 @@ the Keyfactor Command Portal
 
    ![K8SPKCS12 Custom Fields Tab](docsource/images/K8SPKCS12-custom-fields-store-type-dialog.png)
 
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Kube Secret Type
+   This defaults to and must be `pkcs12`
+
+   ![K8SPKCS12 Custom Field - KubeSecretType](docsource/images/K8SPKCS12-custom-field-KubeSecretType-dialog.png)
+
+
+
+   ###### CertificateDataFieldName
+
+
+   ![K8SPKCS12 Custom Field - CertificateDataFieldName](docsource/images/K8SPKCS12-custom-field-CertificateDataFieldName-dialog.png)
+
+
+
+   ###### Password Field Name
+
+
+   ![K8SPKCS12 Custom Field - PasswordFieldName](docsource/images/K8SPKCS12-custom-field-PasswordFieldName-dialog.png)
+
+
+
+   ###### Password Is K8S Secret
+
+
+   ![K8SPKCS12 Custom Field - PasswordIsK8SSecret](docsource/images/K8SPKCS12-custom-field-PasswordIsK8SSecret-dialog.png)
+
+
+
+   ###### Kube Namespace
+
+
+   ![K8SPKCS12 Custom Field - KubeNamespace](docsource/images/K8SPKCS12-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### Kube Secret Name
+
+
+   ![K8SPKCS12 Custom Field - KubeSecretName](docsource/images/K8SPKCS12-custom-field-KubeSecretName-dialog.png)
+
+
+
+   ###### StorePasswordPath
+
+
+   ![K8SPKCS12 Custom Field - StorePasswordPath](docsource/images/K8SPKCS12-custom-field-StorePasswordPath-dialog.png)
+
+
+
+
+
    </details>
 </details>
 
@@ -739,6 +1008,64 @@ the Keyfactor Command Portal
    The Custom Fields tab should look like this:
 
    ![K8SSecret Custom Fields Tab](docsource/images/K8SSecret-custom-fields-store-type-dialog.png)
+
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### KubeNamespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8SSecret Custom Field - KubeNamespace](docsource/images/K8SSecret-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### KubeSecretName
+   The name of the K8S secret object.
+
+   ![K8SSecret Custom Field - KubeSecretName](docsource/images/K8SSecret-custom-field-KubeSecretName-dialog.png)
+
+
+
+   ###### KubeSecretType
+   This defaults to and must be `secret`
+
+   ![K8SSecret Custom Field - KubeSecretType](docsource/images/K8SSecret-custom-field-KubeSecretType-dialog.png)
+
+
+
+   ###### Separate Certificate Chain
+   Whether to store the certificate chain separately from the certificate.
+
+   ![K8SSecret Custom Field - SeparateChain](docsource/images/K8SSecret-custom-field-SeparateChain-dialog.png)
+
+
+
+   ###### Include Certificate Chain
+   Whether to include the certificate chain in the certificate.
+
+   ![K8SSecret Custom Field - IncludeCertChain](docsource/images/K8SSecret-custom-field-IncludeCertChain-dialog.png)
+
+
+
+
 
    </details>
 </details>
@@ -845,6 +1172,64 @@ the Keyfactor Command Portal
 
    ![K8STLSSecr Custom Fields Tab](docsource/images/K8STLSSecr-custom-fields-store-type-dialog.png)
 
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### KubeNamespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8STLSSecr Custom Field - KubeNamespace](docsource/images/K8STLSSecr-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### KubeSecretName
+   The name of the K8S secret object.
+
+   ![K8STLSSecr Custom Field - KubeSecretName](docsource/images/K8STLSSecr-custom-field-KubeSecretName-dialog.png)
+
+
+
+   ###### KubeSecretType
+   This defaults to and must be `tls_secret`
+
+   ![K8STLSSecr Custom Field - KubeSecretType](docsource/images/K8STLSSecr-custom-field-KubeSecretType-dialog.png)
+
+
+
+   ###### Separate Certificate Chain
+   Whether to store the certificate chain separately from the certificate.
+
+   ![K8STLSSecr Custom Field - SeparateChain](docsource/images/K8STLSSecr-custom-field-SeparateChain-dialog.png)
+
+
+
+   ###### Include Certificate Chain
+   Whether to include the certificate chain in the certificate.
+
+   ![K8STLSSecr Custom Field - IncludeCertChain](docsource/images/K8STLSSecr-custom-field-IncludeCertChain-dialog.png)
+
+
+
+
+
    </details>
 </details>
 
@@ -853,15 +1238,14 @@ the Keyfactor Command Portal
 
 1. **Download the latest Kubernetes Universal Orchestrator extension from GitHub.**
 
-    Navigate to the [Kubernetes Universal Orchestrator extension GitHub version page](https://github.com/Keyfactor/k8s-orchestrator/releases/latest). Refer to the compatibility matrix below to determine whether the `net6.0` or `net8.0` asset should be downloaded. Then, click the corresponding asset to download the zip archive.
+    Navigate to the [Kubernetes Universal Orchestrator extension GitHub version page](https://github.com/Keyfactor/k8s-orchestrator/releases/latest). Refer to the compatibility matrix below to determine the asset should be downloaded. Then, click the corresponding asset to download the zip archive.
 
    | Universal Orchestrator Version | Latest .NET version installed on the Universal Orchestrator server | `rollForward` condition in `Orchestrator.runtimeconfig.json` | `k8s-orchestrator` .NET version to download |
    | --------- | ----------- | ----------- | ----------- |
    | Older than `11.0.0` | | | `net6.0` |
    | Between `11.0.0` and `11.5.1` (inclusive) | `net6.0` | | `net6.0` |
-   | Between `11.0.0` and `11.5.1` (inclusive) | `net8.0` | `Disable` | `net6.0` |
-   | Between `11.0.0` and `11.5.1` (inclusive) | `net8.0` | `LatestMajor` | `net8.0` |
-   | `11.6` _and_ newer | `net8.0` | | `net8.0` |
+   | Between `11.0.0` and `11.5.1` (inclusive) | `net8.0` | `Disable` | `net6.0` || Between `11.0.0` and `11.5.1` (inclusive) | `net8.0` | `LatestMajor` | `net8.0` |
+   | `11.6` _and_ newer | `net8.0` | | `net8.0` | 
 
     Unzip the archive containing extension assemblies to a known location.
 
@@ -1621,7 +2005,7 @@ Please refer to the **Universal Orchestrator (remote)** usage section ([PAM prov
 </details>
 
 ## Discovering Certificate Stores with the Discovery Job
-**NOTE:** To use discovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` 
+**NOTE:** To use discovery jobs, you must have the store type created in Keyfactor Command and the `needs_server` 
 checkbox *MUST* be checked, if you do not select `needs_server` you will not be able to provide credentials to the 
 discovery job and it will fail.
 
@@ -1656,7 +2040,7 @@ the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`
 
 ### K8SNS Discovery Job
 
-For discovery of K8SNS stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 </details>
@@ -1667,7 +2051,7 @@ namespaces. *This cannot be left blank.*
 
 ### K8SPKCS12 Discovery Job
 
-For discovery of `K8SPKCS12` stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or PKCS12 data. Will use
@@ -1680,7 +2064,7 @@ For discovery of `K8SPKCS12` stores toy can use the following params to filter t
 
 ### K8SSecret Discovery Job
 
-For discovery of K8SNS stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 </details>
@@ -1691,7 +2075,7 @@ For discovery of K8SNS stores toy can use the following params to filter the cer
 
 ### K8STLSSecr Discovery Job
 
-For discovery of K8SNS stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 </details>
