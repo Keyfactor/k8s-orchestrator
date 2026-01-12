@@ -79,7 +79,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
 
         _logger.LogDebug("Adding store to list of serialized stores");
         var filePath = Path.Combine(storePath, storeFileName);
-        _logger.LogDebug("Filepath '{Path}", filePath);
+        _logger.LogDebug("Filepath '{Path}'", filePath);
         storeInfo.Add(new SerializedStoreInfo
         {
             FilePath = filePath,
