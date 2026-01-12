@@ -1215,7 +1215,7 @@ public class KubeCertificateManagerClient
         // Lookup password secret path on cluster to see if it exists
         _logger.LogDebug("Attempting to lookup password secret path on cluster...");
         var splitPasswordPath = passwordSecretPath.Split("/");
-        _logger.LogDebug("Split password secret path: {SplitPasswordPath}", splitPasswordPath.ToString());
+        _logger.LogDebug("Split password secret path: {SplitPasswordPath}", string.Join("/", splitPasswordPath));
         var passwordSecretName = splitPasswordPath[^1];
         var passwordSecretNamespace = splitPasswordPath[0];
         _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
