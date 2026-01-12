@@ -7,7 +7,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -269,7 +268,7 @@ public class KubeCertificateManagerClient
         }
         else if
             (string.IsNullOrEmpty(
-                credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
+                 credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
         {
             _logger.LogWarning(
                 "No config defined in store parameters, using default config. This should never happen!");
@@ -569,37 +568,117 @@ public class KubeCertificateManagerClient
                 if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
 
                 certdataFieldName = fieldName;
-                _logger.LogTrace($"Adding cert '{fieldName}' to existingPkcs12");
+                _logger.LogTrace("Adding cert '{FieldName}' to existingPkcs12", fieldName);
                 if (jobCertificate.PasswordIsK8SSecret)
                 {
+                    _logger.LogDebug("Job certificate password is a K8S secret");
                     if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
                     {
+                        _logger.LogDebug("Job certificate store password path is {StorePasswordPath}",
+                            jobCertificate.StorePasswordPath);
+
+                        _logger.LogDebug("Splitting store password path into namespace and secret name");
                         var passwordPath = jobCertificate.StorePasswordPath.Split("/");
-                        var passwordNamespace = passwordPath[0];
-                        var passwordSecretName = passwordPath[1];
-                        // Get password from k8s secre
+
+                        string passwordNamespace;
+                        string passwordSecretName;
+
+                        if (passwordPath.Length == 1)
+                        {
+                            _logger.LogDebug("Password path length is 1, using KubeNamespace");
+                            passwordNamespace = namespaceName;
+                            _logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
+                            passwordSecretName = passwordPath[0];
+                        }
+                        else
+                        {
+                            _logger.LogDebug(
+                                "Password path length is not 1, using passwordPath[0] and passwordPath[^1]");
+                            passwordNamespace = passwordPath[0];
+                            _logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
+                            passwordSecretName = passwordPath[^1];
+                        }
+
+                        _logger.LogDebug("Password namespace: {PasswordNamespace}", passwordNamespace);
+                        _logger.LogDebug("Password secret name: {PasswordSecretName}", passwordSecretName);
+
                         var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
-                        storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
+                        _logger.LogDebug(
+                            "Successfully read password secret {PasswordSecretName} in namespace {PasswordNamespace}",
+                            passwordSecretName, passwordNamespace);
+
+                        if (k8sPasswordObj?.Data == null)
+                        {
+                            _logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}",
+                                passwordSecretName, passwordNamespace);
+                            throw new InvalidK8SSecretException(
+                                $"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
+                        }
+
+                        _logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
+
+                        if (!k8sPasswordObj.Data.TryGetValue(passwordFieldName, out storePasswordBytes) ||
+                            storePasswordBytes == null)
+                        {
+                            _logger.LogError("Unable to find password field {FieldName}", passwordFieldName);
+                            throw new InvalidK8SSecretException(
+                                $"Unable to find password field '{passwordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
+                            );
+                        }
+
+                        // storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
+                        if (storePasswordBytes == null || storePasswordBytes.Length == 0)
+                        {
+                            _logger.LogError(
+                                "Password field {FieldName} in secret {SecretName} in namespace {Namespace} is empty",
+                                passwordFieldName, passwordSecretName, passwordNamespace);
+                            throw new InvalidK8SSecretException(
+                                $"Password field '{passwordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}' is empty"
+                            );
+                        }
+
                         var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                        _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                            storePasswdString); //TODO: INSECURE COMMENT OUT
                         existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
                             X509KeyStorageFlags.Exportable);
                     }
                     else
                     {
+                        _logger.LogDebug("Job certificate store password path is empty, using existing secret data");
                         storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
+                        if (storePasswordBytes == null || storePasswordBytes.Length == 0)
+                        {
+                            _logger.LogError(
+                                "Password field {FieldName} in secret {SecretName} in namespace {Namespace} is empty",
+                                passwordFieldName, secretName, namespaceName);
+                            throw new InvalidK8SSecretException(
+                                $"Password field '{passwordFieldName}' in secret '{secretName}' in namespace '{namespaceName}' is empty"
+                            );
+                        }
+
+                        _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                            Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
                         existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
                             Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
                 {
+                    _logger.LogDebug(
+                        "Job certificate store password is not empty, using job certificate store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
+                    // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                    //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
                     existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
                         Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
                 else
                 {
+                    _logger.LogDebug("Job certificate store password is empty, using provided store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
+                    _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                        Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
                     existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
                         Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
@@ -646,7 +725,10 @@ public class KubeCertificateManagerClient
                             // Certificate not found
                             // add the new certificate to the existingPkcs12
                             var storePasswordString = Encoding.UTF8.GetString(storePasswordBytes);
-                            _logger.LogTrace("Certificate not found, adding the new certificate to the existingPkcs12");
+                            _logger.LogDebug("Certificate not found, adding the new certificate to the existingPkcs12");
+                            // _logger.LogTrace(
+                            //     "Importing jobCertificate.CertBytes into existingPkcs12 with store password: {StorePassword}",
+                            //     storePasswd); //TODO: INSECURE COMMENT OUT
                             existingPkcs12.Import(jobCertificate.Pkcs12, storePasswd, X509KeyStorageFlags.Exportable);
                         }
                     }
@@ -657,15 +739,21 @@ public class KubeCertificateManagerClient
             }
             else
             {
+                _logger.LogDebug("No existing PKCS12 data found, creating new PKCS12 collection");
+                // _logger.LogTrace(
+                //     "Importing jobCertificate.CertBytes into newPkcs12Collection with store password: {StorePassword}",
+                //     storePasswd); //TODO: INSECURE COMMENT OUT
                 newPkcs12Collection.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
                 k8sCollection = newPkcs12Collection;
             }
         }
 
-        _logger.LogTrace("Creating V1Secret object");
+        // _logger.LogDebug("Exporting PKCS12 data to byte array using store password: {StorePassword}",
+        //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
+        var p12Bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
 
-        var p12bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
-
+        _logger.LogDebug("Creating V1Secret object for PKCS12 data with name {SecretName} in namespace {NamespaceName}",
+            secretName, namespaceName);
         var secret = new V1Secret
         {
             ApiVersion = "v1",
@@ -678,20 +766,20 @@ public class KubeCertificateManagerClient
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
-                { certdataFieldName, p12bytes }
+                { certdataFieldName, p12Bytes }
             }
         };
 
         if (existingPkcs12DataObj?.Data != null)
         {
             secret.Data = existingPkcs12DataObj.Data;
-            secret.Data[certdataFieldName] = p12bytes;
+            secret.Data[certdataFieldName] = p12Bytes;
         }
 
         // Convert p12bytes to pkcs12store
         var pkcs12StoreBuilder = new Pkcs12StoreBuilder();
         var pkcs12Store = pkcs12StoreBuilder.Build();
-        pkcs12Store.Load(new MemoryStream(p12bytes), storePasswd.ToCharArray());
+        pkcs12Store.Load(new MemoryStream(p12Bytes), storePasswd.ToCharArray());
 
 
         switch (string.IsNullOrEmpty(storePasswd))
@@ -1123,14 +1211,19 @@ public class KubeCertificateManagerClient
 
     public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
     {
+        _logger.MethodEntry();
         // Lookup password secret path on cluster to see if it exists
         _logger.LogDebug("Attempting to lookup password secret path on cluster...");
         var splitPasswordPath = passwordSecretPath.Split("/");
-        // Assume secret pattern is namespace/secretName
-        var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+        _logger.LogDebug("Split password secret path: {SplitPasswordPath}", splitPasswordPath.ToString());
+        var passwordSecretName = splitPasswordPath[^1];
         var passwordSecretNamespace = splitPasswordPath[0];
-        _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
+            passwordSecretName, passwordSecretNamespace);
         var passwordSecretResponse = Client.CoreV1.ReadNamespacedSecret(secretName, passwordSecretNamespace);
+        _logger.LogDebug("Successfully found secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
+            passwordSecretName, passwordSecretNamespace);
+        _logger.MethodExit();
         return passwordSecretResponse;
     }
 
@@ -1835,7 +1928,6 @@ public class KubeCertificateManagerClient
     private IEnumerable<V1Namespace> FilterNamespaces(IEnumerable<V1Namespace> namespaces, string[] nsList)
     {
         foreach (var nsObj in namespaces)
-        {
             if (nsList.Contains("all") || nsList.Contains(nsObj.Metadata.Name))
             {
                 _logger.LogDebug("Processing namespace: {Namespace}", nsObj.Metadata.Name);
@@ -1845,7 +1937,6 @@ public class KubeCertificateManagerClient
             {
                 _logger.LogDebug("Skipping namespace '{Namespace}' as it does not match filter", nsObj.Metadata.Name);
             }
-        }
     }
 
     private void AddNamespaceLocation(List<string> locations, string clusterName, string namespaceName)
@@ -1864,9 +1955,7 @@ public class KubeCertificateManagerClient
             Client.CoreV1.ListNamespacedSecret(namespaceName).Items);
 
         foreach (var secret in secrets)
-        {
             ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations);
-        }
     }
 
     private void ProcessSecretIfSupported(
@@ -1894,7 +1983,6 @@ public class KubeCertificateManagerClient
         const double maxDelaySeconds = 30.0;
 
         for (var attempt = 1; attempt <= maxRetries; attempt++)
-        {
             try
             {
                 return action();
@@ -1914,7 +2002,6 @@ public class KubeCertificateManagerClient
                     attempt, maxRetries, ex.Message, delay.TotalSeconds);
                 Thread.Sleep(delay);
             }
-        }
 
         throw new InvalidOperationException("Unexpected error in retry logic."); // This will never be reached
     }
@@ -2006,28 +2093,6 @@ public class KubeCertificateManagerClient
             _logger.LogDebug("Allowed key {Key} found in secret. Parsing secret as needed.", dataKey);
             // Further processing logic here if required
         }
-    }
-
-    public struct JksSecret
-    {
-        public string SecretPath;
-        public string SecretFieldName;
-        public V1Secret Secret;
-        public string Password;
-        public string PasswordPath;
-        public List<string> AllowedKeys;
-        public Dictionary<string, byte[]> Inventory;
-    }
-
-    public struct Pkcs12Secret
-    {
-        public string SecretPath;
-        public string SecretFieldName;
-        public V1Secret Secret;
-        public string Password;
-        public string PasswordPath;
-        public List<string> AllowedKeys;
-        public Dictionary<string, byte[]> Inventory;
     }
 
     public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null,
@@ -2342,6 +2407,28 @@ public class KubeCertificateManagerClient
 
         // Replace existing secret
         return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+    }
+
+    public struct JksSecret
+    {
+        public string SecretPath;
+        public string SecretFieldName;
+        public V1Secret Secret;
+        public string Password;
+        public string PasswordPath;
+        public List<string> AllowedKeys;
+        public Dictionary<string, byte[]> Inventory;
+    }
+
+    public struct Pkcs12Secret
+    {
+        public string SecretPath;
+        public string SecretFieldName;
+        public V1Secret Secret;
+        public string Password;
+        public string PasswordPath;
+        public List<string> AllowedKeys;
+        public Dictionary<string, byte[]> Inventory;
     }
 
     public struct CsrObject
