@@ -1328,11 +1328,11 @@ public abstract class JobBase
 
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
-        Logger.LogTrace("K8S Store Password show new lines: {StorePassword}", storePassword.Replace("\n","\\n"));
+        // Logger.LogTrace("K8S Store Password show new lines: {StorePassword}", storePassword.Replace("\n","\\n")); // Removed insecure logging
         // remove any trailing new line characters from the string
         storePassword = storePassword.TrimEnd('\r','\n');
-        Logger.LogTrace("Store password bytes converted to string: {StorePassword}",
-            storePassword); //TODO: INSECURE COMMENT OUT
+        // Logger.LogTrace("Store password bytes converted to string: {StorePassword}", storePassword); // Removed insecure logging
+        
         Logger.MethodExit();
         return storePassword;
     }
