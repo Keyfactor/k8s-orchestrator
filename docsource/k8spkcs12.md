@@ -9,7 +9,7 @@ should all require unique credentials.*
 
 ## Discovery Job Configuration
 
-For discovery of `K8SPKCS12` stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or PKCS12 data. Will use
