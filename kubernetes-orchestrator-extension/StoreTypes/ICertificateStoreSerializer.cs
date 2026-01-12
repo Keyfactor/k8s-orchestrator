@@ -9,14 +9,14 @@ using System.Collections.Generic;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Org.BouncyCastle.Pkcs;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes
+namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes;
+
+internal interface ICertificateStoreSerializer
 {
-    interface ICertificateStoreSerializer
-    {
-        Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword);
+    Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword);
 
-        List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath, string storeFileName, string storePassword);
+    List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
+        string storeFileName, string storePassword);
 
-        string GetPrivateKeyPath();
-    }
+    string GetPrivateKeyPath();
 }
