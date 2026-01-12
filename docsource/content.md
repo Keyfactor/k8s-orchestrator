@@ -37,7 +37,7 @@ information on the required permissions, see the [service account setup guide](.
 
 ## Discovery
 
-**NOTE:** To use discovery jobs, you must have the story type created in Keyfactor Command and the `needs_server` 
+**NOTE:** To use discovery jobs, you must have the store type created in Keyfactor Command and the `needs_server` 
 checkbox *MUST* be checked, if you do not select `needs_server` you will not be able to provide credentials to the 
 discovery job and it will fail.
 
