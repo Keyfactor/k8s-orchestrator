@@ -923,7 +923,7 @@ public abstract class JobBase
                 StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
                     ? storeProperties["StorePasswordPath"]
                     : "";
-                Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath); // TODO: Remove this it's insecure
+                // Logger.LogTrace("StorePasswordPath: {StorePasswordPath}", StorePasswordPath); // TODO: Remove this it's insecure
 
                 Logger.LogDebug("Parsing 'PasswordIsK8SSecret' from store properties");
                 PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") &&

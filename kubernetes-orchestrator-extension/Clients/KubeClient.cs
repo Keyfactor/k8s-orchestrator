@@ -638,8 +638,8 @@ public class KubeCertificateManagerClient
                         }
 
                         var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                            storePasswdString); //TODO: INSECURE COMMENT OUT
+                        // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                        //     storePasswdString); //TODO: INSECURE COMMENT OUT
                         existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
                             X509KeyStorageFlags.Exportable);
                     }
@@ -657,8 +657,8 @@ public class KubeCertificateManagerClient
                             );
                         }
 
-                        _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                            Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
+                        // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                        //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
                         existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
                             Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                     }
@@ -677,8 +677,8 @@ public class KubeCertificateManagerClient
                 {
                     _logger.LogDebug("Job certificate store password is empty, using provided store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                        Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
+                    // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
+                    //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
                     existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
                         Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
                 }
