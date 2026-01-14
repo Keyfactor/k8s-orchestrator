@@ -948,13 +948,13 @@ public class KubeCertificateManagerClient
 
     public V1Secret CreateOrUpdateCertificateStoreSecret(string keyPem, string certPem, List<string> chainPem,
         string secretName,
-        string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove = false)
+        string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove = false, bool separateChain = true)
     {
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
 
         _logger.LogDebug($"Attempting to create new secret {secretName} in namespace {namespaceName}");
         _logger.LogTrace("Calling CreateNewSecret()");
-        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, chainPem, secretType);
+        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, chainPem, secretType, separateChain);
         _logger.LogTrace("Finished calling CreateNewSecret()");
 
         _logger.LogTrace("Entering try/catch block to create secret...");
@@ -1277,7 +1277,7 @@ public class KubeCertificateManagerClient
     }
 
     private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem,
-        List<string> chainPem, string secretType, bool separateChain = false)
+        List<string> chainPem, string secretType, bool separateChain = true)
     {
         _logger.LogTrace("Entered CreateNewSecret()");
         _logger.LogDebug("Attempting to create new secret...");

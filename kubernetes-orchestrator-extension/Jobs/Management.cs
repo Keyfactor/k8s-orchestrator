@@ -450,7 +450,7 @@ public class Management : JobBase, IManagementJobExtension
 
         var keyPem = certObj.PrivateKeyPem;
         if (!string.IsNullOrEmpty(keyPem)) keyPems = new[] { keyPem };
-
+        
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
             certObj.PrivateKeyPem,
@@ -460,7 +460,9 @@ public class Management : JobBase, IManagementJobExtension
             KubeNamespace,
             "tls_secret",
             append,
-            overwrite
+            overwrite,
+            false,
+            SeparateChain
         );
         if (createResponse == null)
             Logger.LogError("createResponse is null");

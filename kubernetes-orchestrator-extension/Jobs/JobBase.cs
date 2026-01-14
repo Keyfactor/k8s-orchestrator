@@ -738,6 +738,11 @@ public abstract class JobBase
                 Logger.LogDebug("KubeSecretKey not found in store properties");
                 CertificateDataFieldName = "";
             }
+            
+            if (storeProperties.ContainsKey("SeparateChain"))
+            {
+                SeparateChain = storeProperties["SeparateChain"];
+            }
         }
         catch (Exception)
         {
