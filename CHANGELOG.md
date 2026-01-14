@@ -5,6 +5,8 @@
 on missing or invalid secret field name. 
 - fix(storetypes): `K8SJKS` where JKS files created using Keytool v20+ will be recognized as JKS files.
 - fix(storetypes): `K8SJKS` and `K8SPKCS12` store/buddy passwords ending with a `\n` character will be trimmed to not include the newline.
+- fix(storetypes): All store-types now support `IncludeCertChain` parameter. This defaults to `true`.
+- fix(storetypes): `K8STLSSECR` and `K8SSecret` support `SeparateChain` property. This defaults to `false`.
 
 ## Chores:
 - chore(docs): Update documentation format
