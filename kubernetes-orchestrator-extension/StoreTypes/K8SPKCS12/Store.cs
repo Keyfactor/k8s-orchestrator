@@ -97,7 +97,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
 
     public byte[] CreateOrUpdatePkcs12(byte[] newPkcs12Bytes, string newCertPassword, string alias,
         byte[] existingStore = null, string existingStorePassword = null,
-        bool remove = false)
+        bool remove = false, bool includeChain = true)
     {
         _logger.MethodEntry(LogLevel.Debug);
 
@@ -204,6 +204,15 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
 
                 _logger.LogDebug("Attempting to parse certificate chain for alias {Alias}", al);
                 var certificateChain = newCert.GetCertificateChain(al);
+                if (!includeChain)
+                {
+                    _logger.LogDebug("includeChain is false, reducing certificate chain to only the end-entity certificate");
+                    // If includeChain is false, reduce certificate chain to only the end-entity certificate
+                    certificateChain =
+                    [
+                        new X509CertificateEntry(certificateChain[0].Certificate)
+                    ];
+                }
                 _logger.LogDebug("Certificate chain parsed for alias {Alias}", al);
                 if (createdNewStore)
                 {

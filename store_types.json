@@ -150,15 +150,6 @@
         "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
       },
       {
-        "Name": "SeparateChain",
-        "DisplayName": "Separate Chain",
-        "Type": "Bool",
-        "DependsOn": null,
-        "DefaultValue": "false",
-        "Required": false,
-        "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
-      },
-      {
         "Name": "StorePasswordPath",
         "DisplayName": "StorePasswordPath",
         "Description": "The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>`",
@@ -314,15 +305,6 @@
         "DefaultValue": "true",
         "Required": false,
         "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
-      },
-      {
-        "Name": "SeparateChain",
-        "DisplayName": "Separate Chain",
-        "Type": "Bool",
-        "DependsOn": null,
-        "DefaultValue": "false",
-        "Required": false,
-        "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
       },
       {
         "Name": "KubeSecretKey",

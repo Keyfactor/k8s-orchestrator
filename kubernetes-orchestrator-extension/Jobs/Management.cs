@@ -251,7 +251,7 @@ public class Management : JobBase, IManagementJobExtension
         try
         {
             var newJksStore = jksStore.CreateOrUpdateJks(newCertBytes, config.JobCertificate?.PrivateKeyPassword, alias,
-                existingData, sPass, remove);
+                existingData, sPass, remove, IncludeCertChain);
             if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
             {
                 Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");

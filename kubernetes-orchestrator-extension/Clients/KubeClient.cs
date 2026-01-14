@@ -465,7 +465,7 @@ public class KubeCertificateManagerClient
                 _logger.LogDebug("Attempting to lookup password secret path on cluster...");
                 var splitPasswordPath = passwordSecretPath.Split("/");
                 // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                var passwordSecretName = splitPasswordPath[^1];
                 var passwordSecretNamespace = splitPasswordPath[0];
                 _logger.LogDebug(
                     $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
@@ -805,7 +805,7 @@ public class KubeCertificateManagerClient
                 _logger.LogDebug("Attempting to lookup password secret path on cluster...");
                 var splitPasswordPath = passwordSecretPath.Split("/");
                 // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                var passwordSecretName = splitPasswordPath[^1];
                 var passwordSecretNamespace = splitPasswordPath[0];
                 _logger.LogDebug(
                     $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
@@ -948,13 +948,13 @@ public class KubeCertificateManagerClient
 
     public V1Secret CreateOrUpdateCertificateStoreSecret(string keyPem, string certPem, List<string> chainPem,
         string secretName,
-        string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove = false, bool separateChain = true)
+        string namespaceName, string secretType, bool append = false, bool overwrite = false, bool remove = false, bool separateChain = true, bool includeChain = true)
     {
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
 
         _logger.LogDebug($"Attempting to create new secret {secretName} in namespace {namespaceName}");
         _logger.LogTrace("Calling CreateNewSecret()");
-        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, chainPem, secretType, separateChain);
+        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, chainPem, secretType, separateChain, includeChain);
         _logger.LogTrace("Finished calling CreateNewSecret()");
 
         _logger.LogTrace("Entering try/catch block to create secret...");
@@ -1041,27 +1041,6 @@ public class KubeCertificateManagerClient
             throw new Exception("Error attempting to add certficate for store path=StorePath, file name=StoreFileName.",
                 ex);
         }
-    }
-
-    public X509Certificate2Collection CreatePKCS12Collection(X509Certificate2Collection certificateCollection,
-        string currentPassword, string newPassword)
-    {
-        // Iterate over the certificates in the collection
-        foreach (var certificate in certificateCollection)
-        {
-            // Export the private key to a byte array
-            var privateKeyBytes = certificate.Export(X509ContentType.Pkcs12, currentPassword);
-
-            // Import the private key with the new password
-            var newCertificate = new X509Certificate2(privateKeyBytes, newPassword, X509KeyStorageFlags.Exportable);
-
-            // Replace the certificate in the collection with the new certificate
-            var index = certificateCollection.IndexOf(certificate);
-            certificateCollection.RemoveAt(index);
-            certificateCollection.Insert(index, newCertificate);
-        }
-
-        return certificateCollection;
     }
 
     private V1Secret CreateOrUpdatePKCS12Secret(string secretName, string namespaceName, K8SJobCertificate certObj,
@@ -1277,7 +1256,7 @@ public class KubeCertificateManagerClient
     }
 
     private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem,
-        List<string> chainPem, string secretType, bool separateChain = true)
+        List<string> chainPem, string secretType, bool separateChain = true, bool includeChain = true)
     {
         _logger.LogTrace("Entered CreateNewSecret()");
         _logger.LogDebug("Attempting to create new secret...");
@@ -1346,7 +1325,7 @@ public class KubeCertificateManagerClient
                     $"Secret type {secretType} not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.");
         }
 
-        if (chainPem is { Count: > 0 })
+        if (chainPem is { Count: > 0 } && includeChain)
         {
             var caCert = chainPem.Where(cer => cer != certPem).Aggregate("", (current, cer) => current + cer);
             if (separateChain)

@@ -207,56 +207,15 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         return null;
     }
 
-    // public JksStore ConvertPkcs12toJks(byte[] jksBytes, string jksPassword, byte[] pkcs12Bytes, string pkcs12Password)
-    // {
-    //     // Attempt to load JKS store as JksStore
-    //     var jksStore = new JksStore();
-    //     try
-    //     {
-    //         _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'", jksPassword ?? "null");
-    //         using (var ms = new MemoryStream(jksBytes))
-    //         {
-    //             jksStore.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
-    //         }
-    //         _logger.LogDebug("JKS store loaded");
-    //     }
-    //     catch (Exception ex)
-    //     {
-    //         _logger.LogError("Error loading JKS store: {Ex}", ex.Message);
-    //         // Attempt to read JKS store as Pkcs12Store
-    //         try
-    //         {
-    //             _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password '{Pass}'", jksPassword ?? "null");
-    //             var pkcs12Store = new Pkcs12StoreBuilder().Build();
-    //             using (var ms = new MemoryStream(jksBytes))
-    //             {
-    //                 pkcs12Store.Load(ms, string.IsNullOrEmpty(jksPassword) ? Array.Empty<char>() : jksPassword.ToCharArray());
-    //             }
-    //             _logger.LogDebug("JKS store loaded as Pkcs12Store");
-    //             // return pkcs12Store;
-    //             throw new JkSisPkcs12Exception("JKS store is actually a Pkcs12Store");
-    //         }
-    //         catch (Exception ex2)
-    //         {
-    //             _logger.LogError("Error loading JKS store as Jks or Pkcs12Store: {Ex}", ex2.Message);
-    //             throw;
-    //         }
-    //     }
-    //     
-    // }
-
     public byte[] CreateOrUpdateJks(byte[] newPkcs12Bytes, string newCertPassword, string alias,
         byte[] existingStore = null, string existingStorePassword = null,
-        bool remove = false)
+        bool remove = false, bool includeChain = true)
     {
         _logger.MethodEntry();
         // If existingStore is null, create a new store
         var existingJksStore = new JksStore();
         var newJksStore = new JksStore();
         var createdNewStore = false;
-
-        var hashedNewCertPassword = GetSha256Hash(newCertPassword);
-        var hashedExistingStorePassword = GetSha256Hash(existingStorePassword);
 
         _logger.LogTrace("alias: {Alias}", alias);
         // _logger.LogTrace("newCertPassword: {Pass}",
@@ -380,6 +339,15 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                 var keyEntry = newCert.GetKey(al);
                 _logger.LogDebug("Getting certificate chain for alias '{Alias}'", al);
                 var certificateChain = newCert.GetCertificateChain(al);
+                if (!includeChain)
+                {
+                    _logger.LogDebug("includeChain is false, reducing certificate chain to only the end-entity certificate");
+                    // If includeChain is false, reduce certificate chain to only the end-entity certificate
+                    certificateChain =
+                    [
+                        new X509CertificateEntry(certificateChain[0].Certificate)
+                    ];
+                }
 
                 _logger.LogDebug("Creating certificate list from certificate chain");
                 var certificates = certificateChain.Select(certificateEntry => certificateEntry.Certificate).ToList();
@@ -448,13 +416,5 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         // Return existingJksStore as byte[]
         _logger.MethodExit();
         return outStream.ToArray();
-    }
-
-    private static string GetSha256Hash(string input)
-    {
-        if (string.IsNullOrEmpty(input)) return null;
-        var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
-        var passwordHash = BitConverter.ToString(passwordHashBytes).Replace("-", "").ToLower();
-        return passwordHash;
     }
 }
