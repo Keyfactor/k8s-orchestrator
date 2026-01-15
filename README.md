@@ -75,9 +75,9 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 This integration is compatible with Keyfactor Universal Orchestrator version 12.4 and later.
 
 ## Support
-The Kubernetes Universal Orchestrator extension is community open source and there is **no SLA**. Keyfactor will address issues as resources become available.
+The Kubernetes Universal Orchestrator extension is supported by Keyfactor. If you require support for any issues or have feature request, please open a support ticket by either contacting your Keyfactor representative or via the Keyfactor Support Portal at https://support.keyfactor.com.
 
-> To report a problem or suggest a new feature, use the **[Issues](../../issues)** tab. If you want to contribute bug fixes or additional enhancements, use the **[Pull requests](../../pulls)** tab.
+> If you want to contribute bug fixes or additional enhancements, use the **[Pull requests](../../pulls)** tab.
 
 ## Requirements & Prerequisites
 
@@ -342,14 +342,28 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
+   | SeparateChain | Separate Chain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. | Bool | false | 🔲 Unchecked |
    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
-   | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8SCluster Custom Fields Tab](docsource/images/K8SCluster-custom-fields-store-type-dialog.png)
+
+
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
+
+   ![K8SCluster Custom Field - IncludeCertChain](docsource/images/K8SCluster-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### Separate Chain
+   Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
+
+   ![K8SCluster Custom Field - SeparateChain](docsource/images/K8SCluster-custom-field-SeparateChain-dialog.png)
+
 
 
    ###### Server Username
@@ -369,20 +383,6 @@ the Keyfactor Command Portal
    > [!IMPORTANT]
    > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
 
-
-
-
-   ###### Separate Certificate Chain
-   Whether to store the certificate chain separately from the certificate.
-
-   ![K8SCluster Custom Field - SeparateChain](docsource/images/K8SCluster-custom-field-SeparateChain-dialog.png)
-
-
-
-   ###### Include Certificate Chain
-   Whether to include the certificate chain in the certificate.
-
-   ![K8SCluster Custom Field - IncludeCertChain](docsource/images/K8SCluster-custom-field-IncludeCertChain-dialog.png)
 
 
 
@@ -486,39 +486,20 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
    | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
-   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String | None | 🔲 Unchecked |
    | KubeSecretType | KubeSecretType | This defaults to and must be `jks` | String | jks | ✅ Checked |
-   | CertificateDataFieldName | CertificateDataFieldName |  | String | .jks | ✅ Checked |
-   | PasswordFieldName | PasswordFieldName |  | String | password | 🔲 Unchecked |
-   | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
-   | StorePasswordPath | StorePasswordPath |  | String |  | 🔲 Unchecked |
+   | CertificateDataFieldName | CertificateDataFieldName | The field name to use when looking for certificate data in the K8S secret. | String | None | 🔲 Unchecked |
+   | PasswordFieldName | PasswordFieldName | The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. | String | password | 🔲 Unchecked |
+   | PasswordIsK8SSecret | PasswordIsK8SSecret | Indicates whether the password to the JKS keystore is stored in a separate K8S secret. | Bool | false | 🔲 Unchecked |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
+   | StorePasswordPath | StorePasswordPath | The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>` | String | None | 🔲 Unchecked |
+   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8SJKS Custom Fields Tab](docsource/images/K8SJKS-custom-fields-store-type-dialog.png)
-
-
-   ###### Server Username
-   This should be no value or `kubeconfig`
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
-
-
-   ###### Server Password
-   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
 
 
    ###### KubeNamespace
@@ -543,30 +524,57 @@ the Keyfactor Command Portal
 
 
    ###### CertificateDataFieldName
-
+   The field name to use when looking for certificate data in the K8S secret.
 
    ![K8SJKS Custom Field - CertificateDataFieldName](docsource/images/K8SJKS-custom-field-CertificateDataFieldName-dialog.png)
 
 
 
    ###### PasswordFieldName
-
+   The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.
 
    ![K8SJKS Custom Field - PasswordFieldName](docsource/images/K8SJKS-custom-field-PasswordFieldName-dialog.png)
 
 
 
-   ###### Password Is K8S Secret
-
+   ###### PasswordIsK8SSecret
+   Indicates whether the password to the JKS keystore is stored in a separate K8S secret.
 
    ![K8SJKS Custom Field - PasswordIsK8SSecret](docsource/images/K8SJKS-custom-field-PasswordIsK8SSecret-dialog.png)
 
 
 
-   ###### StorePasswordPath
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
+   ![K8SJKS Custom Field - IncludeCertChain](docsource/images/K8SJKS-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### StorePasswordPath
+   The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>`
 
    ![K8SJKS Custom Field - StorePasswordPath](docsource/images/K8SJKS-custom-field-StorePasswordPath-dialog.png)
+
+
+
+   ###### Server Username
+   This should be no value or `kubeconfig`
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
 
 
 
@@ -666,15 +674,36 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
+   | KubeNamespace | Kube Namespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
+   | SeparateChain | Separate Chain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. | Bool | false | 🔲 Unchecked |
    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | KubeNamespace | Kube Namespace |  | String | default | 🔲 Unchecked |
-   | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
-   | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8SNS Custom Fields Tab](docsource/images/K8SNS-custom-fields-store-type-dialog.png)
+
+
+   ###### Kube Namespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8SNS Custom Field - KubeNamespace](docsource/images/K8SNS-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
+
+   ![K8SNS Custom Field - IncludeCertChain](docsource/images/K8SNS-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### Separate Chain
+   Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
+
+   ![K8SNS Custom Field - SeparateChain](docsource/images/K8SNS-custom-field-SeparateChain-dialog.png)
+
 
 
    ###### Server Username
@@ -694,27 +723,6 @@ the Keyfactor Command Portal
    > [!IMPORTANT]
    > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
 
-
-
-
-   ###### Kube Namespace
-
-
-   ![K8SNS Custom Field - KubeNamespace](docsource/images/K8SNS-custom-field-KubeNamespace-dialog.png)
-
-
-
-   ###### Separate Certificate Chain
-   Whether to store the certificate chain separately from the certificate.
-
-   ![K8SNS Custom Field - SeparateChain](docsource/images/K8SNS-custom-field-SeparateChain-dialog.png)
-
-
-
-   ###### Include Certificate Chain
-   Whether to include the certificate chain in the certificate.
-
-   ![K8SNS Custom Field - IncludeCertChain](docsource/images/K8SNS-custom-field-IncludeCertChain-dialog.png)
 
 
 
@@ -818,19 +826,62 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | KubeSecretType | Kube Secret Type | This defaults to and must be `pkcs12` | String | pkcs12 | ✅ Checked |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
    | CertificateDataFieldName | CertificateDataFieldName |  | String | .p12 | ✅ Checked |
-   | PasswordFieldName | Password Field Name |  | String | password | 🔲 Unchecked |
-   | PasswordIsK8SSecret | Password Is K8S Secret |  | Bool | false | 🔲 Unchecked |
-   | KubeNamespace | Kube Namespace |  | String | default | 🔲 Unchecked |
-   | KubeSecretName | Kube Secret Name |  | String |  | 🔲 Unchecked |
-   | StorePasswordPath | StorePasswordPath |  | String |  | 🔲 Unchecked |
+   | PasswordFieldName | Password Field Name | The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. | String | password | 🔲 Unchecked |
+   | PasswordIsK8SSecret | Password Is K8S Secret | Indicates whether the password to the PKCS12 keystore is stored in a separate K8S secret object. | Bool | false | 🔲 Unchecked |
+   | KubeNamespace | Kube Namespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
+   | KubeSecretName | Kube Secret Name | The name of the K8S secret object. | String | None | 🔲 Unchecked |
+   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
+   | KubeSecretType | Kube Secret Type | This defaults to and must be `pkcs12` | String | pkcs12 | ✅ Checked |
+   | StorePasswordPath | StorePasswordPath | The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>` | String | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8SPKCS12 Custom Fields Tab](docsource/images/K8SPKCS12-custom-fields-store-type-dialog.png)
+
+
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
+
+   ![K8SPKCS12 Custom Field - IncludeCertChain](docsource/images/K8SPKCS12-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### CertificateDataFieldName
+
+
+   ![K8SPKCS12 Custom Field - CertificateDataFieldName](docsource/images/K8SPKCS12-custom-field-CertificateDataFieldName-dialog.png)
+
+
+
+   ###### Password Field Name
+   The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.
+
+   ![K8SPKCS12 Custom Field - PasswordFieldName](docsource/images/K8SPKCS12-custom-field-PasswordFieldName-dialog.png)
+
+
+
+   ###### Password Is K8S Secret
+   Indicates whether the password to the PKCS12 keystore is stored in a separate K8S secret object.
+
+   ![K8SPKCS12 Custom Field - PasswordIsK8SSecret](docsource/images/K8SPKCS12-custom-field-PasswordIsK8SSecret-dialog.png)
+
+
+
+   ###### Kube Namespace
+   The K8S namespace to use to manage the K8S secret object.
+
+   ![K8SPKCS12 Custom Field - KubeNamespace](docsource/images/K8SPKCS12-custom-field-KubeNamespace-dialog.png)
+
+
+
+   ###### Kube Secret Name
+   The name of the K8S secret object.
+
+   ![K8SPKCS12 Custom Field - KubeSecretName](docsource/images/K8SPKCS12-custom-field-KubeSecretName-dialog.png)
+
 
 
    ###### Server Username
@@ -860,43 +911,8 @@ the Keyfactor Command Portal
 
 
 
-   ###### CertificateDataFieldName
-
-
-   ![K8SPKCS12 Custom Field - CertificateDataFieldName](docsource/images/K8SPKCS12-custom-field-CertificateDataFieldName-dialog.png)
-
-
-
-   ###### Password Field Name
-
-
-   ![K8SPKCS12 Custom Field - PasswordFieldName](docsource/images/K8SPKCS12-custom-field-PasswordFieldName-dialog.png)
-
-
-
-   ###### Password Is K8S Secret
-
-
-   ![K8SPKCS12 Custom Field - PasswordIsK8SSecret](docsource/images/K8SPKCS12-custom-field-PasswordIsK8SSecret-dialog.png)
-
-
-
-   ###### Kube Namespace
-
-
-   ![K8SPKCS12 Custom Field - KubeNamespace](docsource/images/K8SPKCS12-custom-field-KubeNamespace-dialog.png)
-
-
-
-   ###### Kube Secret Name
-
-
-   ![K8SPKCS12 Custom Field - KubeSecretName](docsource/images/K8SPKCS12-custom-field-KubeSecretName-dialog.png)
-
-
-
    ###### StorePasswordPath
-
+   The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>`
 
    ![K8SPKCS12 Custom Field - StorePasswordPath](docsource/images/K8SPKCS12-custom-field-StorePasswordPath-dialog.png)
 
@@ -997,37 +1013,17 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String |  | 🔲 Unchecked |
-   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+   | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | None | 🔲 Unchecked |
+   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String | None | 🔲 Unchecked |
    | KubeSecretType | KubeSecretType | This defaults to and must be `secret` | String | secret | ✅ Checked |
-   | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
-   | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
+   | SeparateChain | Separate Chain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. | Bool | false | 🔲 Unchecked |
+   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8SSecret Custom Fields Tab](docsource/images/K8SSecret-custom-fields-store-type-dialog.png)
-
-
-   ###### Server Username
-   This should be no value or `kubeconfig`
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
-
-
-   ###### Server Password
-   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
 
 
    ###### KubeNamespace
@@ -1051,17 +1047,37 @@ the Keyfactor Command Portal
 
 
 
-   ###### Separate Certificate Chain
-   Whether to store the certificate chain separately from the certificate.
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
+
+   ![K8SSecret Custom Field - IncludeCertChain](docsource/images/K8SSecret-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### Separate Chain
+   Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8SSecret Custom Field - SeparateChain](docsource/images/K8SSecret-custom-field-SeparateChain-dialog.png)
 
 
 
-   ###### Include Certificate Chain
-   Whether to include the certificate chain in the certificate.
+   ###### Server Username
+   This should be no value or `kubeconfig`
 
-   ![K8SSecret Custom Field - IncludeCertChain](docsource/images/K8SSecret-custom-field-IncludeCertChain-dialog.png)
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
 
 
 
@@ -1160,37 +1176,17 @@ the Keyfactor Command Portal
 
    | Name | Display Name | Description | Type | Default Value/Options | Required |
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
-   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
-   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String |  | 🔲 Unchecked |
-   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
+   | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | None | 🔲 Unchecked |
+   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String | None | 🔲 Unchecked |
    | KubeSecretType | KubeSecretType | This defaults to and must be `tls_secret` | String | tls_secret | ✅ Checked |
-   | SeparateChain | Separate Certificate Chain | Whether to store the certificate chain separately from the certificate. | Bool | false | 🔲 Unchecked |
-   | IncludeCertChain | Include Certificate Chain | Whether to include the certificate chain in the certificate. | Bool | true | 🔲 Unchecked |
+   | IncludeCertChain | Include Certificate Chain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. | Bool | true | 🔲 Unchecked |
+   | SeparateChain | Separate Chain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. | Bool | false | 🔲 Unchecked |
+   | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
+   | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
    ![K8STLSSecr Custom Fields Tab](docsource/images/K8STLSSecr-custom-fields-store-type-dialog.png)
-
-
-   ###### Server Username
-   This should be no value or `kubeconfig`
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
-
-
-   ###### Server Password
-   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
-
-
-   > [!IMPORTANT]
-   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
-
-
 
 
    ###### KubeNamespace
@@ -1214,17 +1210,37 @@ the Keyfactor Command Portal
 
 
 
-   ###### Separate Certificate Chain
-   Whether to store the certificate chain separately from the certificate.
+   ###### Include Certificate Chain
+   Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
+
+   ![K8STLSSecr Custom Field - IncludeCertChain](docsource/images/K8STLSSecr-custom-field-IncludeCertChain-dialog.png)
+
+
+
+   ###### Separate Chain
+   Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8STLSSecr Custom Field - SeparateChain](docsource/images/K8STLSSecr-custom-field-SeparateChain-dialog.png)
 
 
 
-   ###### Include Certificate Chain
-   Whether to include the certificate chain in the certificate.
+   ###### Server Username
+   This should be no value or `kubeconfig`
 
-   ![K8STLSSecr Custom Field - IncludeCertChain](docsource/images/K8STLSSecr-custom-field-IncludeCertChain-dialog.png)
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
+
+
+
+   ###### Server Password
+   The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json
+
+
+   > [!IMPORTANT]
+   > This field is created by the `Needs Server` on the Basic tab, do not create this field manually.
+
 
 
 
@@ -1302,7 +1318,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SCert" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
    | ServerUsername | This should be no value or `kubeconfig` |
@@ -1332,7 +1348,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
    | --------- | ----------- |
    | Category | Select "K8SCert" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
    | Properties.ServerUsername | This should be no value or `kubeconfig` |
@@ -1403,13 +1419,13 @@ have specific keys in the Kubernetes secret.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SCluster" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCluster` certificates. Specifically, one with the `K8SCluster` capability. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
    | ServerUsername | This should be no value or `kubeconfig` |
    | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | IncludeCertChain | Whether to include the certificate chain in the certificate. |
 
 </details>
 
@@ -1432,13 +1448,13 @@ have specific keys in the Kubernetes secret.
    | --------- | ----------- |
    | Category | Select "K8SCluster" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCluster` certificates. Specifically, one with the `K8SCluster` capability. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
    | Properties.ServerUsername | This should be no value or `kubeconfig` |
    | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | Properties.SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | Properties.IncludeCertChain | Whether to include the certificate chain in the certificate. |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1506,19 +1522,20 @@ the certificate alias in the `jks` data store.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SJKS" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Store Password | Password to use when reading/writing to store |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SJKS` certificates. Specifically, one with the `K8SJKS` capability. |
-   | ServerUsername | This should be no value or `kubeconfig` |
-   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | KubeSecretName | The name of the K8S secret object. |
    | KubeSecretType | This defaults to and must be `jks` |
-   | CertificateDataFieldName |  |
-   | PasswordFieldName |  |
-   | PasswordIsK8SSecret |  |
-   | StorePasswordPath |  |
+   | CertificateDataFieldName | The field name to use when looking for certificate data in the K8S secret. |
+   | PasswordFieldName | The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. |
+   | PasswordIsK8SSecret | Indicates whether the password to the JKS keystore is stored in a separate K8S secret. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | StorePasswordPath | The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>` |
+   | ServerUsername | This should be no value or `kubeconfig` |
+   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 </details>
 
@@ -1541,19 +1558,20 @@ the certificate alias in the `jks` data store.
    | --------- | ----------- |
    | Category | Select "K8SJKS" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Store Password | Password to use when reading/writing to store |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SJKS` certificates. Specifically, one with the `K8SJKS` capability. |
-   | Properties.ServerUsername | This should be no value or `kubeconfig` |
-   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | Properties.KubeSecretName | The name of the K8S secret object. |
    | Properties.KubeSecretType | This defaults to and must be `jks` |
-   | Properties.CertificateDataFieldName |  |
-   | Properties.PasswordFieldName |  |
-   | Properties.PasswordIsK8SSecret |  |
-   | Properties.StorePasswordPath |  |
+   | Properties.CertificateDataFieldName | The field name to use when looking for certificate data in the K8S secret. |
+   | Properties.PasswordFieldName | The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. |
+   | Properties.PasswordIsK8SSecret | Indicates whether the password to the JKS keystore is stored in a separate K8S secret. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.StorePasswordPath | The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>` |
+   | Properties.ServerUsername | This should be no value or `kubeconfig` |
+   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1619,14 +1637,14 @@ have specific keys in the Kubernetes secret.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SNS" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SNS` certificates. Specifically, one with the `K8SNS` capability. |
+   | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
    | ServerUsername | This should be no value or `kubeconfig` |
    | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | KubeNamespace |  |
-   | SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | IncludeCertChain | Whether to include the certificate chain in the certificate. |
 
 </details>
 
@@ -1649,14 +1667,14 @@ have specific keys in the Kubernetes secret.
    | --------- | ----------- |
    | Category | Select "K8SNS" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SNS` certificates. Specifically, one with the `K8SNS` capability. |
+   | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
    | Properties.ServerUsername | This should be no value or `kubeconfig` |
    | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | Properties.KubeNamespace |  |
-   | Properties.SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | Properties.IncludeCertChain | Whether to include the certificate chain in the certificate. |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1724,19 +1742,20 @@ the certificate alias in the `pkcs12` data store.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SPKCS12" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Store Password | Password to use when reading/writing to store |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SPKCS12` certificates. Specifically, one with the `K8SPKCS12` capability. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | CertificateDataFieldName |  |
+   | PasswordFieldName | The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. |
+   | PasswordIsK8SSecret | Indicates whether the password to the PKCS12 keystore is stored in a separate K8S secret object. |
+   | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+   | KubeSecretName | The name of the K8S secret object. |
    | ServerUsername | This should be no value or `kubeconfig` |
    | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | KubeSecretType | This defaults to and must be `pkcs12` |
-   | CertificateDataFieldName |  |
-   | PasswordFieldName |  |
-   | PasswordIsK8SSecret |  |
-   | KubeNamespace |  |
-   | KubeSecretName |  |
-   | StorePasswordPath |  |
+   | StorePasswordPath | The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>` |
 
 </details>
 
@@ -1759,19 +1778,20 @@ the certificate alias in the `pkcs12` data store.
    | --------- | ----------- |
    | Category | Select "K8SPKCS12" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Store Password | Password to use when reading/writing to store |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SPKCS12` certificates. Specifically, one with the `K8SPKCS12` capability. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.CertificateDataFieldName |  |
+   | Properties.PasswordFieldName | The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`. |
+   | Properties.PasswordIsK8SSecret | Indicates whether the password to the PKCS12 keystore is stored in a separate K8S secret object. |
+   | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
+   | Properties.KubeSecretName | The name of the K8S secret object. |
    | Properties.ServerUsername | This should be no value or `kubeconfig` |
    | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | Properties.KubeSecretType | This defaults to and must be `pkcs12` |
-   | Properties.CertificateDataFieldName |  |
-   | Properties.PasswordFieldName |  |
-   | Properties.PasswordIsK8SSecret |  |
-   | Properties.KubeNamespace |  |
-   | Properties.KubeSecretName |  |
-   | Properties.StorePasswordPath |  |
+   | Properties.StorePasswordPath | The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>` |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1830,16 +1850,16 @@ the Kubernetes secret.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SSecret" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SSecret` certificates. Specifically, one with the `K8SSecret` capability. |
-   | ServerUsername | This should be no value or `kubeconfig` |
-   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | KubeSecretName | The name of the K8S secret object. |
    | KubeSecretType | This defaults to and must be `secret` |
-   | SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | IncludeCertChain | Whether to include the certificate chain in the certificate. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
+   | ServerUsername | This should be no value or `kubeconfig` |
+   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 </details>
 
@@ -1862,16 +1882,16 @@ the Kubernetes secret.
    | --------- | ----------- |
    | Category | Select "K8SSecret" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SSecret` certificates. Specifically, one with the `K8SSecret` capability. |
-   | Properties.ServerUsername | This should be no value or `kubeconfig` |
-   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | Properties.KubeSecretName | The name of the K8S secret object. |
    | Properties.KubeSecretType | This defaults to and must be `secret` |
-   | Properties.SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | Properties.IncludeCertChain | Whether to include the certificate chain in the certificate. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
+   | Properties.ServerUsername | This should be no value or `kubeconfig` |
+   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1929,16 +1949,16 @@ the Kubernetes secret.
    | --------- |---------------------------------------------------------|
    | Category | Select "K8STLSSecr" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8STLSSecr` certificates. Specifically, one with the `K8STLSSecr` capability. |
-   | ServerUsername | This should be no value or `kubeconfig` |
-   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | KubeSecretName | The name of the K8S secret object. |
    | KubeSecretType | This defaults to and must be `tls_secret` |
-   | SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | IncludeCertChain | Whether to include the certificate chain in the certificate. |
+   | IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
+   | ServerUsername | This should be no value or `kubeconfig` |
+   | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 </details>
 
@@ -1961,16 +1981,16 @@ the Kubernetes secret.
    | --------- | ----------- |
    | Category | Select "K8STLSSecr" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine |  |
+   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8STLSSecr` certificates. Specifically, one with the `K8STLSSecr` capability. |
-   | Properties.ServerUsername | This should be no value or `kubeconfig` |
-   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
    | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
    | Properties.KubeSecretName | The name of the K8S secret object. |
    | Properties.KubeSecretType | This defaults to and must be `tls_secret` |
-   | Properties.SeparateChain | Whether to store the certificate chain separately from the certificate. |
-   | Properties.IncludeCertChain | Whether to include the certificate chain in the certificate. |
+   | Properties.IncludeCertChain | Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. |
+   | Properties.SeparateChain | Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets. |
+   | Properties.ServerUsername | This should be no value or `kubeconfig` |
+   | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
 
 3. **Import the CSV file to create the certificate stores**
 
