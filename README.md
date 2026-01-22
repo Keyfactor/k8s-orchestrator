@@ -230,7 +230,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8SCert Custom Field - KubeNamespace](docsource/images/K8SCert-custom-field-KubeNamespace-dialog.png)
-   ![K8SCert Custom Field - KubeNamespace](docsource/images/K8SCert-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -238,7 +237,6 @@ the Keyfactor Command Portal
    The name of the K8S secret object.
 
    ![K8SCert Custom Field - KubeSecretName](docsource/images/K8SCert-custom-field-KubeSecretName-dialog.png)
-   ![K8SCert Custom Field - KubeSecretName](docsource/images/K8SCert-custom-field-KubeSecretName-validation-options-dialog.png)
 
 
 
@@ -246,7 +244,6 @@ the Keyfactor Command Portal
    This defaults to and must be `csr`
 
    ![K8SCert Custom Field - KubeSecretType](docsource/images/K8SCert-custom-field-KubeSecretType-dialog.png)
-   ![K8SCert Custom Field - KubeSecretType](docsource/images/K8SCert-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -359,7 +356,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8SCluster Custom Field - IncludeCertChain](docsource/images/K8SCluster-custom-field-IncludeCertChain-dialog.png)
-   ![K8SCluster Custom Field - IncludeCertChain](docsource/images/K8SCluster-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -367,7 +363,6 @@ the Keyfactor Command Portal
    Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8SCluster Custom Field - SeparateChain](docsource/images/K8SCluster-custom-field-SeparateChain-dialog.png)
-   ![K8SCluster Custom Field - SeparateChain](docsource/images/K8SCluster-custom-field-SeparateChain-validation-options-dialog.png)
 
 
 
@@ -511,7 +506,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8SJKS Custom Field - KubeNamespace](docsource/images/K8SJKS-custom-field-KubeNamespace-dialog.png)
-   ![K8SJKS Custom Field - KubeNamespace](docsource/images/K8SJKS-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -519,7 +513,6 @@ the Keyfactor Command Portal
    The name of the K8S secret object.
 
    ![K8SJKS Custom Field - KubeSecretName](docsource/images/K8SJKS-custom-field-KubeSecretName-dialog.png)
-   ![K8SJKS Custom Field - KubeSecretName](docsource/images/K8SJKS-custom-field-KubeSecretName-validation-options-dialog.png)
 
 
 
@@ -527,7 +520,6 @@ the Keyfactor Command Portal
    This defaults to and must be `jks`
 
    ![K8SJKS Custom Field - KubeSecretType](docsource/images/K8SJKS-custom-field-KubeSecretType-dialog.png)
-   ![K8SJKS Custom Field - KubeSecretType](docsource/images/K8SJKS-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -535,7 +527,6 @@ the Keyfactor Command Portal
    The field name to use when looking for certificate data in the K8S secret.
 
    ![K8SJKS Custom Field - CertificateDataFieldName](docsource/images/K8SJKS-custom-field-CertificateDataFieldName-dialog.png)
-   ![K8SJKS Custom Field - CertificateDataFieldName](docsource/images/K8SJKS-custom-field-CertificateDataFieldName-validation-options-dialog.png)
 
 
 
@@ -543,7 +534,6 @@ the Keyfactor Command Portal
    The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.
 
    ![K8SJKS Custom Field - PasswordFieldName](docsource/images/K8SJKS-custom-field-PasswordFieldName-dialog.png)
-   ![K8SJKS Custom Field - PasswordFieldName](docsource/images/K8SJKS-custom-field-PasswordFieldName-validation-options-dialog.png)
 
 
 
@@ -551,7 +541,6 @@ the Keyfactor Command Portal
    Indicates whether the password to the JKS keystore is stored in a separate K8S secret.
 
    ![K8SJKS Custom Field - PasswordIsK8SSecret](docsource/images/K8SJKS-custom-field-PasswordIsK8SSecret-dialog.png)
-   ![K8SJKS Custom Field - PasswordIsK8SSecret](docsource/images/K8SJKS-custom-field-PasswordIsK8SSecret-validation-options-dialog.png)
 
 
 
@@ -559,7 +548,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8SJKS Custom Field - IncludeCertChain](docsource/images/K8SJKS-custom-field-IncludeCertChain-dialog.png)
-   ![K8SJKS Custom Field - IncludeCertChain](docsource/images/K8SJKS-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -567,7 +555,6 @@ the Keyfactor Command Portal
    The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>`
 
    ![K8SJKS Custom Field - StorePasswordPath](docsource/images/K8SJKS-custom-field-StorePasswordPath-dialog.png)
-   ![K8SJKS Custom Field - StorePasswordPath](docsource/images/K8SJKS-custom-field-StorePasswordPath-validation-options-dialog.png)
 
 
 
@@ -702,7 +689,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8SNS Custom Field - KubeNamespace](docsource/images/K8SNS-custom-field-KubeNamespace-dialog.png)
-   ![K8SNS Custom Field - KubeNamespace](docsource/images/K8SNS-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -710,7 +696,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8SNS Custom Field - IncludeCertChain](docsource/images/K8SNS-custom-field-IncludeCertChain-dialog.png)
-   ![K8SNS Custom Field - IncludeCertChain](docsource/images/K8SNS-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -718,7 +703,6 @@ the Keyfactor Command Portal
    Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8SNS Custom Field - SeparateChain](docsource/images/K8SNS-custom-field-SeparateChain-dialog.png)
-   ![K8SNS Custom Field - SeparateChain](docsource/images/K8SNS-custom-field-SeparateChain-validation-options-dialog.png)
 
 
 
@@ -862,7 +846,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8SPKCS12 Custom Field - IncludeCertChain](docsource/images/K8SPKCS12-custom-field-IncludeCertChain-dialog.png)
-   ![K8SPKCS12 Custom Field - IncludeCertChain](docsource/images/K8SPKCS12-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -870,7 +853,6 @@ the Keyfactor Command Portal
 
 
    ![K8SPKCS12 Custom Field - CertificateDataFieldName](docsource/images/K8SPKCS12-custom-field-CertificateDataFieldName-dialog.png)
-   ![K8SPKCS12 Custom Field - CertificateDataFieldName](docsource/images/K8SPKCS12-custom-field-CertificateDataFieldName-validation-options-dialog.png)
 
 
 
@@ -878,7 +860,6 @@ the Keyfactor Command Portal
    The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.
 
    ![K8SPKCS12 Custom Field - PasswordFieldName](docsource/images/K8SPKCS12-custom-field-PasswordFieldName-dialog.png)
-   ![K8SPKCS12 Custom Field - PasswordFieldName](docsource/images/K8SPKCS12-custom-field-PasswordFieldName-validation-options-dialog.png)
 
 
 
@@ -886,7 +867,6 @@ the Keyfactor Command Portal
    Indicates whether the password to the PKCS12 keystore is stored in a separate K8S secret object.
 
    ![K8SPKCS12 Custom Field - PasswordIsK8SSecret](docsource/images/K8SPKCS12-custom-field-PasswordIsK8SSecret-dialog.png)
-   ![K8SPKCS12 Custom Field - PasswordIsK8SSecret](docsource/images/K8SPKCS12-custom-field-PasswordIsK8SSecret-validation-options-dialog.png)
 
 
 
@@ -894,7 +874,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8SPKCS12 Custom Field - KubeNamespace](docsource/images/K8SPKCS12-custom-field-KubeNamespace-dialog.png)
-   ![K8SPKCS12 Custom Field - KubeNamespace](docsource/images/K8SPKCS12-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -902,7 +881,6 @@ the Keyfactor Command Portal
    The name of the K8S secret object.
 
    ![K8SPKCS12 Custom Field - KubeSecretName](docsource/images/K8SPKCS12-custom-field-KubeSecretName-dialog.png)
-   ![K8SPKCS12 Custom Field - KubeSecretName](docsource/images/K8SPKCS12-custom-field-KubeSecretName-validation-options-dialog.png)
 
 
 
@@ -930,7 +908,6 @@ the Keyfactor Command Portal
    This defaults to and must be `pkcs12`
 
    ![K8SPKCS12 Custom Field - KubeSecretType](docsource/images/K8SPKCS12-custom-field-KubeSecretType-dialog.png)
-   ![K8SPKCS12 Custom Field - KubeSecretType](docsource/images/K8SPKCS12-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -938,7 +915,6 @@ the Keyfactor Command Portal
    The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>`
 
    ![K8SPKCS12 Custom Field - StorePasswordPath](docsource/images/K8SPKCS12-custom-field-StorePasswordPath-dialog.png)
-   ![K8SPKCS12 Custom Field - StorePasswordPath](docsource/images/K8SPKCS12-custom-field-StorePasswordPath-validation-options-dialog.png)
 
 
 
@@ -1054,7 +1030,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8SSecret Custom Field - KubeNamespace](docsource/images/K8SSecret-custom-field-KubeNamespace-dialog.png)
-   ![K8SSecret Custom Field - KubeNamespace](docsource/images/K8SSecret-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -1062,7 +1037,6 @@ the Keyfactor Command Portal
    The name of the K8S secret object.
 
    ![K8SSecret Custom Field - KubeSecretName](docsource/images/K8SSecret-custom-field-KubeSecretName-dialog.png)
-   ![K8SSecret Custom Field - KubeSecretName](docsource/images/K8SSecret-custom-field-KubeSecretName-validation-options-dialog.png)
 
 
 
@@ -1070,7 +1044,6 @@ the Keyfactor Command Portal
    This defaults to and must be `secret`
 
    ![K8SSecret Custom Field - KubeSecretType](docsource/images/K8SSecret-custom-field-KubeSecretType-dialog.png)
-   ![K8SSecret Custom Field - KubeSecretType](docsource/images/K8SSecret-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -1078,7 +1051,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8SSecret Custom Field - IncludeCertChain](docsource/images/K8SSecret-custom-field-IncludeCertChain-dialog.png)
-   ![K8SSecret Custom Field - IncludeCertChain](docsource/images/K8SSecret-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -1086,7 +1058,6 @@ the Keyfactor Command Portal
    Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8SSecret Custom Field - SeparateChain](docsource/images/K8SSecret-custom-field-SeparateChain-dialog.png)
-   ![K8SSecret Custom Field - SeparateChain](docsource/images/K8SSecret-custom-field-SeparateChain-validation-options-dialog.png)
 
 
 
@@ -1222,7 +1193,6 @@ the Keyfactor Command Portal
    The K8S namespace to use to manage the K8S secret object.
 
    ![K8STLSSecr Custom Field - KubeNamespace](docsource/images/K8STLSSecr-custom-field-KubeNamespace-dialog.png)
-   ![K8STLSSecr Custom Field - KubeNamespace](docsource/images/K8STLSSecr-custom-field-KubeNamespace-validation-options-dialog.png)
 
 
 
@@ -1230,7 +1200,6 @@ the Keyfactor Command Portal
    The name of the K8S secret object.
 
    ![K8STLSSecr Custom Field - KubeSecretName](docsource/images/K8STLSSecr-custom-field-KubeSecretName-dialog.png)
-   ![K8STLSSecr Custom Field - KubeSecretName](docsource/images/K8STLSSecr-custom-field-KubeSecretName-validation-options-dialog.png)
 
 
 
@@ -1238,7 +1207,6 @@ the Keyfactor Command Portal
    This defaults to and must be `tls_secret`
 
    ![K8STLSSecr Custom Field - KubeSecretType](docsource/images/K8STLSSecr-custom-field-KubeSecretType-dialog.png)
-   ![K8STLSSecr Custom Field - KubeSecretType](docsource/images/K8STLSSecr-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -1246,7 +1214,6 @@ the Keyfactor Command Portal
    Will default to `true` if not set. If set to `false` only the leaf cert will be deployed.
 
    ![K8STLSSecr Custom Field - IncludeCertChain](docsource/images/K8STLSSecr-custom-field-IncludeCertChain-dialog.png)
-   ![K8STLSSecr Custom Field - IncludeCertChain](docsource/images/K8STLSSecr-custom-field-IncludeCertChain-validation-options-dialog.png)
 
 
 
@@ -1254,7 +1221,6 @@ the Keyfactor Command Portal
    Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets.
 
    ![K8STLSSecr Custom Field - SeparateChain](docsource/images/K8STLSSecr-custom-field-SeparateChain-dialog.png)
-   ![K8STLSSecr Custom Field - SeparateChain](docsource/images/K8STLSSecr-custom-field-SeparateChain-validation-options-dialog.png)
 
 
 
