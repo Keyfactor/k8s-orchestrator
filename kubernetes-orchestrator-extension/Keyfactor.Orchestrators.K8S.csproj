@@ -1,30 +1,37 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
-  <PropertyGroup>
-	<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-    <TargetFramework>net6.0</TargetFramework>
-    <RootNamespace>Keyfactor.Extensions.Orchestrator.K8S</RootNamespace>
-    <LangVersion>latest</LangVersion>
-	 <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-	 <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
-	 <PackageId>Keyfactor.Orchestrators.K8S</PackageId>
-  </PropertyGroup>
+    <PropertyGroup>
+        <AppendTargetFrameworkToOutputPath>true</AppendTargetFrameworkToOutputPath>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+        <RootNamespace>Keyfactor.Extensions.Orchestrator.K8S</RootNamespace>
+        <LangVersion>latest</LangVersion>
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+        <PackageId>Keyfactor.Orchestrators.K8S</PackageId>
 
-  <ItemGroup>
-    <None Update="manifest.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
+        <DebugSymbols>true</DebugSymbols>
+        <DebugType>portable</DebugType>
+        <Optimize>false</Optimize>
+    </PropertyGroup>
 
-  <ItemGroup>
-      <PackageReference Include="keyfactor.extensions.pam.utilities" Version="1.0.2" />
-      <PackageReference Include="Keyfactor.Logging" Version="1.1.2" />
-      <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.2.0" />
-      <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="0.7.0" />
-      <PackageReference Include="Keyfactor.PKI" Version="5.5.0" />
-      <PackageReference Include="KubernetesClient" Version="14.0.2" />
-      <!--    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />-->
-      <PackageReference Include="System.Security.Cryptography.Pkcs" Version="8.0.0" />
-  </ItemGroup>
+    <ItemGroup>
+        <None Update="manifest.json">
+            <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="keyfactor.extensions.pam.utilities" Version="1.0.2"/>
+        <PackageReference Include="Keyfactor.Logging" Version="1.3.0" />
+        <PackageReference Include="Keyfactor.Orchestrators.Common" Version="3.3.0" />
+        <PackageReference Include="Keyfactor.Orchestrators.IOrchestratorJobExtensions" Version="1.0.0" />
+        <PackageReference Include="Keyfactor.PKI" Version="8.2.2" />
+        <PackageReference Include="KubernetesClient" Version="18.0.13" />
+        <!--    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />-->
+        <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.2" />
+        <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2"/>
+
+
+    </ItemGroup>
 
 </Project>
