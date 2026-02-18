@@ -743,6 +743,11 @@ public abstract class JobBase
             {
                 SeparateChain = storeProperties["SeparateChain"];
             }
+
+            if (storeProperties.ContainsKey("IncludeCertChain"))
+            {
+                IncludeCertChain = storeProperties["IncludeCertChain"];
+            }
         }
         catch (Exception)
         {
