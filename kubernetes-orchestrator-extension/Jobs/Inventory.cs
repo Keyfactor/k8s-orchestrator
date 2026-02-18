@@ -510,14 +510,14 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             try
             {
-                Logger.LogDebug("Attempting to load cert as X509Certificate2...");
-                var certFormatted = cert.Contains("BEGIN CERTIFICATE")
-                    ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
-                    : new X509Certificate2(Convert.FromBase64String(cert));
-                Logger.LogTrace("Cert loaded as X509Certificate2: " + certFormatted);
-                Logger.LogDebug("Attempting to get cert thumbprint...");
-                alias = certFormatted.Thumbprint;
-                Logger.LogDebug("Cert thumbprint: " + alias);
+                Logger.LogDebug("Attempting to parse certificate using BouncyCastle...");
+                var bcCert = cert.Contains("BEGIN CERTIFICATE")
+                    ? Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(cert)
+                    : Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromDer(Convert.FromBase64String(cert));
+                Logger.LogTrace("Certificate parsed successfully: " + bcCert.SubjectDN);
+                Logger.LogDebug("Attempting to get certificate thumbprint...");
+                alias = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(bcCert);
+                Logger.LogDebug("Certificate thumbprint: " + alias);
             }
             catch (Exception e)
             {
@@ -591,11 +591,11 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             try
             {
-                Logger.LogDebug("Attempting to load cert as X509Certificate2...");
-                var certFormatted = cert.Contains("BEGIN CERTIFICATE")
-                    ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
-                    : new X509Certificate2(Convert.FromBase64String(cert));
-                Logger.LogTrace("Cert loaded as X509Certificate2: " + certFormatted);
+                Logger.LogDebug("Attempting to parse certificate using BouncyCastle...");
+                var bcCert = cert.Contains("BEGIN CERTIFICATE")
+                    ? Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(cert)
+                    : Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromDer(Convert.FromBase64String(cert));
+                Logger.LogTrace("Certificate parsed successfully: " + bcCert.SubjectDN);
             }
             catch (Exception e)
             {
