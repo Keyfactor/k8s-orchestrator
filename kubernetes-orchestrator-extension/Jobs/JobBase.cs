@@ -90,13 +90,58 @@ public class K8SJobCertificate
 
     public bool HasPassword { get; set; } = false;
 
+    /// <summary>
+    /// BouncyCastle X509CertificateEntry containing the certificate
+    /// </summary>
     public X509CertificateEntry CertificateEntry { get; set; }
 
+    /// <summary>
+    /// BouncyCastle X509CertificateEntry array containing the certificate chain
+    /// </summary>
     public X509CertificateEntry[] CertificateEntryChain { get; set; }
 
     public byte[] Pkcs12 { get; set; }
 
     public List<string> ChainPem { get; set; }
+
+    /// <summary>
+    /// Optional: K8SCertificateContext providing BouncyCastle-based certificate operations.
+    /// This property can be used for modern certificate handling without X509Certificate2 dependencies.
+    /// </summary>
+    public Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext CertificateContext { get; set; }
+
+    /// <summary>
+    /// Factory method to create K8SCertificateContext from this job certificate's data
+    /// </summary>
+    /// <returns>K8SCertificateContext instance or null if certificate data is unavailable</returns>
+    public Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext GetCertificateContext()
+    {
+        if (CertificateEntry?.Certificate == null)
+            return null;
+
+        var context = new Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext
+        {
+            Certificate = CertificateEntry.Certificate,
+            CertPem = CertPem,
+            PrivateKeyPem = PrivateKeyPem
+        };
+
+        // Add chain if available
+        if (CertificateEntryChain != null && CertificateEntryChain.Length > 0)
+        {
+            context.Chain = CertificateEntryChain
+                .Skip(1) // Skip the first one (leaf cert)
+                .Select(entry => entry.Certificate)
+                .ToList();
+
+            if (ChainPem != null && ChainPem.Count > 0)
+            {
+                context.ChainPem = ChainPem.Skip(1).ToList();
+            }
+        }
+
+        return context;
+    }
 }
 
 public abstract class JobBase
@@ -388,64 +433,98 @@ public abstract class JobBase
                 return jobCertObject;
             }
 
-            Logger.LogTrace("Calling new X509Certificate2()");
-            var x509 = new X509Certificate2(certBytes, pKeyPassword);
-            Logger.LogTrace("Returned from new X509Certificate2()");
+            Logger.LogDebug("Loading PKCS12 store without password");
+            Logger.LogTrace("Calling LoadPkcs12Store()");
+            Pkcs12Store pkcs12Store = LoadPkcs12Store(certBytes, pKeyPassword);
+            Logger.LogTrace("Returned from LoadPkcs12Store()");
 
-            Logger.LogTrace("Calling x509.Export()");
-            var rawData = x509.Export(X509ContentType.Cert);
-            Logger.LogTrace("Returned from x509.Export()");
+            Logger.LogDebug("Attempting to get alias from pkcs12Store");
+            var alias = pkcs12Store.Aliases.FirstOrDefault(pkcs12Store.IsKeyEntry);
+            Logger.LogTrace("Alias: {Alias}", alias);
 
-            Logger.LogDebug("Attempting to export certificate `{CertThumbprint}` to PEM format",
-                jobCertObject.CertThumbprint);
-            //check if certBytes are null or empty
-            var pemCert =
-                "-----BEGIN CERTIFICATE-----\n" +
-                Convert.ToBase64String(rawData, Base64FormattingOptions.InsertLineBreaks) +
-                "\n-----END CERTIFICATE-----";
+            if (alias == null)
+            {
+                Logger.LogError("No key entry found in PKCS12 store");
+                return jobCertObject;
+            }
+
+            Logger.LogTrace("Calling pkcs12Store.GetCertificate()");
+            var x509Obj = pkcs12Store.GetCertificate(alias);
+            Logger.LogTrace("Returned from pkcs12Store.GetCertificate()");
+
+            if (x509Obj?.Certificate == null)
+            {
+                Logger.LogError("Unable to retrieve certificate from PKCS12 store");
+                return jobCertObject;
+            }
+
+            var bcCertificate = x509Obj.Certificate;
+
+            Logger.LogDebug("Attempting to export certificate to PEM format");
+            var pemCert = KubeClient.ConvertToPem(bcCertificate);
+            Logger.LogTrace("Certificate exported to PEM format");
 
             jobCertObject.CertPem = pemCert;
-            jobCertObject.CertBytes = x509.RawData;
-            jobCertObject.CertThumbprint = x509.Thumbprint;
+            jobCertObject.CertBytes = bcCertificate.GetEncoded();
+            jobCertObject.CertThumbprint = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(bcCertificate);
             jobCertObject.Pkcs12 = certBytes;
+            jobCertObject.CertificateEntry = x509Obj;
+
+            // Get certificate chain
+            Logger.LogDebug("Attempting to get certificate chain from pkcs12Store");
+            Logger.LogTrace("Calling pkcs12Store.GetCertificateChain()");
+            var chain = pkcs12Store.GetCertificateChain(alias);
+            Logger.LogTrace("Returned from pkcs12Store.GetCertificateChain()");
+
+            if (chain != null && chain.Length > 0)
+            {
+                var chainList = chain.Select(c => KubeClient.ConvertToPem(c.Certificate)).ToList();
+                jobCertObject.CertificateEntryChain = chain;
+                jobCertObject.ChainPem = chainList;
+            }
 
             try
             {
-                Logger.LogDebug("Attempting to export private key for `{CertThumbprint}` to PKCS8",
+                Logger.LogDebug("Attempting to extract private key for `{CertThumbprint}`",
                     jobCertObject.CertThumbprint);
-                Logger.LogTrace("Calling PrivateKeyConverterFactory.FromPKCS12()");
-                PrivateKeyConverter pkey = PrivateKeyConverterFactory.FromPKCS12(certBytes, pKeyPassword);
-                Logger.LogTrace("Returned from PrivateKeyConverterFactory.FromPKCS12()");
 
-                string keyType;
-                Logger.LogTrace("Calling x509.GetRSAPublicKey()");
-                using (AsymmetricAlgorithm keyAlg = x509.GetRSAPublicKey())
+                // Get private key
+                Logger.LogTrace("Calling pkcs12Store.GetKey()");
+                var keyEntry = pkcs12Store.GetKey(alias);
+                Logger.LogTrace("Returned from pkcs12Store.GetKey()");
+
+                if (keyEntry?.Key != null)
                 {
-                    keyType = keyAlg != null ? "RSA" : "EC";
+                    var privateKey = keyEntry.Key;
+
+                    // Determine key type using BouncyCastle
+                    var keyType = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetPrivateKeyType(privateKey);
+                    Logger.LogTrace("Private key type is {Type}", keyType);
+
+                    // Extract private key as PEM
+                    Logger.LogTrace("Calling ExtractPrivateKeyAsPem()");
+                    var pKeyPem = KubeClient.ExtractPrivateKeyAsPem(pkcs12Store, pKeyPassword);
+                    Logger.LogTrace("Returned from ExtractPrivateKeyAsPem()");
+
+                    jobCertObject.PrivateKeyPem = pKeyPem;
+                    jobCertObject.PrivateKeyBytes = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ExportPrivateKeyPkcs8(privateKey);
+                    jobCertObject.HasPrivateKey = true;
+
+                    Logger.LogDebug("Private key extracted for `{CertThumbprint}`", jobCertObject.CertThumbprint);
                 }
-
-                Logger.LogTrace("Returned from x509.GetRSAPublicKey()");
-
-                Logger.LogTrace("Private key type is {Type}", keyType);
-                Logger.LogTrace("Calling pkey.ToPkcs8BlobUnencrypted()");
-                var pKeyB64 = Convert.ToBase64String(pkey.ToPkcs8BlobUnencrypted(),
-                    Base64FormattingOptions.InsertLineBreaks);
-                Logger.LogTrace("Returned from pkey.ToPkcs8BlobUnencrypted()");
-
-                Logger.LogDebug("Creating private key PEM for `{CertThumbprint}`", jobCertObject.CertThumbprint);
-                jobCertObject.PrivateKeyPem =
-                    $"-----BEGIN {keyType} PRIVATE KEY-----\n{pKeyB64}\n-----END {keyType} PRIVATE KEY-----";
-                // Logger.LogTrace("Private key: {PrivateKey}", jobCertObject.PrivateKeyPem); // Commented out to avoid logging sensitive information
-                Logger.LogDebug("Private key extracted for `{CertThumbprint}`", jobCertObject.CertThumbprint);
+                else
+                {
+                    Logger.LogDebug("No private key found for alias `{Alias}`", alias);
+                }
             }
-            catch (ArgumentException)
+            catch (Exception ex)
             {
                 Logger.LogDebug("Private key extraction failed for `{CertThumbprint}`", jobCertObject.CertThumbprint);
                 var refStr = string.IsNullOrEmpty(jobCertObject.Alias)
                     ? jobCertObject.CertThumbprint
                     : jobCertObject.Alias;
 
-                var pkeyErr = $"Unable to unpack private key from `{refStr}`, invalid password";
+                var pkeyErr = $"Unable to unpack private key from `{refStr}`, invalid password or error: {ex.Message}";
                 Logger.LogError("{Error}", pkeyErr);
                 // todo: should this throw an exception?
             }
@@ -1077,9 +1156,75 @@ public abstract class JobBase
         }
     }
 
+    /// <summary>
+    /// Extract private key bytes from a PKCS12 store in PKCS#8 format
+    /// </summary>
+    /// <param name="store">PKCS12 store containing the private key</param>
+    /// <param name="alias">Alias of the key entry. If null, uses the first key entry.</param>
+    /// <param name="password">Optional password (not typically used for key export from already-loaded store)</param>
+    /// <returns>Private key bytes in PKCS#8 format</returns>
+    protected byte[] GetKeyBytes(Pkcs12Store store, string alias = null, string password = null)
+    {
+        Logger.LogDebug("Entered GetKeyBytes(Pkcs12Store)");
+
+        if (store == null)
+            throw new ArgumentNullException(nameof(store));
+
+        if (string.IsNullOrEmpty(alias))
+        {
+            alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
+            Logger.LogTrace("Using first key entry alias: {Alias}", alias);
+        }
+
+        if (string.IsNullOrEmpty(alias))
+        {
+            Logger.LogError("No key entry found in PKCS12 store");
+            throw new InvalidKeyException("No key entry found in PKCS12 store");
+        }
+
+        if (!store.IsKeyEntry(alias))
+        {
+            Logger.LogError("Alias '{Alias}' does not have a private key", alias);
+            throw new InvalidKeyException($"Alias '{alias}' does not have a private key");
+        }
+
+        try
+        {
+            Logger.LogDebug("Attempting to extract private key with alias '{Alias}'", alias);
+            var keyEntry = store.GetKey(alias);
+            if (keyEntry?.Key == null)
+            {
+                Logger.LogError("Unable to retrieve private key for alias '{Alias}'", alias);
+                throw new InvalidKeyException($"Unable to retrieve private key for alias '{alias}'");
+            }
+
+            var privateKey = keyEntry.Key;
+            var keyType = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetPrivateKeyType(privateKey);
+            Logger.LogTrace("Private key type: {KeyType}", keyType);
+
+            Logger.LogDebug("Exporting private key as PKCS#8");
+            var keyBytes = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ExportPrivateKeyPkcs8(privateKey);
+            Logger.LogTrace("Successfully exported private key, {Length} bytes", keyBytes?.Length ?? 0);
+
+            return keyBytes;
+        }
+        catch (Exception e)
+        {
+            Logger.LogError("Error extracting private key: {Message}", e.Message);
+            Logger.LogTrace("{StackTrace}", e.StackTrace);
+            throw new InvalidKeyException($"Unable to extract private key from alias '{alias}'", e);
+        }
+    }
+
+    /// <summary>
+    /// DEPRECATED: Use GetKeyBytes(Pkcs12Store, string, string) instead.
+    /// Extract private key bytes from X509Certificate2 (uses deprecated APIs)
+    /// </summary>
+    [Obsolete("Use GetKeyBytes(Pkcs12Store, string, string) instead to avoid deprecated X509Certificate2.PrivateKey API")]
     protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
     {
-        Logger.LogDebug("Entered GetKeyBytes()");
+        Logger.LogDebug("Entered GetKeyBytes(X509Certificate2) - DEPRECATED");
+        Logger.LogWarning("GetKeyBytes(X509Certificate2) is deprecated. Use GetKeyBytes(Pkcs12Store) instead.");
         Logger.LogTrace("Key algo: {KeyAlgo}", certObj.GetKeyAlgorithm());
         Logger.LogTrace("Has private key: {HasPrivateKey}", certObj.HasPrivateKey);
         Logger.LogTrace("Pub key: {PublicKey}", certObj.GetPublicKey());
@@ -1135,10 +1280,10 @@ public abstract class JobBase
                     {
                         Logger.LogDebug("Attempting to export private key as PKCS8");
                         Logger.LogTrace("ExportPkcs8PrivateKey()");
+                        #pragma warning disable SYSLIB0028
                         keyBytes = certObj.PrivateKey.ExportPkcs8PrivateKey();
+                        #pragma warning restore SYSLIB0028
                         Logger.LogTrace("ExportPkcs8PrivateKey() complete");
-                        // Logger.LogTrace("keyBytes: " + keyBytes);
-                        // Logger.LogTrace("Converted to string: " + Encoding.UTF8.GetString(keyBytes));
                         return keyBytes;
                     }
                     catch (Exception e2)
@@ -1151,11 +1296,13 @@ public abstract class JobBase
                         //attempt to export encrypted pkcs8
                         Logger.LogDebug("Attempting to export encrypted PKCS8 private key");
                         Logger.LogTrace("ExportEncryptedPkcs8PrivateKey()");
+                        #pragma warning disable SYSLIB0028
                         keyBytes = certObj.PrivateKey.ExportEncryptedPkcs8PrivateKey(certPassword,
                             new PbeParameters(
                                 PbeEncryptionAlgorithm.Aes128Cbc,
                                 HashAlgorithmName.SHA256,
                                 1));
+                        #pragma warning restore SYSLIB0028
                         Logger.LogTrace("ExportEncryptedPkcs8PrivateKey() complete");
                         return keyBytes;
                     }
