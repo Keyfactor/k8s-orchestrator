@@ -1,0 +1,69 @@
+name: "License Compliance Check"
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main", "release-*" ]
+  schedule:
+    # Run monthly license compliance check
+    - cron: '0 9 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  license-check:
+    name: Check License Compliance
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # Install dotnet-project-licenses tool
+      - name: Install license tool
+        run: dotnet tool install --global dotnet-project-licenses
+
+      - name: Generate license report (JSON)
+        run: |
+          dotnet-project-licenses --input kubernetes-orchestrator-extension/Keyfactor.Orchestrators.K8S.csproj \
+            --output-directory license-reports \
+            --export-license-texts \
+            --json \
+            --unique
+        continue-on-error: true
+
+      - name: Generate license report (Markdown)
+        run: |
+          dotnet-project-licenses --input kubernetes-orchestrator-extension/Keyfactor.Orchestrators.K8S.csproj \
+            --output-directory license-reports \
+            --markdown
+        continue-on-error: true
+
+      - name: Check for restricted licenses
+        run: |
+          # Add logic to fail if certain licenses are detected
+          # For example, GPL, AGPL if your organization doesn't allow them
+          if grep -i "GPL-3.0\|AGPL" license-reports/*.json; then
+            echo "::warning::Potentially restricted license detected. Please review."
+          fi
+        continue-on-error: true
+
+      - name: Upload license reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-compliance-reports
+          path: license-reports/
+          retention-days: 90

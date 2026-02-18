@@ -165,7 +165,10 @@ public class Management : JobBase, IManagementJobExtension
             KubeNamespace,
             "secret",
             append,
-            overwrite
+            overwrite,
+            false,
+            SeparateChain,
+            IncludeCertChain
         );
         if (createResponse == null)
             Logger.LogError("createResponse is null");
@@ -462,7 +465,8 @@ public class Management : JobBase, IManagementJobExtension
             append,
             overwrite,
             false,
-            SeparateChain
+            SeparateChain,
+            IncludeCertChain
         );
         if (createResponse == null)
             Logger.LogError("createResponse is null");
