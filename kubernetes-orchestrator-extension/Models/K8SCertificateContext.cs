@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
+using Keyfactor.Logging;
+using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.X509;
@@ -14,6 +16,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Models;
 /// </summary>
 public class K8SCertificateContext
 {
+    private static readonly ILogger Logger = LogHandler.GetClassLogger(typeof(K8SCertificateContext));
+
     /// <summary>
     /// The BouncyCastle X509Certificate
     /// </summary>
@@ -134,31 +138,60 @@ public class K8SCertificateContext
     /// <returns>Certificate context</returns>
     public static K8SCertificateContext FromPkcs12(byte[] pkcs12Bytes, string password, string alias = null)
     {
+        Logger.LogTrace("FromPkcs12 called with {ByteCount} bytes, alias: {Alias}",
+            pkcs12Bytes?.Length ?? 0, alias ?? "null");
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
+
         if (pkcs12Bytes == null || pkcs12Bytes.Length == 0)
+        {
+            Logger.LogError("PKCS12 bytes are null or empty");
             throw new ArgumentException("PKCS12 bytes cannot be null or empty", nameof(pkcs12Bytes));
-
-        var store = CertificateUtilities.LoadPkcs12Store(pkcs12Bytes, password);
-
-        if (string.IsNullOrEmpty(alias))
-            alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
-
-        if (alias == null)
-            throw new ArgumentException("No key entry found in PKCS12 store");
-
-        var context = new K8SCertificateContext
-        {
-            Certificate = CertificateUtilities.ParseCertificateFromPkcs12(pkcs12Bytes, password, alias),
-            PrivateKey = CertificateUtilities.ExtractPrivateKey(store, alias, password)
-        };
-
-        // Extract chain (excluding the leaf certificate)
-        var fullChain = CertificateUtilities.ExtractChainFromPkcs12(pkcs12Bytes, password, alias);
-        if (fullChain != null && fullChain.Count > 1)
-        {
-            context.Chain = fullChain.Skip(1).ToList(); // Skip the first one (leaf cert)
         }
 
-        return context;
+        try
+        {
+            var store = CertificateUtilities.LoadPkcs12Store(pkcs12Bytes, password);
+
+            if (string.IsNullOrEmpty(alias))
+            {
+                alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
+                Logger.LogDebug("No alias specified, using first key entry: {Alias}", alias ?? "null");
+            }
+
+            if (alias == null)
+            {
+                Logger.LogError("No key entry found in PKCS12 store");
+                throw new ArgumentException("No key entry found in PKCS12 store");
+            }
+
+            var context = new K8SCertificateContext
+            {
+                Certificate = CertificateUtilities.ParseCertificateFromPkcs12(pkcs12Bytes, password, alias),
+                PrivateKey = CertificateUtilities.ExtractPrivateKey(store, alias, password)
+            };
+
+            Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(context.Certificate));
+            Logger.LogDebug("Private key present: {HasKey}", context.HasPrivateKey);
+
+            // Extract chain (excluding the leaf certificate)
+            var fullChain = CertificateUtilities.ExtractChainFromPkcs12(pkcs12Bytes, password, alias);
+            if (fullChain != null && fullChain.Count > 1)
+            {
+                context.Chain = fullChain.Skip(1).ToList(); // Skip the first one (leaf cert)
+                Logger.LogDebug("Certificate chain loaded: {Count} certificates", context.Chain.Count);
+            }
+            else
+            {
+                Logger.LogDebug("No certificate chain found or chain has only leaf certificate");
+            }
+
+            return context;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error creating context from PKCS12: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -202,28 +235,50 @@ public class K8SCertificateContext
     /// <returns>Certificate context</returns>
     public static K8SCertificateContext FromPem(string pemString)
     {
+        Logger.LogTrace("FromPem called with PEM length: {Length}", pemString?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(pemString))
+        {
+            Logger.LogError("PEM string is null or empty");
             throw new ArgumentException("PEM string cannot be null or empty", nameof(pemString));
-
-        // Try to load multiple certificates (chain)
-        var certificates = CertificateUtilities.LoadCertificateChain(pemString);
-
-        if (certificates == null || certificates.Count == 0)
-            throw new ArgumentException("No valid certificates found in PEM data");
-
-        var context = new K8SCertificateContext
-        {
-            Certificate = certificates[0],
-            PrivateKey = null // PEM certificate data typically doesn't include private key
-        };
-
-        // If multiple certificates, treat the rest as chain
-        if (certificates.Count > 1)
-        {
-            context.Chain = certificates.Skip(1).ToList();
         }
 
-        return context;
+        try
+        {
+            // Try to load multiple certificates (chain)
+            var certificates = CertificateUtilities.LoadCertificateChain(pemString);
+
+            if (certificates == null || certificates.Count == 0)
+            {
+                Logger.LogError("No valid certificates found in PEM data");
+                throw new ArgumentException("No valid certificates found in PEM data");
+            }
+
+            Logger.LogDebug("Loaded {Count} certificates from PEM data", certificates.Count);
+
+            var context = new K8SCertificateContext
+            {
+                Certificate = certificates[0],
+                PrivateKey = null // PEM certificate data typically doesn't include private key
+            };
+
+            Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(context.Certificate));
+            Logger.LogDebug("Private key present: {HasKey}", context.HasPrivateKey);
+
+            // If multiple certificates, treat the rest as chain
+            if (certificates.Count > 1)
+            {
+                context.Chain = certificates.Skip(1).ToList();
+                Logger.LogDebug("Certificate chain loaded: {Count} certificates", context.Chain.Count);
+            }
+
+            return context;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error creating context from PEM: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -235,32 +290,58 @@ public class K8SCertificateContext
     /// <returns>Certificate context</returns>
     public static K8SCertificateContext FromPemWithKey(string certPem, string privateKeyPem, string chainPem = null)
     {
+        Logger.LogTrace("FromPemWithKey called with cert PEM length: {CertLength}, key PEM length: {KeyLength}, chain PEM length: {ChainLength}",
+            certPem?.Length ?? 0, privateKeyPem?.Length ?? 0, chainPem?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(certPem))
+        {
+            Logger.LogError("Certificate PEM is null or empty");
             throw new ArgumentException("Certificate PEM cannot be null or empty", nameof(certPem));
-
-        var context = new K8SCertificateContext
-        {
-            Certificate = CertificateUtilities.ParseCertificateFromPem(certPem),
-            _certPem = certPem,
-            _privateKeyPem = privateKeyPem
-        };
-
-        // Parse private key if provided
-        if (!string.IsNullOrWhiteSpace(privateKeyPem))
-        {
-            // Note: Parsing private key from PEM requires additional logic
-            // This is a placeholder for now - will be implemented when needed
-            // For now, we'll store the PEM string
         }
 
-        // Parse chain if provided
-        if (!string.IsNullOrWhiteSpace(chainPem))
+        try
         {
-            context.Chain = CertificateUtilities.LoadCertificateChain(chainPem);
-            context._chainPem = context.Chain.Select(CertificateUtilities.ConvertToPem).ToList();
-        }
+            var context = new K8SCertificateContext
+            {
+                Certificate = CertificateUtilities.ParseCertificateFromPem(certPem),
+                _certPem = certPem,
+                _privateKeyPem = privateKeyPem
+            };
 
-        return context;
+            Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(context.Certificate));
+
+            // Parse private key if provided
+            if (!string.IsNullOrWhiteSpace(privateKeyPem))
+            {
+                Logger.LogTrace("Private key PEM provided: {PrivateKeyPem}", LoggingUtilities.RedactPrivateKeyPem(privateKeyPem));
+                // Note: Parsing private key from PEM requires additional logic
+                // This is a placeholder for now - will be implemented when needed
+                // For now, we'll store the PEM string
+            }
+            else
+            {
+                Logger.LogDebug("No private key PEM provided");
+            }
+
+            // Parse chain if provided
+            if (!string.IsNullOrWhiteSpace(chainPem))
+            {
+                context.Chain = CertificateUtilities.LoadCertificateChain(chainPem);
+                context._chainPem = context.Chain.Select(CertificateUtilities.ConvertToPem).ToList();
+                Logger.LogDebug("Certificate chain loaded: {Count} certificates", context.Chain.Count);
+            }
+            else
+            {
+                Logger.LogDebug("No chain PEM provided");
+            }
+
+            return context;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error creating context from PEM with key: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -270,14 +351,32 @@ public class K8SCertificateContext
     /// <returns>Certificate context</returns>
     public static K8SCertificateContext FromDer(byte[] derBytes)
     {
-        if (derBytes == null || derBytes.Length == 0)
-            throw new ArgumentException("DER bytes cannot be null or empty", nameof(derBytes));
+        Logger.LogTrace("FromDer called with {ByteCount} bytes", derBytes?.Length ?? 0);
 
-        return new K8SCertificateContext
+        if (derBytes == null || derBytes.Length == 0)
         {
-            Certificate = CertificateUtilities.ParseCertificateFromDer(derBytes),
-            PrivateKey = null // DER format typically doesn't include private key
-        };
+            Logger.LogError("DER bytes are null or empty");
+            throw new ArgumentException("DER bytes cannot be null or empty", nameof(derBytes));
+        }
+
+        try
+        {
+            var context = new K8SCertificateContext
+            {
+                Certificate = CertificateUtilities.ParseCertificateFromDer(derBytes),
+                PrivateKey = null // DER format typically doesn't include private key
+            };
+
+            Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(context.Certificate));
+            Logger.LogDebug("Private key present: {HasKey}", context.HasPrivateKey);
+
+            return context;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error creating context from DER: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -292,15 +391,26 @@ public class K8SCertificateContext
         AsymmetricKeyParameter privateKey = null,
         List<X509Certificate> chain = null)
     {
-        if (certificate == null)
-            throw new ArgumentNullException(nameof(certificate));
+        Logger.LogTrace("FromCertificate called");
 
-        return new K8SCertificateContext
+        if (certificate == null)
+        {
+            Logger.LogError("Certificate is null");
+            throw new ArgumentNullException(nameof(certificate));
+        }
+
+        var context = new K8SCertificateContext
         {
             Certificate = certificate,
             PrivateKey = privateKey,
             Chain = chain ?? new List<X509Certificate>()
         };
+
+        Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(context.Certificate));
+        Logger.LogDebug("Private key present: {HasKey}", context.HasPrivateKey);
+        Logger.LogDebug("Certificate chain: {Count} certificates", context.Chain.Count);
+
+        return context;
     }
 
     #endregion
@@ -313,10 +423,25 @@ public class K8SCertificateContext
     /// <returns>PEM-encoded certificate</returns>
     public string ExportCertificatePem()
     {
-        if (Certificate == null)
-            throw new InvalidOperationException("No certificate available to export");
+        Logger.LogTrace("ExportCertificatePem called");
 
-        return CertificateUtilities.ConvertToPem(Certificate);
+        if (Certificate == null)
+        {
+            Logger.LogError("No certificate available to export");
+            throw new InvalidOperationException("No certificate available to export");
+        }
+
+        try
+        {
+            var pem = CertificateUtilities.ConvertToPem(Certificate);
+            Logger.LogTrace("Certificate exported to PEM: {Pem}", LoggingUtilities.RedactCertificatePem(pem));
+            return pem;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error exporting certificate to PEM: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -337,10 +462,25 @@ public class K8SCertificateContext
     /// <returns>PKCS#8 encoded private key</returns>
     public byte[] ExportPrivateKeyPkcs8()
     {
-        if (PrivateKey == null)
-            throw new InvalidOperationException("No private key available to export");
+        Logger.LogTrace("ExportPrivateKeyPkcs8 called");
 
-        return CertificateUtilities.ExportPrivateKeyPkcs8(PrivateKey);
+        if (PrivateKey == null)
+        {
+            Logger.LogError("No private key available to export");
+            throw new InvalidOperationException("No private key available to export");
+        }
+
+        try
+        {
+            var pkcs8 = CertificateUtilities.ExportPrivateKeyPkcs8(PrivateKey);
+            Logger.LogTrace("Private key exported to PKCS#8: {KeyBytes}", LoggingUtilities.RedactPrivateKeyBytes(pkcs8));
+            return pkcs8;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error exporting private key to PKCS#8: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>

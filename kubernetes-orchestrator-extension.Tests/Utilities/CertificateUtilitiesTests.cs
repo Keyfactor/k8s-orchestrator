@@ -121,7 +121,7 @@ public class CertificateUtilitiesTests
         var (cert, _) = GenerateTestRsaCertificate("Test Cert");
         var pemObject = new PemObject("CERTIFICATE", cert.GetEncoded());
         using var stringWriter = new StringWriter();
-        var pemWriter = new PemWriter(stringWriter);
+        var pemWriter = new Org.BouncyCastle.Utilities.IO.Pem.PemWriter(stringWriter);
         pemWriter.WriteObject(pemObject);
         pemWriter.Writer.Flush();
         var pemString = stringWriter.ToString();

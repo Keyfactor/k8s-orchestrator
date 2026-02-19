@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Keyfactor.Logging;
+using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Asn1.Pkcs;
 using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
@@ -32,6 +34,8 @@ public enum CertificateFormat
 /// </summary>
 public static class CertificateUtilities
 {
+    private static readonly ILogger Logger = LogHandler.GetClassLogger(typeof(CertificateUtilities));
+
     #region Certificate Parsing
 
     /// <summary>
@@ -42,20 +46,41 @@ public static class CertificateUtilities
     /// <returns>Parsed X509Certificate</returns>
     public static X509Certificate ParseCertificate(byte[] certData, CertificateFormat format = CertificateFormat.Unknown)
     {
+        Logger.LogTrace("ParseCertificate called with {ByteCount} bytes, format hint: {Format}",
+            certData?.Length ?? 0, format);
+
         if (certData == null || certData.Length == 0)
+        {
+            Logger.LogError("Certificate data is null or empty");
             throw new ArgumentException("Certificate data cannot be null or empty", nameof(certData));
+        }
 
         if (format == CertificateFormat.Unknown)
-            format = DetectFormat(certData);
-
-        return format switch
         {
-            CertificateFormat.Pem => ParseCertificateFromPem(Encoding.UTF8.GetString(certData)),
-            CertificateFormat.Der => ParseCertificateFromDer(certData),
-            CertificateFormat.Pkcs12 => throw new ArgumentException(
-                "Use ParseCertificateFromPkcs12 for PKCS12 format certificates"),
-            _ => throw new ArgumentException($"Unknown certificate format: {format}")
-        };
+            Logger.LogTrace("Format not specified, detecting format");
+            format = DetectFormat(certData);
+            Logger.LogDebug("Detected certificate format: {Format}", format);
+        }
+
+        try
+        {
+            var cert = format switch
+            {
+                CertificateFormat.Pem => ParseCertificateFromPem(Encoding.UTF8.GetString(certData)),
+                CertificateFormat.Der => ParseCertificateFromDer(certData),
+                CertificateFormat.Pkcs12 => throw new ArgumentException(
+                    "Use ParseCertificateFromPkcs12 for PKCS12 format certificates"),
+                _ => throw new ArgumentException($"Unknown certificate format: {format}")
+            };
+
+            Logger.LogDebug("Certificate parsed successfully: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+            return cert;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error parsing certificate: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -65,18 +90,39 @@ public static class CertificateUtilities
     /// <returns>Parsed X509Certificate</returns>
     public static X509Certificate ParseCertificateFromPem(string pemString)
     {
+        Logger.LogTrace("ParseCertificateFromPem called with PEM length: {Length}", pemString?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(pemString))
+        {
+            Logger.LogError("PEM string is null or empty");
             throw new ArgumentException("PEM string cannot be null or empty", nameof(pemString));
+        }
 
-        using var reader = new StringReader(pemString);
-        var pemReader = new PemReader(reader);
-        var pemObject = pemReader.ReadPemObject();
+        try
+        {
+            using var reader = new StringReader(pemString);
+            var pemReader = new PemReader(reader);
+            var pemObject = pemReader.ReadPemObject();
 
-        if (pemObject == null || pemObject.Type != "CERTIFICATE")
-            throw new ArgumentException("Invalid PEM certificate format");
+            if (pemObject == null || pemObject.Type != "CERTIFICATE")
+            {
+                Logger.LogError("Invalid PEM object type: {Type}", pemObject?.Type ?? "null");
+                throw new ArgumentException("Invalid PEM certificate format");
+            }
 
-        var certificateParser = new X509CertificateParser();
-        return certificateParser.ReadCertificate(pemObject.Content);
+            Logger.LogTrace("PEM object type: {Type}, content length: {Length}", pemObject.Type, pemObject.Content?.Length ?? 0);
+
+            var certificateParser = new X509CertificateParser();
+            var cert = certificateParser.ReadCertificate(pemObject.Content);
+
+            Logger.LogDebug("Certificate parsed from PEM: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+            return cert;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error parsing certificate from PEM: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -86,11 +132,27 @@ public static class CertificateUtilities
     /// <returns>Parsed X509Certificate</returns>
     public static X509Certificate ParseCertificateFromDer(byte[] derBytes)
     {
-        if (derBytes == null || derBytes.Length == 0)
-            throw new ArgumentException("DER bytes cannot be null or empty", nameof(derBytes));
+        Logger.LogTrace("ParseCertificateFromDer called with {ByteCount} bytes", derBytes?.Length ?? 0);
 
-        var certificateParser = new X509CertificateParser();
-        return certificateParser.ReadCertificate(derBytes);
+        if (derBytes == null || derBytes.Length == 0)
+        {
+            Logger.LogError("DER bytes are null or empty");
+            throw new ArgumentException("DER bytes cannot be null or empty", nameof(derBytes));
+        }
+
+        try
+        {
+            var certificateParser = new X509CertificateParser();
+            var cert = certificateParser.ReadCertificate(derBytes);
+
+            Logger.LogDebug("Certificate parsed from DER: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+            return cert;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error parsing certificate from DER: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -102,19 +164,51 @@ public static class CertificateUtilities
     /// <returns>Parsed X509Certificate</returns>
     public static X509Certificate ParseCertificateFromPkcs12(byte[] pkcs12Bytes, string password, string alias = null)
     {
+        Logger.LogTrace("ParseCertificateFromPkcs12 called with {ByteCount} bytes, alias: {Alias}",
+            pkcs12Bytes?.Length ?? 0, alias ?? "null");
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
+
         if (pkcs12Bytes == null || pkcs12Bytes.Length == 0)
+        {
+            Logger.LogError("PKCS12 bytes are null or empty");
             throw new ArgumentException("PKCS12 bytes cannot be null or empty", nameof(pkcs12Bytes));
+        }
 
-        var store = LoadPkcs12Store(pkcs12Bytes, password);
+        try
+        {
+            var store = LoadPkcs12Store(pkcs12Bytes, password);
 
-        if (string.IsNullOrEmpty(alias))
-            alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
+            if (string.IsNullOrEmpty(alias))
+            {
+                alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
+                Logger.LogDebug("No alias specified, using first key entry: {Alias}", alias ?? "null");
+            }
 
-        if (alias == null)
-            throw new ArgumentException("No key entry found in PKCS12 store");
+            if (alias == null)
+            {
+                Logger.LogError("No key entry found in PKCS12 store");
+                throw new ArgumentException("No key entry found in PKCS12 store");
+            }
 
-        var certEntry = store.GetCertificate(alias);
-        return certEntry?.Certificate;
+            var certEntry = store.GetCertificate(alias);
+            var cert = certEntry?.Certificate;
+
+            if (cert != null)
+            {
+                Logger.LogDebug("Certificate loaded from PKCS12: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+            }
+            else
+            {
+                Logger.LogWarning("Certificate entry for alias '{Alias}' is null", alias);
+            }
+
+            return cert;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error parsing certificate from PKCS12: {Message}", ex.Message);
+            throw;
+        }
     }
 
     #endregion
@@ -128,12 +222,28 @@ public static class CertificateUtilities
     /// <returns>Uppercase hexadecimal string representation of SHA-1 hash</returns>
     public static string GetThumbprint(X509Certificate cert)
     {
-        if (cert == null)
-            throw new ArgumentNullException(nameof(cert));
+        Logger.LogTrace("GetThumbprint called for certificate: {Subject}", cert?.SubjectDN?.ToString() ?? "null");
 
-        using var sha1 = SHA1.Create();
-        var hash = sha1.ComputeHash(cert.GetEncoded());
-        return BitConverter.ToString(hash).Replace("-", "").ToUpperInvariant();
+        if (cert == null)
+        {
+            Logger.LogError("Certificate is null");
+            throw new ArgumentNullException(nameof(cert));
+        }
+
+        try
+        {
+            using var sha1 = SHA1.Create();
+            var hash = sha1.ComputeHash(cert.GetEncoded());
+            var thumbprint = BitConverter.ToString(hash).Replace("-", "").ToUpperInvariant();
+
+            Logger.LogTrace("Computed thumbprint: {Thumbprint}", thumbprint);
+            return thumbprint;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error computing thumbprint: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -295,20 +405,53 @@ public static class CertificateUtilities
     /// <returns>Private key parameter</returns>
     public static AsymmetricKeyParameter ExtractPrivateKey(Pkcs12Store store, string alias = null, string password = null)
     {
+        Logger.LogTrace("ExtractPrivateKey called with alias: {Alias}", alias ?? "null");
+
         if (store == null)
+        {
+            Logger.LogError("PKCS12 store is null");
             throw new ArgumentNullException(nameof(store));
+        }
 
-        if (string.IsNullOrEmpty(alias))
-            alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
+        try
+        {
+            if (string.IsNullOrEmpty(alias))
+            {
+                alias = store.Aliases.FirstOrDefault(a => store.IsKeyEntry(a));
+                Logger.LogDebug("No alias specified, using first key entry: {Alias}", alias ?? "null");
+            }
 
-        if (alias == null)
-            throw new ArgumentException("No key entry found in PKCS12 store");
+            if (alias == null)
+            {
+                Logger.LogError("No key entry found in PKCS12 store");
+                throw new ArgumentException("No key entry found in PKCS12 store");
+            }
 
-        if (!store.IsKeyEntry(alias))
-            throw new ArgumentException($"Alias '{alias}' does not have a private key entry");
+            if (!store.IsKeyEntry(alias))
+            {
+                Logger.LogError("Alias '{Alias}' does not have a private key entry", alias);
+                throw new ArgumentException($"Alias '{alias}' does not have a private key entry");
+            }
 
-        var keyEntry = store.GetKey(alias);
-        return keyEntry?.Key;
+            var keyEntry = store.GetKey(alias);
+            var key = keyEntry?.Key;
+
+            if (key != null)
+            {
+                Logger.LogDebug("Private key extracted: {KeyInfo}", LoggingUtilities.RedactPrivateKey(key));
+            }
+            else
+            {
+                Logger.LogWarning("Key entry for alias '{Alias}' is null", alias);
+            }
+
+            return key;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error extracting private key: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -351,11 +494,27 @@ public static class CertificateUtilities
     /// <returns>PKCS#8 encoded private key bytes</returns>
     public static byte[] ExportPrivateKeyPkcs8(AsymmetricKeyParameter privateKey)
     {
-        if (privateKey == null)
-            throw new ArgumentNullException(nameof(privateKey));
+        Logger.LogTrace("ExportPrivateKeyPkcs8 called");
 
-        var privateKeyInfo = PrivateKeyInfoFactory.CreatePrivateKeyInfo(privateKey);
-        return privateKeyInfo.ToAsn1Object().GetEncoded();
+        if (privateKey == null)
+        {
+            Logger.LogError("Private key is null");
+            throw new ArgumentNullException(nameof(privateKey));
+        }
+
+        try
+        {
+            var privateKeyInfo = PrivateKeyInfoFactory.CreatePrivateKeyInfo(privateKey);
+            var encoded = privateKeyInfo.ToAsn1Object().GetEncoded();
+
+            Logger.LogTrace("Private key exported to PKCS#8: {KeyBytes}", LoggingUtilities.RedactPrivateKeyBytes(encoded));
+            return encoded;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error exporting private key to PKCS#8: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -388,24 +547,40 @@ public static class CertificateUtilities
     /// <returns>List of certificates in order</returns>
     public static List<X509Certificate> LoadCertificateChain(string pemData)
     {
+        Logger.LogTrace("LoadCertificateChain called with PEM data length: {Length}", pemData?.Length ?? 0);
+
         if (string.IsNullOrWhiteSpace(pemData))
-            return new List<X509Certificate>();
-
-        var pemReader = new PemReader(new StringReader(pemData));
-        var certificates = new List<X509Certificate>();
-
-        PemObject pemObject;
-        while ((pemObject = pemReader.ReadPemObject()) != null)
         {
-            if (pemObject.Type == "CERTIFICATE")
-            {
-                var certificateParser = new X509CertificateParser();
-                var certificate = certificateParser.ReadCertificate(pemObject.Content);
-                certificates.Add(certificate);
-            }
+            Logger.LogDebug("PEM data is null or empty, returning empty certificate list");
+            return new List<X509Certificate>();
         }
 
-        return certificates;
+        try
+        {
+            var pemReader = new PemReader(new StringReader(pemData));
+            var certificates = new List<X509Certificate>();
+
+            PemObject pemObject;
+            while ((pemObject = pemReader.ReadPemObject()) != null)
+            {
+                if (pemObject.Type == "CERTIFICATE")
+                {
+                    var certificateParser = new X509CertificateParser();
+                    var certificate = certificateParser.ReadCertificate(pemObject.Content);
+                    certificates.Add(certificate);
+                    Logger.LogTrace("Loaded certificate {Index}: {Summary}",
+                        certificates.Count, LoggingUtilities.GetCertificateSummary(certificate));
+                }
+            }
+
+            Logger.LogDebug("Loaded {Count} certificates from PEM chain", certificates.Count);
+            return certificates;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading certificate chain from PEM: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -443,42 +618,57 @@ public static class CertificateUtilities
     /// <returns>Detected format</returns>
     public static CertificateFormat DetectFormat(byte[] data)
     {
+        Logger.LogTrace("DetectFormat called with {ByteCount} bytes", data?.Length ?? 0);
+
         if (data == null || data.Length == 0)
+        {
+            Logger.LogDebug("Data is null or empty, format: Unknown");
             return CertificateFormat.Unknown;
+        }
 
         // Check for PEM format (starts with "-----BEGIN")
         var header = Encoding.UTF8.GetString(data.Take(Math.Min(30, data.Length)).ToArray());
         if (header.Contains("-----BEGIN"))
+        {
+            Logger.LogDebug("Detected format: PEM");
             return CertificateFormat.Pem;
+        }
 
         // Check for PKCS12 format (starts with 0x30 0x82 or 0x30 0x80)
         if (data.Length >= 2 && data[0] == 0x30 && (data[1] == 0x82 || data[1] == 0x80 || data[1] == 0x84))
         {
+            Logger.LogTrace("Data starts with ASN.1 sequence tag, checking if DER or PKCS12");
+
             // Try to parse as DER certificate first
             try
             {
                 var parser = new X509CertificateParser();
                 parser.ReadCertificate(data);
+                Logger.LogDebug("Detected format: DER");
                 return CertificateFormat.Der;
             }
             catch
             {
                 // If DER parsing fails, it might be PKCS12
+                Logger.LogTrace("Not DER format, checking if PKCS12");
                 try
                 {
                     var storeBuilder = new Pkcs12StoreBuilder();
                     var store = storeBuilder.Build();
                     using var ms = new MemoryStream(data);
                     store.Load(ms, Array.Empty<char>());
+                    Logger.LogDebug("Detected format: PKCS12");
                     return CertificateFormat.Pkcs12;
                 }
                 catch
                 {
+                    Logger.LogDebug("Could not detect format, returning Unknown");
                     return CertificateFormat.Unknown;
                 }
             }
         }
 
+        Logger.LogDebug("No recognizable format detected, returning Unknown");
         return CertificateFormat.Unknown;
     }
 
@@ -525,17 +715,35 @@ public static class CertificateUtilities
     /// <returns>Loaded PKCS12 store</returns>
     public static Pkcs12Store LoadPkcs12Store(byte[] pkcs12Data, string password)
     {
+        Logger.LogTrace("LoadPkcs12Store called with {ByteCount} bytes", pkcs12Data?.Length ?? 0);
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
+        Logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(password));
+
         if (pkcs12Data == null || pkcs12Data.Length == 0)
+        {
+            Logger.LogError("PKCS12 data is null or empty");
             throw new ArgumentException("PKCS12 data cannot be null or empty", nameof(pkcs12Data));
+        }
 
-        var storeBuilder = new Pkcs12StoreBuilder();
-        var store = storeBuilder.Build();
+        try
+        {
+            var storeBuilder = new Pkcs12StoreBuilder();
+            var store = storeBuilder.Build();
 
-        using var ms = new MemoryStream(pkcs12Data);
-        var passwordChars = string.IsNullOrEmpty(password) ? Array.Empty<char>() : password.ToCharArray();
-        store.Load(ms, passwordChars);
+            using var ms = new MemoryStream(pkcs12Data);
+            var passwordChars = string.IsNullOrEmpty(password) ? Array.Empty<char>() : password.ToCharArray();
+            store.Load(ms, passwordChars);
 
-        return store;
+            var aliasCount = store.Aliases.Count();
+            Logger.LogDebug("PKCS12 store loaded successfully with {AliasCount} aliases", aliasCount);
+
+            return store;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading PKCS12 store: {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>

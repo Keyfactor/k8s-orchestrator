@@ -13,6 +13,7 @@ using System.Text;
 using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -323,8 +324,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
                             KubeNamespace + " and key " + keyName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
-            var passwordHash = GetSHA256Hash(keyPassword);
-            // Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash); //TODO: Insecure comment out!
+            Logger.LogTrace("Password correlation for '{Secret}/{Key}': {CorrelationId}",
+                KubeSecretName, keyName, LoggingUtilities.GetPasswordCorrelationId(keyPassword));
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);

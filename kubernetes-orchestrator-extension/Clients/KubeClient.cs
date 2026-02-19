@@ -22,6 +22,7 @@ using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
@@ -85,6 +86,7 @@ public class KubeCertificateManagerClient
     private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
+        _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
         var k8SConfiguration = new K8SConfiguration();
 
         _logger.LogTrace("Checking if kubeconfig is null or empty");
@@ -180,8 +182,10 @@ public class KubeCertificateManagerClient
                     SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
-                clusterObj.ClusterEndpoint);
+            _logger.LogDebug("Cluster metadata - Name: {Name}, Server: {Server}, SkipTlsVerify: {SkipTls}",
+                clusterObj.Name, clusterObj.ClusterEndpoint?.Server, skipTLSVerify);
+            _logger.LogTrace("Certificate authority data: {CaDataPresence}",
+                LoggingUtilities.GetFieldPresence("certificate-authority-data", clusterObj.ClusterEndpoint?.CertificateAuthorityData));
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
 
@@ -192,16 +196,19 @@ public class KubeCertificateManagerClient
         // parse users
         foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString() ?? string.Empty))
         {
+            var token = user["user"]?["token"]?.ToString();
             var userObj = new User
             {
                 Name = user["name"]?.ToString(),
                 UserCredentials = new UserCredentials
                 {
                     UserName = user["name"]?.ToString(),
-                    Token = user["user"]?["token"]?.ToString()
+                    Token = token
                 }
             };
-            _logger.LogTrace("Adding user {Name} to K8SConfiguration object", userObj.Name);
+            _logger.LogDebug("User metadata - Name: {Name}, HasToken: {HasToken}",
+                userObj.Name, !string.IsNullOrEmpty(token));
+            _logger.LogTrace("Token: {Token}", LoggingUtilities.RedactToken(token));
             k8SConfiguration.Users = new List<User> { userObj };
         }
 
@@ -222,7 +229,8 @@ public class KubeCertificateManagerClient
                     User = ctx["context"]?["user"]?.ToString()
                 }
             };
-            _logger.LogTrace("Adding context '{Name}' to K8SConfiguration object", contextObj.Name);
+            _logger.LogDebug("Context metadata - Name: {Name}, Cluster: {Cluster}, Namespace: {Namespace}, User: {User}",
+                contextObj.Name, contextObj.ContextDetails?.Cluster, contextObj.ContextDetails?.Namespace, contextObj.ContextDetails?.User);
             k8SConfiguration.Contexts = new List<Context> { contextObj };
         }
 
@@ -444,13 +452,21 @@ public class KubeCertificateManagerClient
                 {
                     if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
                     {
+                        _logger.LogDebug("Password is stored in K8S secret at path: {Path}", jobCertificate.StorePasswordPath);
                         var passwordPath = jobCertificate.StorePasswordPath.Split("/");
                         var passwordNamespace = passwordPath[0];
                         var passwordSecretName = passwordPath[1];
+                        _logger.LogDebug("Buddy secret metadata - Name: {Name}, Namespace: {Namespace}, Field: {Field}",
+                            passwordSecretName, passwordNamespace, passwordFieldName);
+
                         // Get password from k8s secret
                         var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
+                        _logger.LogTrace("Buddy secret: {Summary}", LoggingUtilities.GetSecretSummary(k8sPasswordObj));
+
                         storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
-                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
+                        _logger.LogTrace("Password from buddy secret: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
 
                         existingStore = storeBuilder.Build();
                         using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
@@ -458,28 +474,40 @@ public class KubeCertificateManagerClient
                     }
                     else
                     {
+                        _logger.LogDebug("Password is stored in same secret, field: {Field}", passwordFieldName);
                         storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
+                        _logger.LogTrace("Password from secret field: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
 
                         existingStore = storeBuilder.Build();
                         using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                        existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
+                        existingStore.Load(ms, storePasswdString.ToCharArray());
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
                 {
+                    _logger.LogDebug("Using password from job configuration");
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
+                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
 
                     existingStore = storeBuilder.Build();
                     using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
+                    existingStore.Load(ms, storePasswdString.ToCharArray());
                 }
                 else
                 {
+                    _logger.LogDebug("Using default store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
+                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
 
                     existingStore = storeBuilder.Build();
                     using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
+                    existingStore.Load(ms, storePasswdString.ToCharArray());
                 }
             }
 

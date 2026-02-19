@@ -12,6 +12,7 @@ using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -151,10 +152,29 @@ public class Management : JobBase, IManagementJobExtension
         bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
+        Logger.LogDebug("Certificate alias: {Alias}", certAlias);
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(keyPasswordStr));
+        Logger.LogDebug("Operation parameters - Overwrite: {Overwrite}, Append: {Append}", overwrite, append);
+        Logger.LogDebug("Certificate metadata - SeparateChain: {SeparateChain}, IncludeCertChain: {IncludeCertChain}",
+            SeparateChain, IncludeCertChain);
+
+        // Log certificate information
+        if (!string.IsNullOrEmpty(certObj.CertPem))
+        {
+            Logger.LogDebug("Certificate summary: {Summary}", LoggingUtilities.GetCertificateSummaryFromPem(certObj.CertPem));
+        }
+
+        Logger.LogTrace("Has private key: {HasKey}", !string.IsNullOrEmpty(certObj.PrivateKeyPem));
+        Logger.LogTrace("Chain certificates: {Count}", certObj.ChainPem?.Count ?? 0);
+
+        if (certObj.ChainPem != null && certObj.ChainPem.Count > 0)
+        {
+            for (int i = 0; i < certObj.ChainPem.Count; i++)
+            {
+                Logger.LogTrace("Chain certificate {Index}: {Summary}", i + 1,
+                    LoggingUtilities.GetCertificateSummaryFromPem(certObj.ChainPem[i]));
+            }
+        }
 
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
