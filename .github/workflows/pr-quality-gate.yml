@@ -1,0 +1,178 @@
+name: "PR Quality Gate"
+
+on:
+  pull_request:
+    branches: [ "main", "release-*" ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+  packages: read
+
+jobs:
+  quality-checks:
+    name: Quality Gate Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Authenticate NuGet with GitHub Packages
+        run: dotnet nuget update source keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+
+      # Build and Test
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run quick tests
+        run: |
+          # Run unit tests only (integration tests run in separate workflow)
+          dotnet test --configuration Release --no-build --verbosity normal \
+            --filter "FullyQualifiedName!~Integration"
+        continue-on-error: true
+
+      # PR Size Check
+      - name: Check PR size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const additions = pr.additions || 0;
+            const deletions = pr.deletions || 0;
+            const totalChanges = additions + deletions;
+
+            if (totalChanges > 1000) {
+              core.warning(`⚠️ Large PR detected: ${totalChanges} lines changed. Consider breaking into smaller PRs.`);
+            }
+
+            const changedFiles = pr.changed_files || 0;
+            if (changedFiles > 30) {
+              core.warning(`⚠️ Many files changed: ${changedFiles} files. Consider breaking into smaller PRs.`);
+            }
+
+      # Check for breaking changes
+      - name: Check for breaking changes
+        run: |
+          echo "Checking commit messages for breaking changes..."
+          if git log origin/main..HEAD --oneline | grep -i "BREAKING CHANGE"; then
+            echo "::warning::Breaking changes detected in commit messages."
+          fi
+
+      # PR Title Check
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            chore
+            ci
+          requireScope: false
+          subjectPattern: ^[A-Z].+$
+          subjectPatternError: |
+            The subject "{subject}" found in the pull request title "{title}"
+            didn't match the configured pattern. Please ensure that the subject
+            starts with an uppercase character.
+
+  # Check for required files
+  required-files:
+    name: Check Required Files
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify required files exist
+        run: |
+          files=(
+            "README.md"
+            "LICENSE"
+            "CHANGELOG.md"
+            ".gitignore"
+          )
+
+          missing_files=()
+          for file in "${files[@]}"; do
+            if [ ! -f "$file" ]; then
+              missing_files+=("$file")
+            fi
+          done
+
+          if [ ${#missing_files[@]} -gt 0 ]; then
+            echo "::error::Missing required files: ${missing_files[*]}"
+            exit 1
+          fi
+
+  # Block PRs with certain keywords
+  block-keywords:
+    name: Block Prohibited Keywords
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for prohibited keywords
+        run: |
+          # Check for common placeholder/debug keywords that shouldn't be committed
+          prohibited_keywords=(
+            "TODO"
+            "FIXME"
+            "HACK"
+            "XXX"
+            "debugger"
+            "console.log"
+          )
+
+          found_issues=false
+          for keyword in "${prohibited_keywords[@]}"; do
+            if git diff origin/main...HEAD | grep -i "$keyword"; then
+              echo "::warning::Found prohibited keyword: $keyword"
+              found_issues=true
+            fi
+          done
+
+          # This is a warning, not an error - adjust based on your needs
+          if [ "$found_issues" = true ]; then
+            echo "::warning::Prohibited keywords found. Please review before merging."
+          fi
+
+  pr-labeler:
+    name: Auto-label PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Auto-label PR
+        uses: actions/labeler@v5
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+        continue-on-error: true
