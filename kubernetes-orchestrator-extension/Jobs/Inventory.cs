@@ -14,6 +14,7 @@ using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
+using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -46,11 +47,22 @@ public class Inventory : JobBase, IInventoryJobExtension
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+        Logger ??= LogHandler.GetClassLogger(GetType());
+
         try
         {
+            Logger.LogTrace("Calling InitializeStore()");
             InitializeStore(config);
+            Logger.LogTrace("Returned from InitializeStore()");
+
             Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
             Logger.LogInformation($"Inventory for store type: {config.Capability}");
+
+            Logger.LogTrace("KubeClient is null: {IsNull}", KubeClient == null);
+            if (KubeClient == null)
+            {
+                throw new InvalidOperationException("KubeClient is null after InitializeStore()");
+            }
 
             Logger.LogDebug("Server: {Host}", KubeClient.GetHost());
             Logger.LogDebug("Store Path: {StorePath}", StorePath);
