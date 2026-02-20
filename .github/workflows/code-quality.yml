@@ -1,0 +1,66 @@
+name: "Code Quality Analysis"
+
+on:
+  push:
+    branches: [ "main", "release-*" ]
+  pull_request:
+    branches: [ "main", "release-*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore dependencies
+        run: dotnet restore
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      # Run .NET Format to check code style
+      - name: Check code formatting
+        run: |
+          dotnet format --verify-no-changes --verbosity diagnostic
+        continue-on-error: true
+
+      # Run .NET Code Analysis
+      - name: Run code analysis
+        run: |
+          dotnet build --configuration Release /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest /p:TreatWarningsAsErrors=false
+        continue-on-error: true
+
+      # Generate code metrics
+      - name: Install dotnet-code-metrics
+        run: dotnet tool install --global dotnet-code-metrics
+
+      - name: Generate code metrics
+        run: |
+          dotnet-code-metrics analyze --solution Keyfactor.Orchestrators.K8S.sln --format markdown > code-metrics.md
+        continue-on-error: true
+
+      - name: Upload code metrics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: code-quality-metrics
+          path: code-metrics.md
