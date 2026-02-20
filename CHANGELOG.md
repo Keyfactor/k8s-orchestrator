@@ -1,3 +1,6 @@
+# 1.2.3
+- fix(jobs): Add `IncludeCertChain` at base job level, and include in management jobs.
+
 # 1.2.2
 
 ## Bug Fixes
