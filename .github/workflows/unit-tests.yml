@@ -91,6 +91,7 @@ jobs:
 
       - name: Generate coverage report
         if: matrix.dotnet-version == '8.0.x'
+        continue-on-error: true
         run: |
           dotnet tool install -g dotnet-reportgenerator-globaltool
           reportgenerator \

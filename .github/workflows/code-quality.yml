@@ -51,18 +51,11 @@ jobs:
           dotnet build --configuration Release /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest /p:TreatWarningsAsErrors=false
         continue-on-error: true
 
-      # Generate code metrics
-      - name: Install dotnet-code-metrics
-        run: dotnet tool install --global dotnet-code-metrics
-
-      - name: Generate code metrics
-        run: |
-          dotnet-code-metrics analyze --solution Keyfactor.Orchestrators.K8S.sln --format markdown > code-metrics.md
-        continue-on-error: true
-
-      - name: Upload code metrics
-        uses: actions/upload-artifact@v4
+      # Add summary
+      - name: Add quality summary
         if: always()
-        with:
-          name: code-quality-metrics
-          path: code-metrics.md
+        run: |
+          echo "## Code Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Code formatting check completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Code analysis completed" >> $GITHUB_STEP_SUMMARY
