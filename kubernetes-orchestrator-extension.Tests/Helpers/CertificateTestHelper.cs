@@ -88,11 +88,28 @@ public static class CertificateTestHelper
 
     /// <summary>
     /// Generates a DSA key pair with the specified key size.
+    /// For key sizes > 1024 bits, uses FIPS 186-3/4 style generation with SHA-256.
     /// </summary>
     public static AsymmetricCipherKeyPair GenerateDsaKeyPair(int keySize)
     {
-        var paramGen = new DsaParametersGenerator();
-        paramGen.Init(keySize, 80, Random);
+        DsaParametersGenerator paramGen;
+
+        if (keySize <= 1024)
+        {
+            // Legacy DSA (FIPS 186-2): must use SHA-1 for key size 512-1024
+            paramGen = new DsaParametersGenerator();
+            paramGen.Init(keySize, 80, Random);
+        }
+        else
+        {
+            // FIPS 186-3/4 style: use SHA-256 for larger keys
+            // For 2048-bit keys, use 256-bit q (N) per FIPS 186-3
+            paramGen = new DsaParametersGenerator(new Org.BouncyCastle.Crypto.Digests.Sha256Digest());
+            var dsaParamGenParams = new DsaParameterGenerationParameters(
+                keySize, 256, 80, Random);
+            paramGen.Init(dsaParamGenParams);
+        }
+
         var dsaParams = paramGen.GenerateParameters();
 
         var keyGenParams = new DsaKeyGenerationParameters(Random, dsaParams);

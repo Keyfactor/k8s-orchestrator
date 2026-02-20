@@ -552,9 +552,9 @@ public class CertificateUtilitiesTests
     [Fact]
     public void ExtractChainFromPkcs12_WithChain_ReturnsFullChain()
     {
-        // Arrange
-        var (leafCert, leafKeyPair) = GenerateTestRsaCertificate("Leaf");
-        var (caCert, _) = GenerateTestRsaCertificate("CA");
+        // Arrange - Create a proper certificate chain (CA signs Leaf)
+        var (caCert, caKeyPair) = GenerateTestRsaCertificate("CA");
+        var (leafCert, leafKeyPair) = GenerateSignedCertificate("Leaf", caCert, caKeyPair);
         var pkcs12Bytes = GeneratePkcs12(leafCert, leafKeyPair, chain: new[] { caCert });
 
         // Act
@@ -563,6 +563,33 @@ public class CertificateUtilitiesTests
         // Assert
         Assert.NotNull(chain);
         Assert.Equal(2, chain.Count); // Leaf + CA
+    }
+
+    private static (X509Certificate cert, AsymmetricCipherKeyPair keyPair) GenerateSignedCertificate(
+        string subjectCn,
+        X509Certificate issuerCert,
+        AsymmetricCipherKeyPair issuerKeyPair)
+    {
+        var random = new SecureRandom();
+        var keyPairGenerator = new RsaKeyPairGenerator();
+        keyPairGenerator.Init(new KeyGenerationParameters(random, 2048));
+        var keyPair = keyPairGenerator.GenerateKeyPair();
+
+        var certGen = new X509V3CertificateGenerator();
+        var subjectDN = new X509Name($"CN={subjectCn}");
+
+        certGen.SetSerialNumber(BigInteger.ProbablePrime(120, random));
+        certGen.SetIssuerDN(issuerCert.SubjectDN);
+        certGen.SetSubjectDN(subjectDN);
+        certGen.SetNotBefore(DateTime.UtcNow.AddDays(-1));
+        certGen.SetNotAfter(DateTime.UtcNow.AddYears(1));
+        certGen.SetPublicKey(keyPair.Public);
+
+        // Sign with the issuer's private key
+        var signatureFactory = new Asn1SignatureFactory("SHA256WithRSA", issuerKeyPair.Private, random);
+        var certificate = certGen.Generate(signatureFactory);
+
+        return (certificate, keyPair);
     }
 
     #endregion
@@ -706,8 +733,8 @@ public class CertificateUtilitiesTests
         var (cert, keyPair) = GenerateTestRsaCertificate();
         var pkcs12Bytes = GeneratePkcs12(cert, keyPair, password: "correct");
 
-        // Act & Assert
-        Assert.Throws<Exception>(() =>
+        // Act & Assert - BouncyCastle throws IOException for invalid password
+        Assert.ThrowsAny<Exception>(() =>
             CertificateUtilities.LoadPkcs12Store(pkcs12Bytes, "wrong"));
     }
 

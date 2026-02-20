@@ -177,30 +177,17 @@ public class K8SJKSStoreTests
         Assert.NotEmpty(store.Aliases.ToList());
     }
 
-    [Fact]
-    public void DeserializeRemoteCertificateStore_Ed25519Key_SuccessfullyLoadsStore()
+    [Theory]
+    [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.Ed448)]
+    public void DeserializeRemoteCertificateStore_EdwardsKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed25519, "Test Ed25519 Cert");
-        var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
+        // Arrange - Edwards curve keys (Ed25519/Ed448) are supported via BouncyCastle JKS
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
-        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
-
-        // Assert
-        Assert.NotNull(store);
-        Assert.NotEmpty(store.Aliases.ToList());
-    }
-
-    [Fact]
-    public void DeserializeRemoteCertificateStore_Ed448Key_SuccessfullyLoadsStore()
-    {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed448, "Test Ed448 Cert");
-        var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
-
-        // Act
-        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
+        var store = _serializer.DeserializeRemoteCertificateStore(jksBytes, "/test/path", "password");
 
         // Assert
         Assert.NotNull(store);

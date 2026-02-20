@@ -176,26 +176,13 @@ public class K8SPKCS12StoreTests
         Assert.NotEmpty(store.Aliases.ToList());
     }
 
-    [Fact]
-    public void DeserializeRemoteCertificateStore_Ed25519Key_SuccessfullyLoadsStore()
+    [Theory]
+    [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.Ed448)]
+    public void DeserializeRemoteCertificateStore_EdwardsKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed25519, "Test Ed25519 Cert");
-        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password");
-
-        // Act
-        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
-
-        // Assert
-        Assert.NotNull(store);
-        Assert.NotEmpty(store.Aliases.ToList());
-    }
-
-    [Fact]
-    public void DeserializeRemoteCertificateStore_Ed448Key_SuccessfullyLoadsStore()
-    {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed448, "Test Ed448 Cert");
+        // Arrange - Edwards curve keys (Ed25519/Ed448) are supported via BouncyCastle PKCS12
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act

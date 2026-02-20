@@ -278,6 +278,30 @@ test-integration-no-cleanup: ## Run integration tests without cleanup (leaves se
 	fi; \
 	dotnet test --filter "FullyQualifiedName~Integration"
 
+.PHONY: test-all-with-cleanup
+test-all-with-cleanup: ## Run all tests (unit + integration) with cleanup before and after
+	@echo "=== Pre-test cleanup ==="
+	@$(MAKE) test-cluster-cleanup
+	@echo ""
+	@echo "=== Running unit tests ==="
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	dotnet test --filter "FullyQualifiedName!~Integration" --logger "console;verbosity=minimal"
+	@echo ""
+	@echo "=== Running integration tests ==="
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
+		export INTEGRATION_TEST_KUBECONFIG; \
+	fi; \
+	dotnet test --filter "FullyQualifiedName~Integration" --logger "console;verbosity=minimal"
+	@echo ""
+	@echo "=== Post-test cleanup ==="
+	@$(MAKE) test-cluster-cleanup
+	@echo ""
+	@echo "=== All tests complete ==="
+
 ##@ Build
 
 .PHONY: build
