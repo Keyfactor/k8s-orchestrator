@@ -7,13 +7,25 @@ the keystore contains a certificate with an alias of `mycert`, the orchestrator 
 alias `mykeystore.pkcs12/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they
 should all require unique credentials.*
 
+## Supported Key Types
+
+The K8SPKCS12 store type supports certificates with the following key algorithms:
+
+| Key Type | Supported |
+|----------|-----------|
+| RSA (1024, 2048, 4096, 8192 bit) | Yes |
+| ECDSA (P-256, P-384, P-521) | Yes |
+| DSA (1024, 2048 bit) | Yes |
+| Ed25519 | Yes |
+| Ed448 | Yes |
+
 ## Discovery Job Configuration
 
 For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
-- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or PKCS12 data. Will use
-  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.pkcs12`,`pkcs12`.
+- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 data. Will use
+  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.p12`,`p12`.
 
 ## Certificate Store Configuration
 
