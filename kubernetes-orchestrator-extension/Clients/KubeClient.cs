@@ -68,11 +68,21 @@ public class KubeCertificateManagerClient
         try
         {
             _logger.LogTrace("Returning cluster name from ConfigObj");
+            if (ConfigObj == null)
+            {
+                _logger.LogWarning("ConfigObj is null, falling back to GetHost()");
+                return GetHost();
+            }
+            if (ConfigObj.Clusters == null)
+            {
+                _logger.LogWarning("ConfigObj.Clusters is null, falling back to GetHost()");
+                return GetHost();
+            }
             return ConfigObj.Clusters.FirstOrDefault()?.Name;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _logger.LogWarning("Error getting cluster name from ConfigObj attempting to return client base uri");
+            _logger.LogWarning(ex, "Error getting cluster name from ConfigObj, attempting to return client base uri");
             return GetHost();
         }
     }
@@ -80,14 +90,29 @@ public class KubeCertificateManagerClient
     public string GetHost()
     {
         _logger.LogTrace("Entered GetHost()");
+        if (Client == null)
+        {
+            _logger.LogError("Client is null in GetHost()");
+            throw new InvalidOperationException("Kubernetes client is not initialized. Check kubeconfig configuration.");
+        }
+        if (Client.BaseUri == null)
+        {
+            _logger.LogError("Client.BaseUri is null in GetHost()");
+            throw new InvalidOperationException("Kubernetes client BaseUri is null. Check kubeconfig configuration.");
+        }
         return Client.BaseUri.ToString();
     }
 
     private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
+        _logger.LogTrace("Kubeconfig length: {Length}", kubeconfig?.Length ?? 0);
         _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
-        var k8SConfiguration = new K8SConfiguration();
+
+        try
+        {
+            var k8SConfiguration = new K8SConfiguration();
+            _logger.LogTrace("K8SConfiguration object created");
 
         _logger.LogTrace("Checking if kubeconfig is null or empty");
         if (string.IsNullOrEmpty(kubeconfig))
@@ -234,10 +259,18 @@ public class KubeCertificateManagerClient
             k8SConfiguration.Contexts = new List<Context> { contextObj };
         }
 
-        _logger.LogTrace("Finished parsing contexts");
-        _logger.LogDebug("Finished parsing kubeconfig");
+            _logger.LogTrace("Finished parsing contexts");
+            _logger.LogDebug("Finished parsing kubeconfig");
 
-        return k8SConfiguration;
+            return k8SConfiguration;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CRITICAL ERROR in ParseKubeConfig: {Message}", ex.Message);
+            _logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            _logger.LogError("Stack Trace: {StackTrace}", ex.StackTrace);
+            throw;
+        }
     }
 
     private IKubernetes GetKubeClient(string kubeconfig)
@@ -295,13 +328,22 @@ public class KubeCertificateManagerClient
         }
 
         _logger.LogDebug("Creating Kubernetes client");
-        IKubernetes client = new Kubernetes(config);
-        _logger.LogDebug("Finished creating Kubernetes client");
+        try
+        {
+            IKubernetes client = new Kubernetes(config);
+            _logger.LogDebug("Finished creating Kubernetes client");
 
-        _logger.LogTrace("Setting Client property");
-        Client = client;
-        _logger.LogTrace("Exiting GetKubeClient()");
-        return client;
+            _logger.LogTrace("Setting Client property");
+            Client = client;
+            _logger.LogTrace("Exiting GetKubeClient()");
+            return client;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create Kubernetes client: {Message}", ex.Message);
+            _logger.LogError("Config Host: {Host}", config?.Host ?? "null");
+            throw new InvalidOperationException($"Failed to create Kubernetes client. Check kubeconfig configuration. Error: {ex.Message}", ex);
+        }
     }
 
     /// <summary>
@@ -1918,7 +1960,16 @@ public class KubeCertificateManagerClient
         _logger.LogDebug($"Successfully read {name} certificate signing request from {GetHost()}.");
         _logger.LogTrace("cr: " + cr);
         _logger.LogTrace("Attempting to parse certificate from certificate resource.");
-        var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
+
+        // Check if CSR has been signed yet
+        if (cr.Status?.Certificate == null || cr.Status.Certificate.Length == 0)
+        {
+            _logger.LogInformation($"CSR {name} has no certificate yet (pending or denied). Returning empty inventory.");
+            _logger.LogTrace("Exiting GetCertificateSigningRequestStatus() - no certificate");
+            return Array.Empty<string>();
+        }
+
+        var utfCert = Encoding.UTF8.GetString(cr.Status.Certificate);
         _logger.LogTrace("utfCert: " + utfCert);
 
         _logger.LogDebug($"Attempting to parse certificate from certificate resource {name}.");

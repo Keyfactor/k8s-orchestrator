@@ -756,8 +756,9 @@ public static class CertificateUtilities
         try
         {
             var parser = new X509CertificateParser();
-            parser.ReadCertificate(data);
-            return true;
+            var cert = parser.ReadCertificate(data);
+            // ReadCertificate returns null for invalid/incomplete data instead of throwing
+            return cert != null;
         }
         catch
         {
