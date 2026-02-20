@@ -32,7 +32,7 @@ jobs:
             10.0.x
 
       - name: Authenticate NuGet with GitHub Packages
-        run: dotnet nuget add source keyfactor-github --source https://nuget.pkg.github.com/Keyfactor/index.json --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+        run: dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json --name keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
 
       - name: Restore dependencies
         run: dotnet restore
