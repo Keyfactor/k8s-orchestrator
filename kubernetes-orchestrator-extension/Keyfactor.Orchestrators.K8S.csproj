@@ -15,6 +15,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="Keyfactor.Orchestrators.K8S.Tests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <None Update="manifest.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
