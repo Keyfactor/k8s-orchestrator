@@ -242,34 +242,46 @@ public abstract class JobBase
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.LogDebug("Entered InitializeStore() for INVENTORY");
-        InventoryConfig = config;
-        Capability = config.Capability;
-        Logger.LogTrace("Capability: {Capability}", Capability);
 
-        Logger.LogDebug("Calling JsonConvert.DeserializeObject()");
-        var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
-        // Logger.LogTrace("Properties: {Properties}", props); // Commented out to avoid logging sensitive information
+        try
+        {
+            InventoryConfig = config;
+            Capability = config.Capability;
+            Logger.LogTrace("Capability: {Capability}", Capability);
 
-        ServerUsername = config.ServerUsername;
-        Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
+            Logger.LogDebug("Calling JsonConvert.DeserializeObject()");
+            var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
+            Logger.LogTrace("Props type: {Type}", props?.GetType()?.Name ?? "null");
+            // Logger.LogTrace("Properties: {Properties}", props); // Commented out to avoid logging sensitive information
 
-        ServerPassword = config.ServerPassword;
-        Logger.LogTrace("ServerPassword: {Password}", LoggingUtilities.RedactPassword(ServerPassword));
-        Logger.LogTrace("ServerPassword correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(ServerPassword));
+            ServerUsername = config.ServerUsername;
+            Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
 
-        StorePassword = config.CertificateStoreDetails?.StorePassword;
-        Logger.LogTrace("StorePassword: {Password}", LoggingUtilities.RedactPassword(StorePassword));
-        Logger.LogTrace("StorePassword correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(StorePassword));
+            ServerPassword = config.ServerPassword;
+            Logger.LogTrace("ServerPassword: {Password}", LoggingUtilities.RedactPassword(ServerPassword));
+            Logger.LogTrace("ServerPassword correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(ServerPassword));
 
-        StorePath = config.CertificateStoreDetails?.StorePath;
-        Logger.LogTrace("StorePath: {StorePath}", StorePath);
+            StorePassword = config.CertificateStoreDetails?.StorePassword;
+            Logger.LogTrace("StorePassword: {Password}", LoggingUtilities.RedactPassword(StorePassword));
+            Logger.LogTrace("StorePassword correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(StorePassword));
 
-        Logger.LogDebug("Calling InitializeProperties()");
-        InitializeProperties(props);
-        Logger.LogDebug("Returned from InitializeStore()");
-        Logger.LogInformation(
-            "Initialized Inventory Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
-            StorePath);
+            StorePath = config.CertificateStoreDetails?.StorePath;
+            Logger.LogTrace("StorePath: {StorePath}", StorePath);
+
+            Logger.LogDebug("Calling InitializeProperties()");
+            InitializeProperties(props);
+            Logger.LogDebug("Returned from InitializeProperties()");
+            Logger.LogInformation(
+                "Initialized Inventory Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
+                StorePath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR in InitializeStore(Inventory): {Message}", ex.Message);
+            Logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            Logger.LogError("Stack Trace: {StackTrace}", ex.StackTrace);
+            throw;
+        }
     }
 
     protected void InitializeStore(DiscoveryJobConfiguration config)
@@ -306,29 +318,42 @@ public abstract class JobBase
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.LogDebug("Entered InitializeStore() for MANAGEMENT");
-        ManagementConfig = config;
 
-        Logger.LogDebug("Calling JsonConvert.DeserializeObject()");
-        var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
-        Logger.LogDebug("Returned from JsonConvert.DeserializeObject()");
-        Capability = config.Capability;
-        ServerUsername = config.ServerUsername;
-        ServerPassword = config.ServerPassword;
-        StorePath = config.CertificateStoreDetails?.StorePath;
+        try
+        {
+            ManagementConfig = config;
 
-        Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
-        Logger.LogTrace("StorePath: {StorePath}", StorePath);
+            Logger.LogDebug("Calling JsonConvert.DeserializeObject()");
+            var props = JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties);
+            Logger.LogTrace("Props type: {Type}", props?.GetType()?.Name ?? "null");
+            Logger.LogDebug("Returned from JsonConvert.DeserializeObject()");
 
-        Logger.LogDebug("Calling InitializeProperties()");
-        InitializeProperties(props);
-        Logger.LogDebug("Returned from InitializeProperties()");
-        // StorePath = config.CertificateStoreDetails?.StorePath;
-        // StorePath = GetStorePath();
-        Overwrite = config.Overwrite;
-        Logger.LogTrace("Overwrite: {Overwrite}", Overwrite);
-        Logger.LogInformation(
-            "Initialized Management Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
-            StorePath);
+            Capability = config.Capability;
+            ServerUsername = config.ServerUsername;
+            ServerPassword = config.ServerPassword;
+            StorePath = config.CertificateStoreDetails?.StorePath;
+
+            Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
+            Logger.LogTrace("StorePath: {StorePath}", StorePath);
+
+            Logger.LogDebug("Calling InitializeProperties()");
+            InitializeProperties(props);
+            Logger.LogDebug("Returned from InitializeProperties()");
+            // StorePath = config.CertificateStoreDetails?.StorePath;
+            // StorePath = GetStorePath();
+            Overwrite = config.Overwrite;
+            Logger.LogTrace("Overwrite: {Overwrite}", Overwrite);
+            Logger.LogInformation(
+                "Initialized Management Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
+                StorePath);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR in InitializeStore(Management): {Message}", ex.Message);
+            Logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            Logger.LogError("Stack Trace: {StackTrace}", ex.StackTrace);
+            throw;
+        }
     }
 
     private static string InsertLineBreaks(string input, int lineLength)
@@ -402,7 +427,7 @@ public abstract class JobBase
 
                 jobCertObject.CertificateEntry = x509Obj;
                 jobCertObject.CertificateEntryChain = chain;
-                jobCertObject.CertThumbprint = x509Obj.Certificate.Thumbprint();
+                jobCertObject.CertThumbprint = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(x509Obj.Certificate);
                 jobCertObject.ChainPem = chainList;
                 jobCertObject.CertPem = KubeClient.ConvertToPem(x509Obj.Certificate);
 
@@ -774,6 +799,9 @@ public abstract class JobBase
     private void InitializeProperties(dynamic storeProperties)
     {
         Logger.MethodEntry();
+        var storePropsType = storeProperties != null ? storeProperties.GetType().FullName : "null";
+        Logger.LogTrace($"InitializeProperties called with storeProperties type: {storePropsType}");
+
         if (storeProperties == null)
         {
             Logger.MethodExit();
@@ -786,10 +814,21 @@ public abstract class JobBase
         try
         {
             Logger.LogDebug("Setting K8S values from store properties");
+            Logger.LogTrace("Attempting to get KubeNamespace from storeProperties");
             KubeNamespace = storeProperties["KubeNamespace"];
+            Logger.LogTrace("KubeNamespace retrieved: {Value}", KubeNamespace ?? "null");
+
+            Logger.LogTrace("Attempting to get KubeSecretName from storeProperties");
             KubeSecretName = storeProperties["KubeSecretName"];
+            Logger.LogTrace("KubeSecretName retrieved: {Value}", KubeSecretName ?? "null");
+
+            Logger.LogTrace("Attempting to get KubeSecretType from storeProperties");
             KubeSecretType = storeProperties["KubeSecretType"];
+            Logger.LogTrace("KubeSecretType retrieved: {Value}", KubeSecretType ?? "null");
+
+            Logger.LogTrace("Attempting to get KubeSvcCreds from storeProperties");
             KubeSvcCreds = storeProperties["KubeSvcCreds"];
+            Logger.LogTrace("KubeSvcCreds retrieved: {Present}", !string.IsNullOrEmpty(KubeSvcCreds));
 
             // check if storeProperties contains PasswordIsSeparateSecret key and if it does, set PasswordIsSeparateSecret to the value of the key
             if (storeProperties.ContainsKey("PasswordIsSeparateSecret"))
@@ -845,9 +884,11 @@ public abstract class JobBase
                 IncludeCertChain = storeProperties["IncludeCertChain"];
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            Logger.LogError("Unknown error while parsing store properties");
+            Logger.LogError($"CRITICAL ERROR while parsing store properties: {ex.Message}");
+            Logger.LogError($"Exception Type: {ex.GetType().FullName}");
+            Logger.LogError($"Stack Trace: {ex.StackTrace}");
             Logger.LogWarning("Setting KubeSecretType and KubeSvcCreds to empty strings");
             KubeSecretType = "";
             KubeSvcCreds = "";
@@ -967,8 +1008,21 @@ public abstract class JobBase
         if (ServerUsername == "kubeconfig" || string.IsNullOrEmpty(ServerUsername))
         {
             Logger.LogInformation("Using kubeconfig provided by 'Server Password' field");
-            storeProperties["KubeSvcCreds"] = ServerPassword;
-            KubeSvcCreds = ServerPassword;
+            try
+            {
+                Logger.LogTrace("Attempting to set KubeSvcCreds in storeProperties dictionary");
+                storeProperties["KubeSvcCreds"] = ServerPassword;
+                Logger.LogTrace("Successfully set KubeSvcCreds in storeProperties");
+                KubeSvcCreds = ServerPassword;
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError($"CRITICAL ERROR setting KubeSvcCreds: {ex.Message}");
+                Logger.LogError($"storeProperties is null: {storeProperties == null}");
+                var propsType = storeProperties != null ? storeProperties.GetType().FullName : "null";
+                Logger.LogError($"storeProperties type: {propsType}");
+                throw;
+            }
         }
 
         if (string.IsNullOrEmpty(KubeSvcCreds))
@@ -1049,18 +1103,45 @@ public abstract class JobBase
         }
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
-        KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+        Logger.LogTrace("KubeSvcCreds length: {Length}", KubeSvcCreds?.Length ?? 0);
+        try
+        {
+            KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+            Logger.LogTrace("KubeCertificateManagerClient created successfully");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR creating KubeCertificateManagerClient: {Message}", ex.Message);
+            Logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            throw;
+        }
 
         Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
-        KubeHost = KubeClient.GetHost();
-        Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
+        try
+        {
+            KubeHost = KubeClient.GetHost();
+            Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR calling KubeClient.GetHost(): {Message}", ex.Message);
+            throw;
+        }
 
         Logger.LogTrace("Getting cluster name from KubeClient");
-        KubeCluster = KubeClient.GetClusterName();
-        Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
+        try
+        {
+            KubeCluster = KubeClient.GetClusterName();
+            Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR calling KubeClient.GetClusterName(): {Message}", ex.Message);
+            throw;
+        }
 
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath) && !Capability.Contains("NS") &&
-            !Capability.Contains("Cluster"))
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath) &&
+            !string.IsNullOrEmpty(Capability) && !Capability.Contains("NS") && !Capability.Contains("Cluster"))
         {
             Logger.LogDebug("KubeSecretName is empty, attempting to set 'KubeSecretName' from StorePath");
             ResolveStorePath(StorePath);
