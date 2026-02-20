@@ -1,17 +1,17 @@
 ## Overview
 
-The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. 
-The following types of Kubernetes resources are supported: kubernetes secrets of `kubernetes.io/tls` or `Opaque` and 
-kubernetes certificates `certificates.k8s.io/v1`
+The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster.
+The following types of Kubernetes resources are supported: Kubernetes secrets of type `kubernetes.io/tls` or `Opaque`, and
+Kubernetes certificates of type `certificates.k8s.io/v1`.
 
 The certificate store types that can be managed in the current version are:
 - `K8SCert` - Kubernetes certificates of type `certificates.k8s.io/v1`
 - `K8SSecret` - Kubernetes secrets of type `Opaque`
-- `K8STLSSecret` - Kubernetes secrets of type `kubernetes.io/tls`
-- `K8SCluster` - This allows for a single store to manage a k8s cluster's secrets or type `Opaque` and `kubernetes.io/tls`.
-  This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores across all k8s namespaces.
-- `K8SNS` - This allows for a single store to manage a k8s namespace's secrets or type `Opaque` and `kubernetes.io/tls`.
-  This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores for a single k8s namespace.
+- `K8STLSSecr` - Kubernetes secrets of type `kubernetes.io/tls`
+- `K8SCluster` - This allows for a single store to manage a Kubernetes cluster's secrets of type `Opaque` and `kubernetes.io/tls`.
+  This can be thought of as a container of `K8SSecret` and `K8STLSSecr` stores across all Kubernetes namespaces.
+- `K8SNS` - This allows for a single store to manage a Kubernetes namespace's secrets of type `Opaque` and `kubernetes.io/tls`.
+  This can be thought of as a container of `K8SSecret` and `K8STLSSecr` stores for a single Kubernetes namespace.
 - `K8SJKS` - Kubernetes secrets of type `Opaque` that contain one or more Java Keystore(s). These cannot be managed at the
   cluster or namespace level as they should all require unique credentials.
 - `K8SPKCS12` - Kubernetes secrets of type `Opaque` that contain one or more PKCS12(s). These cannot be managed at the
@@ -21,6 +21,20 @@ This orchestrator extension makes use of the Kubernetes API by using a service a
 to communicate remotely with certificate stores. The service account must have the correct permissions
 in order to perform the desired operations.  For more information on the required permissions, see the
 [service account setup guide](#service-account-setup).
+
+## Supported Key Types
+
+The Kubernetes Orchestrator Extension supports certificates with the following key algorithms across all store types:
+
+| Key Type | Sizes/Curves | Supported |
+|----------|--------------|-----------|
+| RSA | 1024, 2048, 4096, 8192 bit | Yes |
+| ECDSA | P-256 (secp256r1), P-384 (secp384r1), P-521 (secp521r1) | Yes |
+| DSA | 1024, 2048 bit | Yes |
+| Ed25519 | - | Yes |
+| Ed448 | - | Yes |
+
+**Note:** DSA 2048-bit keys use FIPS 186-3/4 compliant generation with SHA-256. Edwards curve keys (Ed25519/Ed448) are fully supported for all store types including JKS and PKCS12.
 
 ## Requirements
 
