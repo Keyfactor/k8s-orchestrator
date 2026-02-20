@@ -80,13 +80,6 @@ jobs:
           kubectl config current-context
           kubectl config get-contexts
 
-      - name: Create kubeconfig for tests
-        run: |
-          # Ensure kubeconfig is in expected location
-          mkdir -p ~/.kube
-          cp $KUBECONFIG ~/.kube/config || cp ~/.kube/config ~/.kube/config
-          chmod 600 ~/.kube/config
-
       - name: Verify cluster permissions
         run: |
           echo "Checking cluster permissions..."
