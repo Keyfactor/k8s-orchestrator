@@ -27,12 +27,10 @@ jobs:
             8.0.x
             10.0.x
 
-      # Authenticate with GitHub Packages for Keyfactor NuGet packages
-      - name: Authenticate NuGet with GitHub Packages
-        run: dotnet nuget update source keyfactor-github --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
-
       - name: Restore dependencies
         run: dotnet restore
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install CycloneDX tool
         run: dotnet tool install --global CycloneDX
