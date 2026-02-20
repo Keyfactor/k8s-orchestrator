@@ -12,6 +12,7 @@ using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
@@ -151,10 +152,29 @@ public class Management : JobBase, IManagementJobExtension
         bool overwrite = false, bool append = false)
     {
         Logger.LogTrace("Entered HandleOpaqueSecret()");
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
+        Logger.LogDebug("Certificate alias: {Alias}", certAlias);
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(keyPasswordStr));
+        Logger.LogDebug("Operation parameters - Overwrite: {Overwrite}, Append: {Append}", overwrite, append);
+        Logger.LogDebug("Certificate metadata - SeparateChain: {SeparateChain}, IncludeCertChain: {IncludeCertChain}",
+            SeparateChain, IncludeCertChain);
+
+        // Log certificate information
+        if (!string.IsNullOrEmpty(certObj.CertPem))
+        {
+            Logger.LogDebug("Certificate summary: {Summary}", LoggingUtilities.GetCertificateSummaryFromPem(certObj.CertPem));
+        }
+
+        Logger.LogTrace("Has private key: {HasKey}", !string.IsNullOrEmpty(certObj.PrivateKeyPem));
+        Logger.LogTrace("Chain certificates: {Count}", certObj.ChainPem?.Count ?? 0);
+
+        if (certObj.ChainPem != null && certObj.ChainPem.Count > 0)
+        {
+            for (int i = 0; i < certObj.ChainPem.Count; i++)
+            {
+                Logger.LogTrace("Chain certificate {Index}: {Summary}", i + 1,
+                    LoggingUtilities.GetCertificateSummaryFromPem(certObj.ChainPem[i]));
+            }
+        }
 
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
@@ -165,13 +185,20 @@ public class Management : JobBase, IManagementJobExtension
             KubeNamespace,
             "secret",
             append,
-            overwrite
+            overwrite,
+            false,
+            SeparateChain,
+            IncludeCertChain
         );
-        if (createResponse == null)
-            Logger.LogError("createResponse is null");
-        else
-            Logger.LogTrace(createResponse.ToString());
 
+        if (createResponse == null)
+        {
+            var errorMsg = $"Failed to create or update Opaque secret '{KubeSecretName}' in namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}'. CreateOrUpdateCertificateStoreSecret returned null.";
+            Logger.LogError(errorMsg);
+            throw new Exception(errorMsg);
+        }
+
+        Logger.LogDebug("Secret operation result: {Summary}", LoggingUtilities.GetSecretSummary(createResponse));
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         return createResponse;
@@ -217,7 +244,30 @@ public class Management : JobBase, IManagementJobExtension
 
         var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
         Logger.LogTrace("alias: {Alias}", alias);
+
+        // Try to get StoreFileName from Properties JSON, default to "jks" if not found
         var existingDataFieldName = "jks";
+        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
+        {
+            try
+            {
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
+                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
+                {
+                    var storeFileName = storeFileNameElement.GetString();
+                    if (!string.IsNullOrEmpty(storeFileName))
+                    {
+                        existingDataFieldName = storeFileName;
+                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'jks'", ex.Message);
+            }
+        }
+
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
         if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
         {
@@ -300,11 +350,37 @@ public class Management : JobBase, IManagementJobExtension
             }
 
         // get newCert bytes from config.JobCertificate.Contents
-        var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
+        Logger.LogDebug("Attempting to get newCert bytes from config.JobCertificate.Contents");
+        var newCertBytes = config.JobCertificate?.Contents == null
+            ? []
+            : Convert.FromBase64String(config.JobCertificate.Contents);
 
         var alias = config.JobCertificate.Alias;
         Logger.LogDebug("alias: " + alias);
+
+        // Try to get StoreFileName from Properties JSON, default to "pkcs12" if not found
         var existingDataFieldName = "pkcs12";
+        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
+        {
+            try
+            {
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
+                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
+                {
+                    var storeFileName = storeFileNameElement.GetString();
+                    if (!string.IsNullOrEmpty(storeFileName))
+                    {
+                        existingDataFieldName = storeFileName;
+                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'pkcs12'", ex.Message);
+            }
+        }
+
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
         if (alias.Contains('/'))
         {
@@ -462,7 +538,8 @@ public class Management : JobBase, IManagementJobExtension
             append,
             overwrite,
             false,
-            SeparateChain
+            SeparateChain,
+            IncludeCertChain
         );
         if (createResponse == null)
             Logger.LogError("createResponse is null");
@@ -603,10 +680,10 @@ public class Management : JobBase, IManagementJobExtension
                 //pattern: namespace/secrets/secret_type/secert_name
                 var clusterSplitAlias = jobCertObj.Alias.Split("/");
 
-                // Check splitAlias length
-                if (clusterSplitAlias.Length < 3)
+                // Check splitAlias length - K8SCluster expects: <namespace>/secrets/<tls|opaque>/<secret_name> (4 parts)
+                if (clusterSplitAlias.Length < 4)
                 {
-                    var invalidAliasErrMsg = "Invalid alias format for K8SCluster store type. Alias";
+                    var invalidAliasErrMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{jobCertObj.Alias}'";
                     Logger.LogError(invalidAliasErrMsg);
                     Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
                     return FailJob(invalidAliasErrMsg, config.JobHistoryId);
@@ -688,6 +765,13 @@ public class Management : JobBase, IManagementJobExtension
             var splitAlias = certAlias.Split("/");
             if (Capability.Contains("K8SNS"))
             {
+                // K8SNS expects: secrets/<tls|opaque>/<secret_name> (3 parts)
+                if (splitAlias.Length < 3)
+                {
+                    var errMsg = $"Invalid alias format for K8SNS store type. Expected pattern: 'secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 // Split alias by / and get second to last element KubeSecretType
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
@@ -695,6 +779,13 @@ public class Management : JobBase, IManagementJobExtension
             }
             else if (Capability.Contains("K8SCluster"))
             {
+                // K8SCluster expects: <namespace>/secrets/<tls|opaque>/<secret_name> (4 parts)
+                if (splitAlias.Length < 4)
+                {
+                    var errMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
                 KubeNamespace = splitAlias[0];
