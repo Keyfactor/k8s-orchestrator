@@ -1,11 +1,11 @@
 ## Overview
 
-The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single 
-Keyfactor Command certificate store using an alias pattern of
+The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single
+Keyfactor Command certificate store. This store type manages all secrets within a specific Kubernetes namespace.
 
 ## Discovery Job Configuration
 
-For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SNS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 

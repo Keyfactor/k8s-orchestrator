@@ -4,12 +4,24 @@ The `K8SJKS` store type is used to manage Kubernetes secrets of type `Opaque`.  
 must have a field that ends in `.jks`. The orchestrator will inventory and manage using a *custom alias* of the following
 pattern: `<k8s_secret_field_name>/<keystore_alias>`.  For example, if the secret has a field named `mykeystore.jks` and
 the keystore contains a certificate with an alias of `mycert`, the orchestrator will manage the certificate using the
-alias `mykeystore.jks/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they 
+alias `mykeystore.jks/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they
 should all require unique credentials.*
+
+## Supported Key Types
+
+The K8SJKS store type supports certificates with the following key algorithms:
+
+| Key Type | Supported |
+|----------|-----------|
+| RSA (1024, 2048, 4096, 8192 bit) | Yes |
+| ECDSA (P-256, P-384, P-521) | Yes |
+| DSA (1024, 2048 bit) | Yes |
+| Ed25519 | Yes |
+| Ed448 | Yes |
 
 ## Discovery Job Configuration
 
-For discovery of `K8SJKS` stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SJKS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use 

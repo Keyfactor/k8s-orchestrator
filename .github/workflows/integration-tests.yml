@@ -1,0 +1,224 @@
+name: Integration Tests
+
+on:
+  pull_request:
+    branches: [ main, release-* ]
+    paths:
+      - '**.cs'
+      - '**.csproj'
+      - '.github/workflows/integration-tests.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - '**.cs'
+      - '**.csproj'
+      - '.github/workflows/integration-tests.yml'
+  workflow_dispatch:
+    inputs:
+      kubernetes-version:
+        description: 'Kubernetes version to test against'
+        required: false
+        default: 'v1.29.0'
+        type: choice
+        options:
+          - 'v1.29.0'
+          - 'v1.28.0'
+          - 'v1.27.0'
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+  packages: read
+
+env:
+  KUBERNETES_VERSION: ${{ inputs.kubernetes-version || 'v1.29.0' }}
+  KIND_CLUSTER_NAME: kf-integrations
+
+jobs:
+  integration-test:
+    name: Integration Tests (K8s ${{ inputs.kubernetes-version || 'v1.29.0' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8.0
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Display .NET version
+        run: dotnet --version
+
+      - name: Setup kind
+        uses: helm/kind-action@v1
+        with:
+          version: v0.20.0
+          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+          node_image: kindest/node:${{ env.KUBERNETES_VERSION }}
+          wait: 5m
+          config: .github/kind-config.yaml
+
+      - name: Verify cluster is ready
+        run: |
+          kubectl cluster-info --context kind-${{ env.KIND_CLUSTER_NAME }}
+          kubectl get nodes
+          kubectl get pods --all-namespaces
+
+      - name: Configure kubeconfig context
+        run: |
+          # Rename context to match what tests expect
+          kubectl config rename-context kind-${{ env.KIND_CLUSTER_NAME }} kf-integrations || true
+          kubectl config use-context kf-integrations
+
+          # Verify context
+          kubectl config current-context
+          kubectl config get-contexts
+
+      - name: Create kubeconfig for tests
+        run: |
+          # Ensure kubeconfig is in expected location
+          mkdir -p ~/.kube
+          cp $KUBECONFIG ~/.kube/config || cp ~/.kube/config ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Verify cluster permissions
+        run: |
+          echo "Checking cluster permissions..."
+          kubectl auth can-i create namespaces
+          kubectl auth can-i create secrets --all-namespaces
+          kubectl auth can-i delete namespaces
+          kubectl auth can-i delete secrets --all-namespaces
+
+      - name: Authenticate NuGet with GitHub Packages
+        run: dotnet nuget update source keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run integration tests
+        env:
+          RUN_INTEGRATION_TESTS: 'true'
+        run: |
+          dotnet test \
+            --configuration Release \
+            --no-build \
+            --framework net8.0 \
+            --verbosity normal \
+            --filter "FullyQualifiedName~Integration" \
+            --logger "trx;LogFileName=integration-test-results.trx" \
+            --results-directory ./IntegrationTestResults
+
+      - name: Publish test results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: |
+            IntegrationTestResults/**/*.trx
+          check_name: Integration Test Results
+          comment_title: Integration Test Results (K8s ${{ env.KUBERNETES_VERSION }})
+
+      - name: Upload test results as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results-k8s-${{ env.KUBERNETES_VERSION }}
+          path: ./IntegrationTestResults/
+          retention-days: 30
+
+      - name: Collect test namespace info on failure
+        if: failure()
+        run: |
+          echo "Collecting diagnostic information..."
+
+          # List all test namespaces
+          echo "Test namespaces:"
+          kubectl get namespaces -l managed-by=keyfactor-k8s-orchestrator-tests
+
+          # Get details of test namespaces
+          for ns in $(kubectl get namespaces -l managed-by=keyfactor-k8s-orchestrator-tests -o name); do
+            echo "=== Details for $ns ==="
+            kubectl describe $ns
+            kubectl get secrets -n ${ns##*/} 2>/dev/null || echo "No secrets found"
+            kubectl get events -n ${ns##*/} --sort-by='.lastTimestamp' 2>/dev/null || echo "No events found"
+          done
+
+      - name: Cleanup test resources
+        if: always()
+        run: |
+          echo "Cleaning up test resources..."
+          kubectl delete namespaces -l managed-by=keyfactor-k8s-orchestrator-tests --timeout=60s || true
+
+          # Verify cleanup
+          remaining=$(kubectl get namespaces -l managed-by=keyfactor-k8s-orchestrator-tests --no-headers 2>/dev/null | wc -l)
+          if [ "$remaining" -gt 0 ]; then
+            echo "::warning::$remaining test namespace(s) still exist after cleanup"
+          else
+            echo "All test namespaces cleaned up successfully"
+          fi
+
+      - name: Export kind logs on failure
+        if: failure()
+        run: |
+          mkdir -p ./kind-logs
+          kind export logs ./kind-logs --name ${{ env.KIND_CLUSTER_NAME }}
+
+      - name: Upload kind logs
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: kind-logs-k8s-${{ env.KUBERNETES_VERSION }}
+          path: ./kind-logs/
+          retention-days: 7
+
+  integration-test-summary:
+    name: Integration Test Summary
+    runs-on: ubuntu-latest
+    needs: integration-test
+    if: always()
+    steps:
+      - name: Check test results
+        run: |
+          if [ "${{ needs.integration-test.result }}" == "failure" ]; then
+            echo "::error::Integration tests failed. Please review the test results and logs."
+            exit 1
+          elif [ "${{ needs.integration-test.result }}" == "cancelled" ]; then
+            echo "::warning::Integration tests were cancelled."
+            exit 1
+          else
+            echo "::notice::All integration tests passed successfully!"
+          fi
+
+      - name: Add summary
+        if: always()
+        run: |
+          echo "## Integration Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Kubernetes Version:** ${{ env.KUBERNETES_VERSION }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status:** ${{ needs.integration-test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ "${{ needs.integration-test.result }}" == "success" ]; then
+            echo "✅ All integration tests passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Store Types Tested" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SJKS (Java Keystores) - 9 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SPKCS12 (PKCS12/PFX) - 9 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SCert (CSRs) - 4 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SSecret (Opaque PEM) - 8 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8STLSSecr (TLS Secrets) - 9 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SCluster (Cluster-wide) - 8 tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SNS (Namespace) - 8 tests" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ Integration tests failed or were cancelled" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the test results and logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

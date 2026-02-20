@@ -1,0 +1,33 @@
+name: "Dependency Submission"
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  dependency-submission:
+    name: Submit Dependencies to GitHub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+
+      - name: Authenticate NuGet with GitHub Packages
+        run: dotnet nuget update source keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+
+      - name: Submit NuGet Dependencies
+        uses: darenm/nuget-dependency-submission@v1
+        with:
+          solution: Keyfactor.Orchestrators.K8S.sln
+          github-token: ${{ secrets.GITHUB_TOKEN }}
