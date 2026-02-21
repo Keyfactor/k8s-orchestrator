@@ -1,0 +1,119 @@
+name: 📚 Documentation or Question
+description: Report a documentation issue or ask a question about the Kubernetes Orchestrator Extension
+title: "[Docs]: "
+labels: ["documentation", "question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve our documentation or asking a question!
+
+        **Note**: For general Keyfactor Command support, please contact Keyfactor Support at https://support.keyfactor.com
+
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue Type
+      description: What type of issue is this?
+      options:
+        - Documentation Error / Typo
+        - Missing Documentation
+        - Unclear Documentation
+        - Documentation Improvement Suggestion
+        - General Question / Support Request
+        - How-to / Best Practices Question
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe the documentation issue or ask your question
+      placeholder: |
+        The documentation says... but I'm confused about...
+        OR
+        How do I configure...
+    validations:
+      required: true
+
+  - type: input
+    id: documentation-link
+    attributes:
+      label: Documentation Link
+      description: If reporting a documentation issue, provide a link to the relevant documentation
+      placeholder: https://github.com/Keyfactor/k8s-orchestrator/blob/main/README.md#...
+
+  - type: dropdown
+    id: topic-area
+    attributes:
+      label: Topic Area
+      description: Which area does this relate to?
+      options:
+        - Installation / Setup
+        - Store Type Configuration
+        - Service Account / Authentication
+        - Certificate Operations (Add/Remove/Inventory)
+        - Discovery Configuration
+        - Store Types (K8SCluster, K8SNS, etc.)
+        - Custom Properties / Parameters
+        - Troubleshooting
+        - Integration with Keyfactor Command
+        - Best Practices
+        - API / Development
+        - Other
+
+  - type: textarea
+    id: current-understanding
+    attributes:
+      label: Current Understanding / What You've Tried
+      description: |
+        For questions: What have you tried so far?
+        For doc issues: What does the current documentation say?
+      placeholder: |
+        I've read the documentation at...
+        I've tried...
+        I expected the documentation to explain...
+
+  - type: textarea
+    id: expected-information
+    attributes:
+      label: Expected Information / Desired Outcome
+      description: |
+        For doc issues: What should the documentation say instead?
+        For questions: What are you trying to accomplish?
+      placeholder: |
+        The documentation should explain...
+        OR
+        I'm trying to accomplish...
+
+  - type: textarea
+    id: environment-info
+    attributes:
+      label: Environment Information (if applicable)
+      description: |
+        If your question relates to a specific setup, provide version information
+      placeholder: |
+        Orchestrator Extension Version: 1.2.2
+        Keyfactor Command Version: 24.4
+        Kubernetes Distribution: AKS
+        Store Type: K8SCluster
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Any additional context, screenshots, configuration examples, or links that might help.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and documentation
+          required: true
+        - label: I have checked the README and store type documentation
+          required: false
+        - label: For Keyfactor Command questions, I understand I should contact Keyfactor Support
+          required: false

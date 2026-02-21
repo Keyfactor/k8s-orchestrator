@@ -22,6 +22,7 @@ using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
@@ -67,11 +68,21 @@ public class KubeCertificateManagerClient
         try
         {
             _logger.LogTrace("Returning cluster name from ConfigObj");
+            if (ConfigObj == null)
+            {
+                _logger.LogWarning("ConfigObj is null, falling back to GetHost()");
+                return GetHost();
+            }
+            if (ConfigObj.Clusters == null)
+            {
+                _logger.LogWarning("ConfigObj.Clusters is null, falling back to GetHost()");
+                return GetHost();
+            }
             return ConfigObj.Clusters.FirstOrDefault()?.Name;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _logger.LogWarning("Error getting cluster name from ConfigObj attempting to return client base uri");
+            _logger.LogWarning(ex, "Error getting cluster name from ConfigObj, attempting to return client base uri");
             return GetHost();
         }
     }
@@ -79,13 +90,29 @@ public class KubeCertificateManagerClient
     public string GetHost()
     {
         _logger.LogTrace("Entered GetHost()");
+        if (Client == null)
+        {
+            _logger.LogError("Client is null in GetHost()");
+            throw new InvalidOperationException("Kubernetes client is not initialized. Check kubeconfig configuration.");
+        }
+        if (Client.BaseUri == null)
+        {
+            _logger.LogError("Client.BaseUri is null in GetHost()");
+            throw new InvalidOperationException("Kubernetes client BaseUri is null. Check kubeconfig configuration.");
+        }
         return Client.BaseUri.ToString();
     }
 
     private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
         _logger.LogTrace("Entered ParseKubeConfig()");
-        var k8SConfiguration = new K8SConfiguration();
+        _logger.LogTrace("Kubeconfig length: {Length}", kubeconfig?.Length ?? 0);
+        _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
+
+        try
+        {
+            var k8SConfiguration = new K8SConfiguration();
+            _logger.LogTrace("K8SConfiguration object created");
 
         _logger.LogTrace("Checking if kubeconfig is null or empty");
         if (string.IsNullOrEmpty(kubeconfig))
@@ -180,8 +207,10 @@ public class KubeCertificateManagerClient
                     SkipTlsVerify = skipTLSVerify
                 }
             };
-            _logger.LogTrace("Adding cluster '{Name}'({@Endpoint}) to K8SConfiguration", clusterObj.Name,
-                clusterObj.ClusterEndpoint);
+            _logger.LogDebug("Cluster metadata - Name: {Name}, Server: {Server}, SkipTlsVerify: {SkipTls}",
+                clusterObj.Name, clusterObj.ClusterEndpoint?.Server, skipTLSVerify);
+            _logger.LogTrace("Certificate authority data: {CaDataPresence}",
+                LoggingUtilities.GetFieldPresence("certificate-authority-data", clusterObj.ClusterEndpoint?.CertificateAuthorityData));
             k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
         }
 
@@ -192,16 +221,19 @@ public class KubeCertificateManagerClient
         // parse users
         foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString() ?? string.Empty))
         {
+            var token = user["user"]?["token"]?.ToString();
             var userObj = new User
             {
                 Name = user["name"]?.ToString(),
                 UserCredentials = new UserCredentials
                 {
                     UserName = user["name"]?.ToString(),
-                    Token = user["user"]?["token"]?.ToString()
+                    Token = token
                 }
             };
-            _logger.LogTrace("Adding user {Name} to K8SConfiguration object", userObj.Name);
+            _logger.LogDebug("User metadata - Name: {Name}, HasToken: {HasToken}",
+                userObj.Name, !string.IsNullOrEmpty(token));
+            _logger.LogTrace("Token: {Token}", LoggingUtilities.RedactToken(token));
             k8SConfiguration.Users = new List<User> { userObj };
         }
 
@@ -222,14 +254,23 @@ public class KubeCertificateManagerClient
                     User = ctx["context"]?["user"]?.ToString()
                 }
             };
-            _logger.LogTrace("Adding context '{Name}' to K8SConfiguration object", contextObj.Name);
+            _logger.LogDebug("Context metadata - Name: {Name}, Cluster: {Cluster}, Namespace: {Namespace}, User: {User}",
+                contextObj.Name, contextObj.ContextDetails?.Cluster, contextObj.ContextDetails?.Namespace, contextObj.ContextDetails?.User);
             k8SConfiguration.Contexts = new List<Context> { contextObj };
         }
 
-        _logger.LogTrace("Finished parsing contexts");
-        _logger.LogDebug("Finished parsing kubeconfig");
+            _logger.LogTrace("Finished parsing contexts");
+            _logger.LogDebug("Finished parsing kubeconfig");
 
-        return k8SConfiguration;
+            return k8SConfiguration;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "CRITICAL ERROR in ParseKubeConfig: {Message}", ex.Message);
+            _logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            _logger.LogError("Stack Trace: {StackTrace}", ex.StackTrace);
+            throw;
+        }
     }
 
     private IKubernetes GetKubeClient(string kubeconfig)
@@ -287,15 +328,99 @@ public class KubeCertificateManagerClient
         }
 
         _logger.LogDebug("Creating Kubernetes client");
-        IKubernetes client = new Kubernetes(config);
-        _logger.LogDebug("Finished creating Kubernetes client");
+        try
+        {
+            IKubernetes client = new Kubernetes(config);
+            _logger.LogDebug("Finished creating Kubernetes client");
 
-        _logger.LogTrace("Setting Client property");
-        Client = client;
-        _logger.LogTrace("Exiting GetKubeClient()");
-        return client;
+            _logger.LogTrace("Setting Client property");
+            Client = client;
+            _logger.LogTrace("Exiting GetKubeClient()");
+            return client;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create Kubernetes client: {Message}", ex.Message);
+            _logger.LogError("Config Host: {Host}", config?.Host ?? "null");
+            throw new InvalidOperationException($"Failed to create Kubernetes client. Check kubeconfig configuration. Error: {ex.Message}", ex);
+        }
     }
 
+    /// <summary>
+    /// Find an alias in a PKCS12 store by Common Name
+    /// </summary>
+    private string FindAliasByCN(Pkcs12Store store, string cn)
+    {
+        if (store == null || string.IsNullOrEmpty(cn))
+            return null;
+
+        foreach (var alias in store.Aliases)
+        {
+            if (!store.IsKeyEntry(alias))
+                continue;
+
+            var certEntry = store.GetCertificate(alias);
+            if (certEntry?.Certificate == null)
+                continue;
+
+            var subjectCN = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetSubjectCN(certEntry.Certificate);
+            if (!string.IsNullOrEmpty(subjectCN) && subjectCN.Contains(cn, StringComparison.OrdinalIgnoreCase))
+                return alias;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Find an alias in a PKCS12 store by thumbprint
+    /// </summary>
+    private string FindAliasByThumbprint(Pkcs12Store store, string thumbprint)
+    {
+        if (store == null || string.IsNullOrEmpty(thumbprint))
+            return null;
+
+        foreach (var alias in store.Aliases)
+        {
+            var certEntry = store.GetCertificate(alias);
+            if (certEntry?.Certificate == null)
+                continue;
+
+            var certThumbprint = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(certEntry.Certificate);
+            if (certThumbprint.Equals(thumbprint, StringComparison.OrdinalIgnoreCase))
+                return alias;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Find an alias in a PKCS12 store by alias name (partial match on subject DN)
+    /// </summary>
+    private string FindAliasByName(Pkcs12Store store, string aliasSearch)
+    {
+        if (store == null || string.IsNullOrEmpty(aliasSearch))
+            return null;
+
+        // First try exact match
+        if (store.ContainsAlias(aliasSearch))
+            return aliasSearch;
+
+        // Then try partial match on subject DN
+        foreach (var alias in store.Aliases)
+        {
+            var certEntry = store.GetCertificate(alias);
+            if (certEntry?.Certificate == null)
+                continue;
+
+            var subjectDN = certEntry.Certificate.SubjectDN.ToString();
+            if (!string.IsNullOrEmpty(subjectDN) && subjectDN.Contains(aliasSearch, StringComparison.OrdinalIgnoreCase))
+                return alias;
+        }
+
+        return null;
+    }
+
+    [Obsolete("Use FindAliasByCN with Pkcs12Store instead")]
     public X509Certificate2 FindCertificateByCN(X509Certificate2Collection certificates, string cn)
     {
         var foundCertificate = certificates
@@ -305,6 +430,7 @@ public class KubeCertificateManagerClient
         return foundCertificate;
     }
 
+    [Obsolete("Use FindAliasByThumbprint with Pkcs12Store instead")]
     public X509Certificate2 FindCertificateByThumbprint(X509Certificate2Collection certificates, string thumbprint)
     {
         var foundCertificate = certificates
@@ -314,6 +440,7 @@ public class KubeCertificateManagerClient
         return foundCertificate;
     }
 
+    [Obsolete("Use FindAliasByName with Pkcs12Store instead")]
     public X509Certificate2 FindCertificateByAlias(X509Certificate2Collection certificates, string alias)
     {
         var foundCertificate = certificates
@@ -330,15 +457,14 @@ public class KubeCertificateManagerClient
         string passwordFieldName = "password",
         string[] certdataFieldNames = null)
     {
-        _logger.LogTrace("Entered UpdatePKCS12SecretStore()");
+        _logger.LogTrace("Entered RemoveFromPKCS12SecretStore()");
         _logger.LogTrace("Calling GetSecret()");
         var existingPkcs12DataObj = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
 
 
-        // iterate through existingPkcs12DataObj.Data and add to existingPkcs12
-        var existingPkcs12 = new X509Certificate2Collection();
-        var newPkcs12Collection = new X509Certificate2Collection();
-        var k8sCollection = new X509Certificate2Collection();
+        // Load existing PKCS12 store
+        var storeBuilder = new Pkcs12StoreBuilder();
+        Pkcs12Store existingStore = null;
         var storePasswordBytes = Encoding.UTF8.GetBytes("");
 
         if (existingPkcs12DataObj?.Data == null)
@@ -363,69 +489,103 @@ public class KubeCertificateManagerClient
 
                 if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
 
-                _logger.LogTrace($"Adding cert '{fieldName}' to existingPkcs12");
+                _logger.LogTrace($"Loading PKCS12 store from field '{fieldName}'");
                 if (jobCertificate.PasswordIsK8SSecret)
                 {
                     if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
                     {
+                        _logger.LogDebug("Password is stored in K8S secret at path: {Path}", jobCertificate.StorePasswordPath);
                         var passwordPath = jobCertificate.StorePasswordPath.Split("/");
                         var passwordNamespace = passwordPath[0];
                         var passwordSecretName = passwordPath[1];
-                        // Get password from k8s secre
+                        _logger.LogDebug("Buddy secret metadata - Name: {Name}, Namespace: {Namespace}, Field: {Field}",
+                            passwordSecretName, passwordNamespace, passwordFieldName);
+
+                        // Get password from k8s secret
                         var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
+                        _logger.LogTrace("Buddy secret: {Summary}", LoggingUtilities.GetSecretSummary(k8sPasswordObj));
+
                         storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
-                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
-                            X509KeyStorageFlags.Exportable);
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
+                        _logger.LogTrace("Password from buddy secret: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
+
+                        existingStore = storeBuilder.Build();
+                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                        existingStore.Load(ms, storePasswdString.ToCharArray());
                     }
                     else
                     {
+                        _logger.LogDebug("Password is stored in same secret, field: {Field}", passwordFieldName);
                         storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                            Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
+                        _logger.LogTrace("Password from secret field: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
+
+                        existingStore = storeBuilder.Build();
+                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                        existingStore.Load(ms, storePasswdString.ToCharArray());
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
                 {
+                    _logger.LogDebug("Using password from job configuration");
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
+
+                    existingStore = storeBuilder.Build();
+                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                    existingStore.Load(ms, storePasswdString.ToCharArray());
                 }
                 else
                 {
+                    _logger.LogDebug("Using default store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
+                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
+
+                    existingStore = storeBuilder.Build();
+                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                    existingStore.Load(ms, storePasswdString.ToCharArray());
                 }
             }
 
-            if (existingPkcs12.Count > 0)
+            if (existingStore != null && existingStore.Count > 0)
             {
-                // Check if overwrite is true, if so, replace existing cert with new cert
+                // Check if overwrite is true, if so, remove the certificate
                 if (overwrite)
                 {
-                    _logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
+                    _logger.LogTrace("Overwrite is true, removing existing cert");
 
-                    var foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
-                    if (foundCertificate != null)
+                    var foundAlias = FindAliasByName(existingStore, jobCertificate.Alias);
+                    if (foundAlias != null)
                     {
                         // Certificate found
-                        // replace the found certificate with the new certificate
-                        _logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
-                        existingPkcs12.Remove(foundCertificate);
+                        // remove the found certificate
+                        _logger.LogTrace($"Certificate found with alias '{foundAlias}', removing it");
+                        existingStore.DeleteEntry(foundAlias);
                     }
                 }
-
-                _logger.LogTrace("Importing jobCertificate.CertBytes into existingPkcs12");
-                // existingPkcs12.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
-                k8sCollection = existingPkcs12;
             }
         }
 
 
         _logger.LogTrace("Creating V1Secret object");
 
-        var p12bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
+        byte[] p12bytes;
+        if (existingStore != null)
+        {
+            using var outStream = new MemoryStream();
+            existingStore.Save(outStream, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray(), new SecureRandom());
+            p12bytes = outStream.ToArray();
+        }
+        else
+        {
+            p12bytes = Array.Empty<byte>();
+        }
 
         var secret = new V1Secret
         {
@@ -538,10 +698,9 @@ public class KubeCertificateManagerClient
         // var existingPkcs12 = new X509Certificate2Collection();
         // existingPkcs12.Import(existingPkcs12Bytes, storePasswd, X509KeyStorageFlags.Exportable);
 
-        // iterate through existingPkcs12DataObj.Data and add to existingPkcs12
-        var existingPkcs12 = new X509Certificate2Collection();
-        var newPkcs12Collection = new X509Certificate2Collection();
-        var k8sCollection = new X509Certificate2Collection();
+        // Load existing PKCS12 store
+        var storeBuilder = new Pkcs12StoreBuilder();
+        Pkcs12Store existingStore = null;
         var storePasswordBytes = Encoding.UTF8.GetBytes("");
 
         if (existingPkcs12DataObj?.Data == null)
@@ -638,10 +797,11 @@ public class KubeCertificateManagerClient
                         }
 
                         var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                        //     storePasswdString); //TODO: INSECURE COMMENT OUT
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName], storePasswdString,
-                            X509KeyStorageFlags.Exportable);
+                        // _logger.LogTrace("Loading existing PKCS12 store with password");
+
+                        existingStore = storeBuilder.Build();
+                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                        existingStore.Load(ms, storePasswdString.ToCharArray());
                     }
                     else
                     {
@@ -657,10 +817,10 @@ public class KubeCertificateManagerClient
                             );
                         }
 
-                        // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                        //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
-                        existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                            Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                        // _logger.LogTrace("Loading existing PKCS12 store with password");
+                        existingStore = storeBuilder.Build();
+                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                        existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
                     }
                 }
                 else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
@@ -668,89 +828,107 @@ public class KubeCertificateManagerClient
                     _logger.LogDebug(
                         "Job certificate store password is not empty, using job certificate store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                    //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    // _logger.LogTrace("Loading existing PKCS12 store with password");
+
+                    existingStore = storeBuilder.Build();
+                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
                 }
                 else
                 {
                     _logger.LogDebug("Job certificate store password is empty, using provided store password");
                     storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    // _logger.LogTrace("Importing existing PKCS12 data with store password: {StorePassword}",
-                    //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
-                    existingPkcs12.Import(existingPkcs12DataObj.Data[fieldName],
-                        Encoding.UTF8.GetString(storePasswordBytes), X509KeyStorageFlags.Exportable);
+                    // _logger.LogTrace("Loading existing PKCS12 store with password");
+
+                    existingStore = storeBuilder.Build();
+                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
                 }
             }
 
-            if (existingPkcs12.Count > 0)
+            if (existingStore != null && existingStore.Count > 0)
             {
-                // create x509Certificate2 from jobCertificate.CertBytes
+                // Process existing store
                 if (remove)
                 {
-                    var foundCertificate = FindCertificateByAlias(existingPkcs12, jobCertificate.Alias);
-                    if (foundCertificate != null)
+                    var foundAlias = FindAliasByName(existingStore, jobCertificate.Alias);
+                    if (foundAlias != null)
                     {
-                        // Certificate found
-                        // replace the found certificate with the new certificate
-                        _logger.LogTrace("Certificate found, replacing the found certificate with the new certificate");
-                        existingPkcs12.Remove(foundCertificate);
+                        // Certificate found - remove it
+                        _logger.LogTrace($"Certificate found with alias '{foundAlias}', removing it");
+                        existingStore.DeleteEntry(foundAlias);
                     }
                 }
                 else
                 {
-                    var newCert = new X509Certificate2(jobCertificate.CertBytes, storePasswd,
-                        X509KeyStorageFlags.Exportable);
-                    var newCertCn = newCert.GetNameInfo(X509NameType.SimpleName, false);
-                    //import jobCertificate.CertBytes into existingPkcs12
+                    // Load new certificate to get its CN
+                    var newCertStore = storeBuilder.Build();
+                    using var newCertMs = new MemoryStream(jobCertificate.Pkcs12 ?? jobCertificate.CertBytes);
+                    newCertStore.Load(newCertMs, storePasswd.ToCharArray());
 
-                    // Check if overwrite is true, if so, replace existing cert with new cert
-                    if (overwrite)
+                    var newCertAlias = newCertStore.Aliases.FirstOrDefault(newCertStore.IsKeyEntry);
+                    if (newCertAlias != null)
                     {
-                        _logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
+                        var newCertEntry = newCertStore.GetCertificate(newCertAlias);
+                        var newCertCn = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetSubjectCN(newCertEntry.Certificate);
 
-                        var foundCertificate = FindCertificateByCN(existingPkcs12, newCertCn);
-                        if (foundCertificate != null)
+                        // Check if overwrite is true, if so, replace existing cert with new cert
+                        if (overwrite)
                         {
-                            // Certificate found
-                            // replace the found certificate with the new certificate
-                            _logger.LogTrace(
-                                "Certificate found, replacing the found certificate with the new certificate");
-                            existingPkcs12.Remove(foundCertificate);
-                            existingPkcs12.Add(newCert);
+                            _logger.LogTrace("Overwrite is true, replacing existing cert with new cert");
+
+                            var foundAlias = FindAliasByCN(existingStore, newCertCn);
+                            if (foundAlias != null)
+                            {
+                                // Certificate found - replace it
+                                _logger.LogTrace($"Certificate found with alias '{foundAlias}', replacing it");
+                                existingStore.DeleteEntry(foundAlias);
+                            }
+
+                            // Add new certificate with its alias or jobCertificate.Alias
+                            var targetAlias = string.IsNullOrEmpty(jobCertificate.Alias) ? newCertAlias : jobCertificate.Alias;
+                            var newKey = newCertStore.GetKey(newCertAlias);
+                            var newChain = newCertStore.GetCertificateChain(newCertAlias);
+                            existingStore.SetKeyEntry(targetAlias, newKey, newChain);
                         }
                         else
                         {
-                            // Certificate not found
-                            // add the new certificate to the existingPkcs12
-                            var storePasswordString = Encoding.UTF8.GetString(storePasswordBytes);
-                            _logger.LogDebug("Certificate not found, adding the new certificate to the existingPkcs12");
-                            // _logger.LogTrace(
-                            //     "Importing jobCertificate.CertBytes into existingPkcs12 with store password: {StorePassword}",
-                            //     storePasswd); //TODO: INSECURE COMMENT OUT
-                            existingPkcs12.Import(jobCertificate.Pkcs12, storePasswd, X509KeyStorageFlags.Exportable);
+                            // Check if certificate doesn't exist, then add
+                            var foundAlias = FindAliasByCN(existingStore, newCertCn);
+                            if (foundAlias == null)
+                            {
+                                _logger.LogDebug("Certificate not found, adding the new certificate to the store");
+                                var targetAlias = string.IsNullOrEmpty(jobCertificate.Alias) ? newCertAlias : jobCertificate.Alias;
+                                var newKey = newCertStore.GetKey(newCertAlias);
+                                var newChain = newCertStore.GetCertificateChain(newCertAlias);
+                                existingStore.SetKeyEntry(targetAlias, newKey, newChain);
+                            }
                         }
                     }
                 }
-
-                _logger.LogTrace("Importing jobCertificate.CertBytes into existingPkcs12");
-                k8sCollection = existingPkcs12;
             }
             else
             {
-                _logger.LogDebug("No existing PKCS12 data found, creating new PKCS12 collection");
-                // _logger.LogTrace(
-                //     "Importing jobCertificate.CertBytes into newPkcs12Collection with store password: {StorePassword}",
-                //     storePasswd); //TODO: INSECURE COMMENT OUT
-                newPkcs12Collection.Import(jobCertificate.CertBytes, storePasswd, X509KeyStorageFlags.Exportable);
-                k8sCollection = newPkcs12Collection;
+                // No existing store - create new one from jobCertificate data
+                _logger.LogDebug("No existing PKCS12 data found, creating new PKCS12 store");
+                existingStore = storeBuilder.Build();
+                using var newStoreMs = new MemoryStream(jobCertificate.Pkcs12 ?? jobCertificate.CertBytes);
+                existingStore.Load(newStoreMs, storePasswd.ToCharArray());
             }
         }
 
-        // _logger.LogDebug("Exporting PKCS12 data to byte array using store password: {StorePassword}",
-        //     Encoding.UTF8.GetString(storePasswordBytes)); //TODO: INSECURE COMMENT OUT
-        var p12Bytes = k8sCollection.Export(X509ContentType.Pkcs12, Encoding.UTF8.GetString(storePasswordBytes));
+        // Export PKCS12 store to bytes
+        byte[] p12Bytes;
+        if (existingStore != null)
+        {
+            using var outStream = new MemoryStream();
+            existingStore.Save(outStream, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray(), new SecureRandom());
+            p12Bytes = outStream.ToArray();
+        }
+        else
+        {
+            p12Bytes = Array.Empty<byte>();
+        }
 
         _logger.LogDebug("Creating V1Secret object for PKCS12 data with name {SecretName} in namespace {NamespaceName}",
             secretName, namespaceName);
@@ -995,22 +1173,27 @@ public class KubeCertificateManagerClient
             var storeBuilder = new Pkcs12StoreBuilder();
             var certs = storeBuilder.Build();
 
-            var newCertBytes = pkcs12bytes;
-
             var newEntry = storeBuilder.Build();
 
-            var cert = new X509Certificate2(newCertBytes, currentPassword, X509KeyStorageFlags.Exportable);
-            var binaryCert = cert.Export(X509ContentType.Pkcs12, currentPassword);
-
-            using (var ms = new MemoryStream(string.IsNullOrEmpty(currentPassword) ? binaryCert : newCertBytes))
+            // Load the PKCS12 data directly with BouncyCastle
+            using (var ms = new MemoryStream(pkcs12bytes))
             {
                 newEntry.Load(ms, string.IsNullOrEmpty(currentPassword) ? new char[0] : currentPassword.ToCharArray());
             }
 
             var checkAliasExists = string.Empty;
-            var alias = cert.Thumbprint;
+            string alias = null;
+
+            // Get the first certificate to use its thumbprint as alias
             foreach (var newEntryAlias in newEntry.Aliases)
             {
+                var certEntry = newEntry.GetCertificate(newEntryAlias);
+                if (certEntry?.Certificate != null && alias == null)
+                {
+                    // Use thumbprint as alias
+                    alias = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(certEntry.Certificate);
+                }
+
                 if (!newEntry.IsKeyEntry(newEntryAlias))
                     continue;
 
@@ -1022,10 +1205,17 @@ public class KubeCertificateManagerClient
 
             if (string.IsNullOrEmpty(checkAliasExists))
             {
-                var bcCert = DotNetUtilities.FromX509Certificate(cert);
-                var bcEntry = new X509CertificateEntry(bcCert);
-                if (certs.ContainsAlias(alias)) certs.DeleteEntry(alias);
-                certs.SetCertificateEntry(alias, bcEntry);
+                // No private key found, add certificate only
+                var firstAlias = newEntry.Aliases.FirstOrDefault();
+                if (firstAlias != null)
+                {
+                    var certEntry = newEntry.GetCertificate(firstAlias);
+                    if (certEntry != null)
+                    {
+                        if (certs.ContainsAlias(alias)) certs.DeleteEntry(alias);
+                        certs.SetCertificateEntry(alias, certEntry);
+                    }
+                }
             }
 
             using (var outStream = new MemoryStream())
@@ -1743,12 +1933,12 @@ public class KubeCertificateManagerClient
                 continue;
             }
 
-            _logger.LogDebug("Converting UTF8 encoded certificate to X509Certificate2 object.");
-            var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
+            _logger.LogDebug("Parsing certificate using BouncyCastle.");
+            var cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(utfCert);
             _logger.LogTrace("cert: " + cert);
 
-            _logger.LogDebug("Getting certificate name from X509Certificate2 object.");
-            var certName = cert.GetNameInfo(X509NameType.SimpleName, false);
+            _logger.LogDebug("Getting certificate Common Name.");
+            var certName = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetSubjectCN(cert);
             _logger.LogTrace("certName: " + certName);
 
             _logger.LogDebug($"Adding certificate {certName} discovered location to list.");
@@ -1770,11 +1960,20 @@ public class KubeCertificateManagerClient
         _logger.LogDebug($"Successfully read {name} certificate signing request from {GetHost()}.");
         _logger.LogTrace("cr: " + cr);
         _logger.LogTrace("Attempting to parse certificate from certificate resource.");
-        var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
+
+        // Check if CSR has been signed yet
+        if (cr.Status?.Certificate == null || cr.Status.Certificate.Length == 0)
+        {
+            _logger.LogInformation($"CSR {name} has no certificate yet (pending or denied). Returning empty inventory.");
+            _logger.LogTrace("Exiting GetCertificateSigningRequestStatus() - no certificate");
+            return Array.Empty<string>();
+        }
+
+        var utfCert = Encoding.UTF8.GetString(cr.Status.Certificate);
         _logger.LogTrace("utfCert: " + utfCert);
 
-        _logger.LogDebug($"Attempting to parse certificate signing request from certificate resource {name}.");
-        var cert = new X509Certificate2(Encoding.UTF8.GetBytes(utfCert));
+        _logger.LogDebug($"Attempting to parse certificate from certificate resource {name}.");
+        var cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(utfCert);
         _logger.LogTrace("cert: " + cert);
         _logger.LogTrace("Exiting GetCertificateSigningRequestStatus()");
         return new[] { utfCert };
@@ -2036,6 +2235,7 @@ public class KubeCertificateManagerClient
         }
     }
 
+#nullable enable
     private string? ParseTlsSecret(V1Secret secretData, string secretName)
     {
         try
@@ -2051,6 +2251,7 @@ public class KubeCertificateManagerClient
             return null;
         }
     }
+#nullable restore
 
     private void ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
     {
@@ -2147,8 +2348,6 @@ public class KubeCertificateManagerClient
                 namespaceName);
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
-
-        return new JksSecret();
     }
 
     public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null,
@@ -2207,8 +2406,6 @@ public class KubeCertificateManagerClient
 
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
-
-        return new Pkcs12Secret();
     }
 
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)

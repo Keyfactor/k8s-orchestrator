@@ -5,6 +5,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+// Suppress warnings for variables used for state tracking but not read (future functionality)
+#pragma warning disable CS0219
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,6 +16,8 @@ using System.Text;
 using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
+using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -45,11 +50,22 @@ public class Inventory : JobBase, IInventoryJobExtension
         // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
 
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
+        Logger ??= LogHandler.GetClassLogger(GetType());
+
         try
         {
+            Logger.LogTrace("Calling InitializeStore()");
             InitializeStore(config);
+            Logger.LogTrace("Returned from InitializeStore()");
+
             Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
             Logger.LogInformation($"Inventory for store type: {config.Capability}");
+
+            Logger.LogTrace("KubeClient is null: {IsNull}", KubeClient == null);
+            if (KubeClient == null)
+            {
+                throw new InvalidOperationException("KubeClient is null after InitializeStore()");
+            }
 
             Logger.LogDebug("Server: {Host}", KubeClient.GetHost());
             Logger.LogDebug("Store Path: {StorePath}", StorePath);
@@ -60,7 +76,6 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
-            var hasPrivateKey = false;
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
             if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
@@ -118,7 +133,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
                         return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
                     }
-                    catch (StoreNotFoundException ex)
+                    catch (StoreNotFoundException)
                     {
                         Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory.",
                             KubeNamespace, KubeSecretName);
@@ -323,8 +338,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogDebug("Fetching store password for K8S secret " + KubeSecretName + " in namespace " +
                             KubeNamespace + " and key " + keyName);
             var keyPassword = getK8SStorePassword(k8sData.Secret);
-            var passwordHash = GetSHA256Hash(keyPassword);
-            // Logger.LogTrace("Password hash for '{Secret}/{Key}': {Hash}", KubeSecretName, keyName, passwordHash); //TODO: Insecure comment out!
+            Logger.LogTrace("Password correlation for '{Secret}/{Key}': {CorrelationId}",
+                KubeSecretName, keyName, LoggingUtilities.GetPasswordCorrelationId(keyPassword));
             var keyAlias = keyName;
             Logger.LogTrace("Key alias: {Alias}", keyAlias);
             Logger.LogDebug("Attempting to deserialize JKS store '{Secret}/{Key}'", KubeSecretName, keyName);
@@ -510,14 +525,14 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             try
             {
-                Logger.LogDebug("Attempting to load cert as X509Certificate2...");
-                var certFormatted = cert.Contains("BEGIN CERTIFICATE")
-                    ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
-                    : new X509Certificate2(Convert.FromBase64String(cert));
-                Logger.LogTrace("Cert loaded as X509Certificate2: " + certFormatted);
-                Logger.LogDebug("Attempting to get cert thumbprint...");
-                alias = certFormatted.Thumbprint;
-                Logger.LogDebug("Cert thumbprint: " + alias);
+                Logger.LogDebug("Attempting to parse certificate using BouncyCastle...");
+                var bcCert = cert.Contains("BEGIN CERTIFICATE")
+                    ? Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(cert)
+                    : Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromDer(Convert.FromBase64String(cert));
+                Logger.LogTrace("Certificate parsed successfully: " + bcCert.SubjectDN);
+                Logger.LogDebug("Attempting to get certificate thumbprint...");
+                alias = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(bcCert);
+                Logger.LogDebug("Certificate thumbprint: " + alias);
             }
             catch (Exception e)
             {
@@ -591,11 +606,11 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             try
             {
-                Logger.LogDebug("Attempting to load cert as X509Certificate2...");
-                var certFormatted = cert.Contains("BEGIN CERTIFICATE")
-                    ? new X509Certificate2(Encoding.UTF8.GetBytes(cert))
-                    : new X509Certificate2(Convert.FromBase64String(cert));
-                Logger.LogTrace("Cert loaded as X509Certificate2: " + certFormatted);
+                Logger.LogDebug("Attempting to parse certificate using BouncyCastle...");
+                var bcCert = cert.Contains("BEGIN CERTIFICATE")
+                    ? Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(cert)
+                    : Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromDer(Convert.FromBase64String(cert));
+                Logger.LogTrace("Certificate parsed successfully: " + bcCert.SubjectDN);
             }
             catch (Exception e)
             {

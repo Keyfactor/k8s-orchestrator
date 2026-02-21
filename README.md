@@ -31,18 +31,18 @@
 
 ## Overview
 
-The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster. 
-The following types of Kubernetes resources are supported: kubernetes secrets of `kubernetes.io/tls` or `Opaque` and 
-kubernetes certificates `certificates.k8s.io/v1`
+The Kubernetes Orchestrator allows for the remote management of certificate stores defined in a Kubernetes cluster.
+The following types of Kubernetes resources are supported: Kubernetes secrets of type `kubernetes.io/tls` or `Opaque`, and
+Kubernetes certificates of type `certificates.k8s.io/v1`.
 
 The certificate store types that can be managed in the current version are:
 - `K8SCert` - Kubernetes certificates of type `certificates.k8s.io/v1`
 - `K8SSecret` - Kubernetes secrets of type `Opaque`
-- `K8STLSSecret` - Kubernetes secrets of type `kubernetes.io/tls`
-- `K8SCluster` - This allows for a single store to manage a k8s cluster's secrets or type `Opaque` and `kubernetes.io/tls`.
-  This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores across all k8s namespaces.
-- `K8SNS` - This allows for a single store to manage a k8s namespace's secrets or type `Opaque` and `kubernetes.io/tls`.
-  This can be thought of as a container of `K8SSecret` and `K8STLSSecret` stores for a single k8s namespace.
+- `K8STLSSecr` - Kubernetes secrets of type `kubernetes.io/tls`
+- `K8SCluster` - This allows for a single store to manage a Kubernetes cluster's secrets of type `Opaque` and `kubernetes.io/tls`.
+  This can be thought of as a container of `K8SSecret` and `K8STLSSecr` stores across all Kubernetes namespaces.
+- `K8SNS` - This allows for a single store to manage a Kubernetes namespace's secrets of type `Opaque` and `kubernetes.io/tls`.
+  This can be thought of as a container of `K8SSecret` and `K8STLSSecr` stores for a single Kubernetes namespace.
 - `K8SJKS` - Kubernetes secrets of type `Opaque` that contain one or more Java Keystore(s). These cannot be managed at the
   cluster or namespace level as they should all require unique credentials.
 - `K8SPKCS12` - Kubernetes secrets of type `Opaque` that contain one or more PKCS12(s). These cannot be managed at the
@@ -260,7 +260,7 @@ the Keyfactor Command Portal
 <details><summary>Click to expand details</summary>
 
 
-The `K8SCluster` store type allows for a single store to manage a k8s cluster's secrets or type `Opaque` and `kubernetes.io/tls`.
+The `K8SCluster` store type allows for a single store to manage a Kubernetes cluster's secrets of type `Opaque` and `kubernetes.io/tls`.
 
 
 
@@ -405,7 +405,7 @@ The `K8SJKS` store type is used to manage Kubernetes secrets of type `Opaque`.  
 must have a field that ends in `.jks`. The orchestrator will inventory and manage using a *custom alias* of the following
 pattern: `<k8s_secret_field_name>/<keystore_alias>`.  For example, if the secret has a field named `mykeystore.jks` and
 the keystore contains a certificate with an alias of `mycert`, the orchestrator will manage the certificate using the
-alias `mykeystore.jks/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they 
+alias `mykeystore.jks/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they
 should all require unique credentials.*
 
 
@@ -601,8 +601,8 @@ the Keyfactor Command Portal
 <details><summary>Click to expand details</summary>
 
 
-The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single 
-Keyfactor Command certificate store using an alias pattern of
+The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single
+Keyfactor Command certificate store. This store type manages all secrets within a specific Kubernetes namespace.
 
 
 
@@ -1120,7 +1120,7 @@ the Keyfactor Command Portal
 <details><summary>Click to expand details</summary>
 
 
-The `K8STLSSecret` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls`
+The `K8STLSSecr` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls`.
 
 
 
@@ -1636,6 +1636,18 @@ Please refer to the **Universal Orchestrator (remote)** usage section ([PAM prov
 > The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
 
+### Supported Key Types
+
+The K8SJKS store type supports certificates with the following key algorithms:
+
+| Key Type | Supported |
+|----------|-----------|
+| RSA (1024, 2048, 4096, 8192 bit) | Yes |
+| ECDSA (P-256, P-384, P-521) | Yes |
+| DSA (1024, 2048 bit) | Yes |
+| Ed25519 | Yes |
+| Ed448 | Yes |
+
 </details>
 
 <details><summary>K8SNS (K8SNS)</summary>
@@ -1855,6 +1867,18 @@ Please refer to the **Universal Orchestrator (remote)** usage section ([PAM prov
 
 > The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
+
+### Supported Key Types
+
+The K8SPKCS12 store type supports certificates with the following key algorithms:
+
+| Key Type | Supported |
+|----------|-----------|
+| RSA (1024, 2048, 4096, 8192 bit) | Yes |
+| ECDSA (P-256, P-384, P-521) | Yes |
+| DSA (1024, 2048 bit) | Yes |
+| Ed25519 | Yes |
+| Ed448 | Yes |
 
 </details>
 
@@ -2079,7 +2103,7 @@ The Kubernetes Orchestrator Extension supports certificate discovery jobs.  This
 
 ### K8SJKS Discovery Job
 
-For discovery of `K8SJKS` stores toy can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SJKS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use 
@@ -2092,7 +2116,7 @@ the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`
 
 ### K8SNS Discovery Job
 
-For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SNS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 </details>
@@ -2106,8 +2130,8 @@ namespaces. *This cannot be left blank.*
 For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
-- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or PKCS12 data. Will use
-  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.pkcs12`,`pkcs12`.
+- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 data. Will use
+  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.p12`,`p12`.
 </details>
 
 
@@ -2116,7 +2140,7 @@ For discovery of `K8SPKCS12` stores you can use the following params to filter t
 
 ### K8SSecret Discovery Job
 
-For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SSecret` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 </details>
@@ -2127,13 +2151,27 @@ For discovery of K8SNS stores you can use the following params to filter the cer
 
 ### K8STLSSecr Discovery Job
 
-For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
+For discovery of `K8STLSSecr` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
 </details>
 
 
 
+
+## Supported Key Types
+
+The Kubernetes Orchestrator Extension supports certificates with the following key algorithms across all store types:
+
+| Key Type | Sizes/Curves | Supported |
+|----------|--------------|-----------|
+| RSA | 1024, 2048, 4096, 8192 bit | Yes |
+| ECDSA | P-256 (secp256r1), P-384 (secp384r1), P-521 (secp521r1) | Yes |
+| DSA | 1024, 2048 bit | Yes |
+| Ed25519 | - | Yes |
+| Ed448 | - | Yes |
+
+**Note:** DSA 2048-bit keys use FIPS 186-3/4 compliant generation with SHA-256. Edwards curve keys (Ed25519/Ed448) are fully supported for all store types including JKS and PKCS12.
 
 
 ## License
