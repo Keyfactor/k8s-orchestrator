@@ -5,6 +5,9 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+// Suppress warnings for variables used for state tracking but not read (future functionality)
+#pragma warning disable CS0219
+
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -73,7 +76,6 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
-            var hasPrivateKey = false;
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
             if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
@@ -131,7 +133,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
                         return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
                     }
-                    catch (StoreNotFoundException ex)
+                    catch (StoreNotFoundException)
                     {
                         Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory.",
                             KubeNamespace, KubeSecretName);

@@ -2235,6 +2235,7 @@ public class KubeCertificateManagerClient
         }
     }
 
+#nullable enable
     private string? ParseTlsSecret(V1Secret secretData, string secretName)
     {
         try
@@ -2250,6 +2251,7 @@ public class KubeCertificateManagerClient
             return null;
         }
     }
+#nullable restore
 
     private void ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
     {
@@ -2346,8 +2348,6 @@ public class KubeCertificateManagerClient
                 namespaceName);
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
-
-        return new JksSecret();
     }
 
     public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null,
@@ -2406,8 +2406,6 @@ public class KubeCertificateManagerClient
 
             throw new StoreNotFoundException($"K8S secret not found {namespaceName}/secrets/{secretName}");
         }
-
-        return new Pkcs12Secret();
     }
 
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
