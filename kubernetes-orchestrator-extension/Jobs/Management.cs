@@ -10,8 +10,7 @@ using System.Collections.Generic;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -40,6 +39,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// - Namespace-wide operations (K8SNS)
 /// - Cluster-wide operations (K8SCluster)
 /// </remarks>
+[Obsolete("Use store-type-specific management classes in Jobs.StoreTypes.* namespace instead. This class will be removed in a future version.")]
 public class Management : JobBase, IManagementJobExtension
 {
     /// <summary>

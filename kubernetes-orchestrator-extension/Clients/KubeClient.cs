@@ -42,7 +42,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
 /// Handles authentication, secret CRUD operations, certificate signing requests,
 /// and discovery of certificate stores across namespaces and clusters.
 /// </summary>
-public class KubeCertificateManagerClient
+public partial class KubeCertificateManagerClient
 {
     private readonly ILogger _logger;
 

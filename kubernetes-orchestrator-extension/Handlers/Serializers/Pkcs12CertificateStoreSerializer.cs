@@ -8,7 +8,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
 using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
@@ -16,13 +15,13 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 
 /// <summary>
 /// Serializer for PKCS12/PFX certificate stores in Kubernetes secrets.
 /// Handles loading, saving, and manipulation of PKCS12 stores.
 /// </summary>
-internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
+public class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
 {
     /// <summary>Logger instance for diagnostic output.</summary>
     private readonly ILogger _logger;
@@ -31,7 +30,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     /// Initializes a new instance of the PKCS12 certificate store serializer.
     /// </summary>
     /// <param name="storeProperties">JSON string of store properties (currently unused).</param>
-    public Pkcs12CertificateStoreSerializer(string storeProperties)
+    public Pkcs12CertificateStoreSerializer(string storeProperties = null)
     {
         _logger = LogHandler.GetClassLogger(GetType());
     }
@@ -59,69 +58,25 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     }
 
     /// <summary>
-    /// Serializes a Pkcs12Store back to PKCS12 format for storage in Kubernetes.
-    /// </summary>
-    /// <param name="certificateStore">The Pkcs12Store to serialize.</param>
-    /// <param name="storePath">Directory path for the store.</param>
-    /// <param name="storeFileName">Filename for the serialized store.</param>
-    /// <param name="storePassword">Password to encrypt the keystore.</param>
-    /// <returns>List of SerializedStoreInfo containing the PKCS12 bytes and path.</returns>
-    public List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
-        string storeFileName, string storePassword)
-    {
-        _logger.MethodEntry(MsLogLevel.Debug);
-
-        var storeBuilder = new Pkcs12StoreBuilder();
-        var pkcs12Store = storeBuilder.Build();
-
-        foreach (var alias in certificateStore.Aliases)
-        {
-            _logger.LogDebug("Processing alias '{Alias}'", alias);
-            var keyEntry = certificateStore.GetKey(alias);
-
-            if (certificateStore.IsKeyEntry(alias))
-            {
-                _logger.LogDebug("Alias '{Alias}' is a key entry", alias);
-                pkcs12Store.SetKeyEntry(alias, keyEntry, certificateStore.GetCertificateChain(alias));
-            }
-            else
-            {
-                _logger.LogDebug("Alias '{Alias}' is a certificate entry", alias);
-                var certEntry = certificateStore.GetCertificate(alias);
-                _logger.LogTrace("Certificate entry '{Entry}'", certEntry.Certificate.SubjectDN.ToString());
-                _logger.LogDebug("Attempting to SetCertificateEntry for '{Alias}'", alias);
-                pkcs12Store.SetCertificateEntry(alias, certEntry);
-            }
-        }
-
-        using var outStream = new MemoryStream();
-        _logger.LogDebug("Saving Pkcs12Store to MemoryStream");
-        pkcs12Store.Save(outStream,
-            string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray(),
-            new SecureRandom());
-
-        var storeInfo = new List<SerializedStoreInfo>();
-
-        _logger.LogDebug("Adding store to list of serialized stores");
-        var filePath = Path.Combine(storePath, storeFileName);
-        _logger.LogDebug("Filepath '{Path}'", filePath);
-        storeInfo.Add(new SerializedStoreInfo
-        {
-            FilePath = filePath,
-            Contents = outStream.ToArray()
-        });
-
-        _logger.MethodExit(MsLogLevel.Debug);
-        return storeInfo;
-    }
-
-    /// <summary>
     /// Returns the private key path (not applicable for PKCS12 stores).
     /// </summary>
     /// <returns>Always returns null for PKCS12 stores.</returns>
     public string GetPrivateKeyPath()
     {
         return null;
+    }
+
+    /// <inheritdoc />
+    public byte[] AddOrRemoveCertificate(
+        byte[] newCertBytes,
+        string newCertPassword,
+        string alias,
+        byte[] existingStore = null,
+        string existingStorePassword = null,
+        bool remove = false,
+        bool includeChain = true)
+    {
+        return CreateOrUpdatePkcs12(newCertBytes, newCertPassword, alias, existingStore, existingStorePassword, remove, includeChain);
     }
 
     /// <summary>
@@ -280,7 +235,6 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
                     existingPkcs12Store.SetKeyEntry(
                         alias,
                         keyEntry,
-                        // string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
                         certificateChain
                     );
                 }

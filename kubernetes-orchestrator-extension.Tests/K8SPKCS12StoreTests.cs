@@ -9,7 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Org.BouncyCastle.Pkcs;
 using Xunit;
@@ -316,58 +316,6 @@ public class K8SPKCS12StoreTests
 
     #endregion
 
-    #region Serialization Tests
-
-    [Fact]
-    public void SerializeRemoteCertificateStore_ValidStore_ReturnsSerializedData()
-    {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
-        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password");
-        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
-
-        // Act
-        var serialized = _serializer.SerializeRemoteCertificateStore(store, "/test/path", "store.pfx", "password");
-
-        // Assert
-        Assert.NotNull(serialized);
-        Assert.Single(serialized);
-        Assert.Equal("/test/path/store.pfx", serialized[0].FilePath);
-        Assert.NotNull(serialized[0].Contents);
-        Assert.NotEmpty(serialized[0].Contents);
-    }
-
-    [Fact]
-    public void SerializeRemoteCertificateStore_RoundTrip_PreservesData()
-    {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
-        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
-        var originalStore = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
-
-        // Act - Serialize
-        var serialized = _serializer.SerializeRemoteCertificateStore(originalStore, "/test/path", "store.pfx", "password");
-
-        // Act - Deserialize again
-        var roundTripStore = _serializer.DeserializeRemoteCertificateStore(serialized[0].Contents, "/test/path", "password");
-
-        // Assert
-        Assert.NotNull(roundTripStore);
-        var originalAliases = originalStore.Aliases.ToList();
-        var roundTripAliases = roundTripStore.Aliases.ToList();
-        Assert.Equal(originalAliases.Count, roundTripAliases.Count);
-
-        foreach (var alias in originalAliases)
-        {
-            Assert.Contains(alias, roundTripAliases);
-            var originalCert = originalStore.GetCertificate(alias);
-            var roundTripCert = roundTripStore.GetCertificate(alias);
-            Assert.Equal(originalCert.Certificate.GetEncoded(), roundTripCert.Certificate.GetEncoded());
-        }
-    }
-
-    #endregion
-
     #region GetPrivateKeyPath Tests
 
     [Fact]
@@ -396,39 +344,6 @@ public class K8SPKCS12StoreTests
         // Act & Assert
         Assert.ThrowsAny<Exception>(() =>
             _serializer.DeserializeRemoteCertificateStore(corruptedBytes, "/test/path", "password"));
-    }
-
-    [Fact]
-    public void SerializeRemoteCertificateStore_EmptyStore_ReturnsValidOutput()
-    {
-        // Arrange
-        var emptyStore = new Pkcs12StoreBuilder().Build();
-
-        // Act
-        var serialized = _serializer.SerializeRemoteCertificateStore(emptyStore, "/test/path", "empty.pfx", "password");
-
-        // Assert
-        Assert.NotNull(serialized);
-        Assert.Single(serialized);
-        Assert.NotNull(serialized[0].Contents);
-    }
-
-    [Fact]
-    public void SerializeRemoteCertificateStore_DifferentPassword_SuccessfullySerializes()
-    {
-        // Tests that we can deserialize with one password and serialize with a different one
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
-        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password1");
-        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password1");
-
-        // Act
-        var serialized = _serializer.SerializeRemoteCertificateStore(store, "/test/path", "store.pfx", "password2");
-
-        // Assert - Deserialize with new password
-        var newStore = _serializer.DeserializeRemoteCertificateStore(serialized[0].Contents, "/test/path", "password2");
-        Assert.NotNull(newStore);
-        Assert.Equal(store.Aliases.ToList().Count, newStore.Aliases.ToList().Count);
     }
 
     [Fact]

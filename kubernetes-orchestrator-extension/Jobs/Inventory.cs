@@ -14,8 +14,7 @@ using System.Linq;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using k8s.Autorest;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -43,6 +42,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// - Cluster-wide inventory (K8SCluster)
 /// - Namespace-wide inventory (K8SNS)
 /// </remarks>
+[Obsolete("Use store-type-specific inventory classes in Jobs.StoreTypes.* namespace instead. This class will be removed in a future version.")]
 public class Inventory : JobBase, IInventoryJobExtension
 {
     /// <summary>

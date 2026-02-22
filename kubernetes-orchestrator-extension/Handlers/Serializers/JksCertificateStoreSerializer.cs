@@ -9,10 +9,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
@@ -21,7 +17,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 
 /// <summary>
 /// Serializer for Java KeyStore (JKS) certificate stores in Kubernetes secrets.
@@ -31,7 +27,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 /// JKS stores are converted to PKCS12 internally because BouncyCastle provides better
 /// manipulation capabilities for PKCS12 stores. The conversion is transparent to callers.
 /// </remarks>
-internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
+public class JksCertificateStoreSerializer : ICertificateStoreSerializer
 {
     /// <summary>Logger instance for diagnostic output.</summary>
     private readonly ILogger _logger;
@@ -40,7 +36,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
     /// Initializes a new instance of the JKS certificate store serializer.
     /// </summary>
     /// <param name="storeProperties">JSON string of store properties (currently unused).</param>
-    public JksCertificateStoreSerializer(string storeProperties)
+    public JksCertificateStoreSerializer(string storeProperties = null)
     {
         _logger = LogHandler.GetClassLogger(GetType());
     }
@@ -63,7 +59,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         var pkcs12StoreNew = storeBuilder.Build();
 
         _logger.LogTrace("storePath: {Path}", storePath);
-        
+
         if (string.IsNullOrEmpty(storePassword))
         {
             _logger.LogError("JKS store password is null or empty for store at path '{Path}'", storePath);
@@ -101,7 +97,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                     _logger.LogError("Unable to load JKS store using provided password: {Password}", LoggingUtilities.RedactPassword(storePassword));
                     _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
                 }
-                
+
                 throw;
             }
 
@@ -113,7 +109,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                     _logger.LogError("JKS store password is null or empty for store at path '{Path}'", storePath);
                     throw new ArgumentException("JKS store password is null or empty");
                 }
-                
+
                 _logger.LogDebug("Attempting to load JKS store as Pkcs12Store using provided password");
 
                 using (var ms = new MemoryStream(storeContents))
@@ -122,8 +118,11 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                 }
 
                 _logger.LogDebug("JKS store loaded as Pkcs12Store");
-                // return pkcs12Store;
                 throw new JkSisPkcs12Exception("JKS store is actually a Pkcs12Store");
+            }
+            catch (JkSisPkcs12Exception)
+            {
+                throw;
             }
             catch (Exception ex2)
             {
@@ -132,7 +131,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             }
         }
 
-        _logger.LogDebug("Converting JKS store to Pkcs12Store ny iterating over aliases");
+        _logger.LogDebug("Converting JKS store to Pkcs12Store by iterating over aliases");
         foreach (var alias in jksStore.Aliases)
         {
             _logger.LogDebug("Processing alias '{Alias}'", alias);
@@ -162,8 +161,9 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             }
         }
 
-        // Second Pkcs12Store necessary because of an obscure BC bug where creating a Pkcs12Store without .Load (code above using "Set" methods only) does not set all
-        // internal hashtables necessary to avoid an error later when processing store.
+        // Second Pkcs12Store necessary because of an obscure BC bug where creating a Pkcs12Store without .Load
+        // (code above using "Set" methods only) does not set all internal hashtables necessary to avoid an error
+        // later when processing store.
         var ms2 = new MemoryStream();
         _logger.LogDebug("Saving Pkcs12Store to MemoryStream using provided password");
         pkcs12Store.Save(ms2, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray(),
@@ -179,56 +179,25 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
     }
 
     /// <summary>
-    /// Serializes a Pkcs12Store back to JKS format for storage in Kubernetes.
-    /// </summary>
-    /// <param name="certificateStore">The Pkcs12Store to serialize.</param>
-    /// <param name="storePath">Directory path for the store.</param>
-    /// <param name="storeFileName">Filename for the serialized store.</param>
-    /// <param name="storePassword">Password to encrypt the keystore.</param>
-    /// <returns>List of SerializedStoreInfo containing the JKS bytes and path.</returns>
-    public List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
-        string storeFileName, string storePassword)
-    {
-        _logger.MethodEntry(MsLogLevel.Debug);
-
-        var jksStore = new JksStore();
-
-        foreach (var alias in certificateStore.Aliases)
-        {
-            var keyEntry = certificateStore.GetKey(alias);
-            var certificateChain = certificateStore.GetCertificateChain(alias);
-            var certificates = new List<X509Certificate>();
-            if (certificateStore.IsKeyEntry(alias))
-            {
-                certificates.AddRange(certificateChain.Select(certificateEntry => certificateEntry.Certificate));
-                _logger.LogDebug("Processing key entry for alias '{Alias}' using provided password", alias);
-                jksStore.SetKeyEntry(alias, keyEntry.Key,
-                    string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray(), certificates.ToArray());
-            }
-            else
-            {
-                jksStore.SetCertificateEntry(alias, certificateStore.GetCertificate(alias).Certificate);
-            }
-        }
-
-        using var outStream = new MemoryStream();
-        _logger.LogDebug("Saving JKS store to MemoryStream using provided password");
-        jksStore.Save(outStream, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
-
-        var storeInfo = new List<SerializedStoreInfo>
-            { new() { FilePath = Path.Combine(storePath, storeFileName), Contents = outStream.ToArray() } };
-
-        _logger.MethodExit(MsLogLevel.Debug);
-        return storeInfo;
-    }
-
-    /// <summary>
     /// Returns the private key path (not applicable for JKS stores).
     /// </summary>
     /// <returns>Always returns null for JKS stores.</returns>
     public string GetPrivateKeyPath()
     {
         return null;
+    }
+
+    /// <inheritdoc />
+    public byte[] AddOrRemoveCertificate(
+        byte[] newCertBytes,
+        string newCertPassword,
+        string alias,
+        byte[] existingStore = null,
+        string existingStorePassword = null,
+        bool remove = false,
+        bool includeChain = true)
+    {
+        return CreateOrUpdateJks(newCertBytes, newCertPassword, alias, existingStore, existingStorePassword, remove, includeChain);
     }
 
     /// <summary>
@@ -291,8 +260,11 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                     }
 
                     _logger.LogDebug("Existing JKS store loaded as Pkcs12Store");
-                    // return pkcs12Store;
                     throw new JkSisPkcs12Exception("Existing JKS store is actually a Pkcs12Store");
+                }
+                catch (JkSisPkcs12Exception)
+                {
+                    throw;
                 }
                 catch (Exception ex2)
                 {

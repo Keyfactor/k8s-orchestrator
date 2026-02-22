@@ -6,8 +6,9 @@
 // under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES   
 // OR CONDITIONS OF ANY KIND, either express or implied. See the License for  
 // the specific language governing permissions and limitations under the       
-// License. 
+// License.
 
+using System;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -30,6 +31,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// This class provides a placeholder that returns a failure indicating
 /// the operation is not supported.
 /// </remarks>
+[Obsolete("Use store-type-specific reenrollment classes in Jobs.StoreTypes.* namespace instead. This class will be removed in a future version.")]
 public class Reenrollment : JobBase, IReenrollmentJobExtension
 {
     /// <summary>

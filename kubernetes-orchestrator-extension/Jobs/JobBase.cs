@@ -1993,30 +1993,3 @@ public class InvalidK8SSecretException : Exception
     {
     }
 }
-
-/// <summary>
-/// Exception thrown when a JKS keystore contains PKCS12 data instead of proper JKS format,
-/// or vice versa (format mismatch between expected and actual store format).
-/// </summary>
-public class JkSisPkcs12Exception : Exception
-{
-    /// <summary>Initializes a new instance of JkSisPkcs12Exception.</summary>
-    public JkSisPkcs12Exception()
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message.</summary>
-    /// <param name="message">The error message describing the format mismatch.</param>
-    public JkSisPkcs12Exception(string message)
-        : base(message)
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
-    /// <param name="message">The error message describing the format mismatch.</param>
-    /// <param name="innerException">The exception that caused this exception.</param>
-    public JkSisPkcs12Exception(string message, Exception innerException)
-        : base(message, innerException)
-    {
-    }
-}

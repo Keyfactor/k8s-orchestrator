@@ -38,6 +38,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// - ignoreddirs: Namespaces to ignore
 /// - patterns: File name patterns to match
 /// </remarks>
+[Obsolete("Use store-type-specific discovery classes in Jobs.StoreTypes.* namespace instead. This class will be removed in a future version.")]
 public class Discovery : JobBase, IDiscoveryJobExtension
 {
     /// <summary>

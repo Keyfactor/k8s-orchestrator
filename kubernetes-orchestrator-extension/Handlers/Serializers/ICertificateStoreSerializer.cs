@@ -5,18 +5,16 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
-using System.Collections.Generic;
-using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Org.BouncyCastle.Pkcs;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 
 /// <summary>
 /// Interface for certificate store serializers that handle different keystore formats.
 /// Implemented by JKS and PKCS12 serializers to provide a consistent API for
 /// reading and writing certificate stores.
 /// </summary>
-internal interface ICertificateStoreSerializer
+public interface ICertificateStoreSerializer
 {
     /// <summary>
     /// Deserializes a certificate store from raw bytes into a Pkcs12Store for manipulation.
@@ -28,19 +26,29 @@ internal interface ICertificateStoreSerializer
     Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword);
 
     /// <summary>
-    /// Serializes a Pkcs12Store back to the appropriate format for storage.
-    /// </summary>
-    /// <param name="certificateStore">The store to serialize.</param>
-    /// <param name="storePath">Directory path for the store.</param>
-    /// <param name="storeFileName">Filename for the serialized store.</param>
-    /// <param name="storePassword">Password to encrypt the store.</param>
-    /// <returns>List of SerializedStoreInfo containing the serialized bytes and path.</returns>
-    List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
-        string storeFileName, string storePassword);
-
-    /// <summary>
     /// Gets the path for the private key file (for stores that separate private keys).
     /// </summary>
     /// <returns>The private key path, or null if not applicable.</returns>
     string GetPrivateKeyPath();
+
+    /// <summary>
+    /// Creates a new certificate store or updates an existing one with a new certificate.
+    /// Handles both add and remove operations for keystore formats (JKS, PKCS12).
+    /// </summary>
+    /// <param name="newCertBytes">Certificate bytes to add (PKCS12 format or raw certificate).</param>
+    /// <param name="newCertPassword">Password for the new certificate's private key.</param>
+    /// <param name="alias">Alias for the certificate entry in the store.</param>
+    /// <param name="existingStore">Existing store bytes (null for new store).</param>
+    /// <param name="existingStorePassword">Password for the existing store.</param>
+    /// <param name="remove">True to remove the certificate, false to add.</param>
+    /// <param name="includeChain">Whether to include the certificate chain.</param>
+    /// <returns>The updated store as byte array.</returns>
+    byte[] AddOrRemoveCertificate(
+        byte[] newCertBytes,
+        string newCertPassword,
+        string alias,
+        byte[] existingStore = null,
+        string existingStorePassword = null,
+        bool remove = false,
+        bool includeChain = true);
 }
