@@ -11,8 +11,26 @@ using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
+/// <summary>
+/// Utility class for Privileged Access Management (PAM) integration.
+/// Provides methods to resolve PAM-protected field values.
+/// </summary>
 internal class PAMUtilities
 {
+    /// <summary>
+    /// Attempts to resolve a PAM-protected field value using the configured PAM resolver.
+    /// PAM fields are identified by being valid JSON strings (starting with '{' and ending with '}').
+    /// </summary>
+    /// <param name="resolver">The PAM secret resolver from the orchestrator framework.</param>
+    /// <param name="logger">Logger for diagnostic output.</param>
+    /// <param name="name">Friendly name of the field being resolved (for logging).</param>
+    /// <param name="key">The field value to resolve (may be a PAM reference or plain value).</param>
+    /// <returns>
+    /// The resolved value if successful, or the original value if:
+    /// - The value is empty
+    /// - The value is not a JSON string (not PAM-protected)
+    /// - PAM resolution fails
+    /// </returns>
     internal static string ResolvePAMField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
     {
         logger.LogDebug("Attempting to resolve PAM eligible field '{Name}'", name);

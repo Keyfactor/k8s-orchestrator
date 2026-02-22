@@ -23,6 +23,7 @@ using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.PKI.Extensions;
 using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Newtonsoft.Json;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
@@ -32,63 +33,102 @@ using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
+/// <summary>
+/// Data model representing a Kubernetes certificate store configuration.
+/// Contains namespace, secret name, secret type, credentials, and certificate data.
+/// </summary>
 public class KubernetesCertStore
 {
+    /// <summary>Kubernetes namespace where the secret resides.</summary>
     public string KubeNamespace { get; set; } = "";
 
+    /// <summary>Name of the Kubernetes secret.</summary>
     public string KubeSecretName { get; set; } = "";
 
+    /// <summary>Type of Kubernetes secret (e.g., Opaque, kubernetes.io/tls).</summary>
     public string KubeSecretType { get; set; } = "";
 
+    /// <summary>Service account credentials for Kubernetes API access (kubeconfig JSON).</summary>
     public string KubeSvcCreds { get; set; } = "";
 
+    /// <summary>Array of certificates contained in this store.</summary>
     public Cert[] Certs { get; set; }
 }
 
+/// <summary>
+/// Data model containing Kubernetes cluster credentials for API authentication.
+/// </summary>
 public class KubeCreds
 {
+    /// <summary>Kubernetes API server URL.</summary>
     public string KubeServer { get; set; } = "";
 
+    /// <summary>Service account bearer token for authentication.</summary>
     public string KubeToken { get; set; } = "";
 
+    /// <summary>Cluster CA certificate (base64 encoded).</summary>
     public string KubeCert { get; set; } = "";
 }
 
+/// <summary>
+/// Data model representing a certificate with optional private key.
+/// </summary>
 public class Cert
 {
+    /// <summary>Alias/friendly name for the certificate.</summary>
     public string Alias { get; set; } = "";
 
+    /// <summary>Certificate data (typically PEM or base64 encoded).</summary>
     public string CertData { get; set; } = "";
 
+    /// <summary>Private key data (typically PEM format).</summary>
     public string PrivateKey { get; set; } = "";
 }
 
+/// <summary>
+/// Comprehensive data model for a certificate processed during a Keyfactor orchestrator job.
+/// Contains certificate data in multiple formats (PEM, bytes, base64), private key data,
+/// certificate chain information, and password details.
+/// </summary>
 public class K8SJobCertificate
 {
+    /// <summary>Alias/friendly name for the certificate entry.</summary>
     public string Alias { get; set; } = "";
 
+    /// <summary>Base64 encoded certificate data.</summary>
     public string CertB64 { get; set; } = "";
 
+    /// <summary>Certificate in PEM format.</summary>
     public string CertPem { get; set; } = "";
 
+    /// <summary>SHA-1 thumbprint of the certificate for identification.</summary>
     public string CertThumbprint { get; set; } = "";
 
+    /// <summary>Raw certificate bytes (DER encoded).</summary>
     public byte[] CertBytes { get; set; }
 
+    /// <summary>Private key in PEM format (unencrypted).</summary>
     public string PrivateKeyPem { get; set; } = "";
 
+    /// <summary>Raw private key bytes (PKCS#8 format).</summary>
     public byte[] PrivateKeyBytes { get; set; }
 
+    /// <summary>Password protecting the private key (if encrypted).</summary>
     public string Password { get; set; } = "";
 
+    /// <summary>Indicates if the password is stored in a separate Kubernetes secret.</summary>
     public bool PasswordIsK8SSecret { get; set; } = false;
 
+    /// <summary>Password for the certificate store (JKS/PKCS12).</summary>
     public string StorePassword { get; set; } = "";
 
+    /// <summary>Path to a separate Kubernetes secret containing the store password.</summary>
     public string StorePasswordPath { get; set; } = "";
 
+    /// <summary>Indicates whether this certificate has an associated private key.</summary>
     public bool HasPrivateKey { get; set; } = false;
 
+    /// <summary>Indicates whether the certificate/key is password protected.</summary>
     public bool HasPassword { get; set; } = false;
 
     /// <summary>
@@ -145,27 +185,46 @@ public class K8SJobCertificate
     }
 }
 
+/// <summary>
+/// Abstract base class for all Kubernetes orchestrator jobs (Inventory, Management, Discovery, Reenrollment).
+/// Provides common functionality for Kubernetes client initialization, credential parsing, store type detection,
+/// certificate handling, and PAM integration.
+/// </summary>
 public abstract class JobBase
 {
+    /// <summary>Default field name for PKCS12/PFX data in secrets.</summary>
     private const string DefaultPFXSecretFieldName = "pfx";
+    /// <summary>Default field name for JKS data in secrets.</summary>
     private const string DefaultJKSSecretFieldName = "jks";
+    /// <summary>Default field name for password data in secrets.</summary>
     private const string DefaultPFXPasswordSecretFieldName = "password";
 
+    /// <summary>Separator used when joining certificate chains.</summary>
     protected const string CertChainSeparator = ",";
+    /// <summary>Array of supported Kubernetes store types.</summary>
     protected static readonly string[] SupportedKubeStoreTypes;
 
+    /// <summary>Array of required job properties.</summary>
     private static readonly string[] RequiredProperties;
 
+    /// <summary>Allowed keys for TLS secrets (tls.crt, tls.key, ca.crt).</summary>
     protected static readonly string[] TLSAllowedKeys;
+    /// <summary>Allowed keys for Opaque secrets containing certificates.</summary>
     protected static readonly string[] OpaqueAllowedKeys;
+    /// <summary>Allowed keys for certificate resources.</summary>
     protected static readonly string[] CertAllowedKeys;
+    /// <summary>Allowed keys for PKCS12/PFX files.</summary>
     protected static readonly string[] Pkcs12AllowedKeys;
+    /// <summary>Allowed keys for JKS files.</summary>
     protected static readonly string[] JksAllowedKeys;
 
+    /// <summary>PAM secret resolver for retrieving secrets from Privileged Access Management systems.</summary>
     protected IPAMSecretResolver _resolver;
 
+    /// <summary>Kubernetes client for API operations.</summary>
     protected KubeCertificateManagerClient KubeClient;
 
+    /// <summary>Logger instance for this job.</summary>
     protected ILogger Logger;
 
     static JobBase()
@@ -238,10 +297,15 @@ public abstract class JobBase
 
     public object KubeSecretPassword { get; set; }
 
+    /// <summary>
+    /// Initializes the store configuration for an Inventory job.
+    /// Parses job configuration, extracts credentials, and sets up the Kubernetes client.
+    /// </summary>
+    /// <param name="config">The inventory job configuration from Keyfactor.</param>
     protected void InitializeStore(InventoryJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Entered InitializeStore() for INVENTORY");
+        Logger.MethodEntry(MsLogLevel.Debug);
 
         try
         {
@@ -274,6 +338,7 @@ public abstract class JobBase
             Logger.LogInformation(
                 "Initialized Inventory Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
                 StorePath);
+            Logger.MethodExit(MsLogLevel.Debug);
         }
         catch (Exception ex)
         {
@@ -284,10 +349,15 @@ public abstract class JobBase
         }
     }
 
+    /// <summary>
+    /// Initializes the store configuration for a Discovery job.
+    /// Parses job configuration and sets up SSL/TLS validation settings.
+    /// </summary>
+    /// <param name="config">The discovery job configuration from Keyfactor.</param>
     protected void InitializeStore(DiscoveryJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Entered InitializeStore() for DISCOVERY");
+        Logger.MethodEntry(MsLogLevel.Debug);
         DiscoveryConfig = config;
         var props = config.JobProperties;
         Capability = config.Capability;
@@ -308,16 +378,21 @@ public abstract class JobBase
         Logger.LogTrace("ServerUsername: {ServerUsername}", ServerUsername);
         Logger.LogDebug("Calling InitializeProperties()");
         InitializeProperties(props);
-        Logger.LogDebug("Returned from InitializeStore()");
         Logger.LogInformation(
             "Initialized Discovery Job Configuration for `{Capability}` with store path `{StorePath}`", Capability,
             StorePath);
+        Logger.MethodExit(MsLogLevel.Debug);
     }
 
+    /// <summary>
+    /// Initializes the store configuration for a Management job (Add/Remove certificates).
+    /// Parses job configuration, extracts credentials, and initializes the job certificate.
+    /// </summary>
+    /// <param name="config">The management job configuration from Keyfactor.</param>
     protected void InitializeStore(ManagementJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Entered InitializeStore() for MANAGEMENT");
+        Logger.MethodEntry(MsLogLevel.Debug);
 
         try
         {
@@ -356,6 +431,12 @@ public abstract class JobBase
         }
     }
 
+    /// <summary>
+    /// Inserts line breaks into a string at regular intervals (e.g., for PEM formatting).
+    /// </summary>
+    /// <param name="input">The input string to format.</param>
+    /// <param name="lineLength">Maximum characters per line.</param>
+    /// <returns>The formatted string with line breaks.</returns>
     private static string InsertLineBreaks(string input, int lineLength)
     {
         var sb = new StringBuilder();
@@ -371,10 +452,16 @@ public abstract class JobBase
     }
 
 
+    /// <summary>
+    /// Initializes a K8SJobCertificate from the job configuration's certificate data.
+    /// Parses PKCS12 data, extracts certificates and private keys, and builds certificate chains.
+    /// </summary>
+    /// <param name="config">Dynamic configuration object containing JobCertificate with certificate data.</param>
+    /// <returns>A populated K8SJobCertificate with certificate, private key, and chain information.</returns>
     protected K8SJobCertificate InitJobCertificate(dynamic config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogTrace("Entered InitJobCertificate()");
+        Logger.MethodEntry(MsLogLevel.Debug);
 
         var jobCertObject = new K8SJobCertificate();
         var pKeyPassword = config.JobCertificate.PrivateKeyPassword;
@@ -573,25 +660,43 @@ public abstract class JobBase
         }
 
         jobCertObject.StorePassword = config.CertificateStoreDetails.StorePassword;
-        Logger.LogDebug("Returning from InitJobCertificate()");
+        Logger.LogDebug("Successfully initialized job certificate with thumbprint: {Thumbprint}", jobCertObject.CertThumbprint);
+        Logger.MethodExit(MsLogLevel.Debug);
         return jobCertObject;
     }
 
+    /// <summary>
+    /// Determines if the current capability indicates a namespace-level store (K8SNS).
+    /// </summary>
+    /// <param name="capability">The store capability string.</param>
+    /// <returns>True if this is a namespace-level store; otherwise, false.</returns>
     private static bool IsNamespaceStore(string capability)
     {
         return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SNS", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Determines if the current capability indicates a cluster-level store (K8SCluster).
+    /// </summary>
+    /// <param name="capability">The store capability string.</param>
+    /// <returns>True if this is a cluster-level store; otherwise, false.</returns>
     private static bool IsClusterStore(string capability)
     {
         return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SCLUSTER", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Resolves and parses the store path to extract namespace, secret name, and secret type.
+    /// Handles various path formats: secret_name, namespace/secret, cluster/namespace/secret, etc.
+    /// </summary>
+    /// <param name="spath">The store path to resolve.</param>
+    /// <returns>The canonical store path in format: cluster/namespace/type/name.</returns>
     protected string ResolveStorePath(string spath)
     {
-        Logger.LogDebug("Entered resolveStorePath()");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Resolving store path: {StorePath}", spath);
         Logger.LogTrace("Store path: {StorePath}", spath);
 
         Logger.LogTrace("Attempting to split store path by '/'");
@@ -789,22 +894,32 @@ public abstract class JobBase
                 break;
             default:
                 Logger.LogWarning("Unable to resolve store path, please check the store path and try again");
-                //todo: does anything need to be handled because of this error?                
+                //todo: does anything need to be handled because of this error?
                 break;
         }
 
-        return GetStorePath();
+        var resolvedPath = GetStorePath();
+        Logger.LogDebug("Resolved store path: {ResolvedPath}", resolvedPath);
+        Logger.MethodExit(MsLogLevel.Debug);
+        return resolvedPath;
     }
 
+    /// <summary>
+    /// Initializes job properties from the store properties dictionary.
+    /// Extracts Kubernetes configuration (namespace, secret name, type, credentials),
+    /// resolves PAM fields, and creates the Kubernetes client.
+    /// </summary>
+    /// <param name="storeProperties">Dynamic dictionary of store properties from job configuration.</param>
+    /// <exception cref="ConfigurationException">Thrown when required properties are missing.</exception>
     private void InitializeProperties(dynamic storeProperties)
     {
-        Logger.MethodEntry();
-        var storePropsType = storeProperties != null ? storeProperties.GetType().FullName : "null";
-        Logger.LogTrace($"InitializeProperties called with storeProperties type: {storePropsType}");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        string storePropsType = storeProperties != null ? (string)storeProperties.GetType().FullName : "null";
+        Logger.LogTrace("InitializeProperties called with storeProperties type: {Type}", storePropsType);
 
         if (storeProperties == null)
         {
-            Logger.MethodExit();
+            Logger.MethodExit(MsLogLevel.Debug);
             throw new ConfigurationException(
                 $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
         }
@@ -1168,12 +1283,17 @@ public abstract class JobBase
         Logger.LogWarning("KubeSecretName is empty, setting 'KubeSecretName' to StorePath");
         KubeSecretName = StorePath;
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        Logger.MethodExit();
+        Logger.MethodExit(MsLogLevel.Debug);
     }
 
+    /// <summary>
+    /// Constructs the canonical store path based on cluster, namespace, secret type, and secret name.
+    /// Format varies based on store type (namespace, cluster, or individual secret).
+    /// </summary>
+    /// <returns>The canonical store path string.</returns>
     public string GetStorePath()
     {
-        Logger.LogTrace("Entered GetStorePath()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         try
         {
             var secretType = "";
@@ -1213,11 +1333,13 @@ public abstract class JobBase
                         "Setting store path to 'cluster/namespace/namespacename' for 'namespace' secret type");
                     storePath = $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
                     Logger.LogDebug("Returning storePath: {StorePath}", storePath);
+                    Logger.MethodExit(MsLogLevel.Debug);
                     return storePath;
                 case "cluster":
                     Logger.LogDebug("Kubernetes cluster resource type, setting secretType to 'cluster'");
                     KubeSecretType = "cluster";
                     Logger.LogDebug("Returning storePath: {StorePath}", storePath);
+                    Logger.MethodExit(MsLogLevel.Debug);
                     return storePath;
                 default:
                     Logger.LogWarning("Unknown secret type '{SecretType}' will use value provided", secretType);
@@ -1228,28 +1350,43 @@ public abstract class JobBase
             Logger.LogDebug("Building StorePath");
             storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
             Logger.LogDebug("Returning storePath: {StorePath}", storePath);
+            Logger.MethodExit(MsLogLevel.Debug);
             return storePath;
         }
         catch (Exception e)
         {
-            Logger.LogError("Unknown error constructing canonical store path {Error}", e.Message);
+            Logger.LogError("Unknown error constructing canonical store path: {Error}", e.Message);
+            Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
+            Logger.MethodExit(MsLogLevel.Debug);
             return StorePath;
         }
     }
 
+    /// <summary>
+    /// Resolves a PAM (Privileged Access Management) field value using the configured PAM resolver.
+    /// Falls back to the original value if resolution fails.
+    /// </summary>
+    /// <param name="name">Name of the PAM field (for logging purposes).</param>
+    /// <param name="value">The value to resolve (may contain PAM reference).</param>
+    /// <returns>The resolved value, or the original value if resolution fails.</returns>
     protected string ResolvePamField(string name, string value)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
         try
         {
-            Logger.LogTrace($"Attempting to resolved PAM eligible field {name}");
-            return _resolver.Resolve(value);
+            Logger.LogTrace("Attempting to resolve PAM eligible field: {FieldName}", name);
+            var resolved = _resolver.Resolve(value);
+            Logger.LogDebug("Successfully resolved PAM field: {FieldName}", name);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return resolved;
         }
         catch (Exception e)
         {
-            Logger.LogError($"Unable to resolve PAM field {name}. Returning original value.");
-            Logger.LogError(e.Message);
-            Logger.LogTrace(e.ToString());
-            Logger.LogTrace(e.StackTrace);
+            Logger.LogError("Unable to resolve PAM field {FieldName}, returning original value", name);
+            Logger.LogError("Error: {Message}", e.Message);
+            Logger.LogTrace("Exception details: {Details}", e.ToString());
+            Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
+            Logger.MethodExit(MsLogLevel.Debug);
             return value;
         }
     }
@@ -1263,7 +1400,7 @@ public abstract class JobBase
     /// <returns>Private key bytes in PKCS#8 format</returns>
     protected byte[] GetKeyBytes(Pkcs12Store store, string alias = null, string password = null)
     {
-        Logger.LogDebug("Entered GetKeyBytes(Pkcs12Store)");
+        Logger.MethodEntry(MsLogLevel.Debug);
 
         if (store == null)
             throw new ArgumentNullException(nameof(store));
@@ -1304,12 +1441,14 @@ public abstract class JobBase
             var keyBytes = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ExportPrivateKeyPkcs8(privateKey);
             Logger.LogTrace("Successfully exported private key, {Length} bytes", keyBytes?.Length ?? 0);
 
+            Logger.MethodExit(MsLogLevel.Debug);
             return keyBytes;
         }
         catch (Exception e)
         {
             Logger.LogError("Error extracting private key: {Message}", e.Message);
-            Logger.LogTrace("{StackTrace}", e.StackTrace);
+            Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
+            // Note: MethodExit not called here as we're throwing
             throw new InvalidKeyException($"Unable to extract private key from alias '{alias}'", e);
         }
     }
@@ -1318,10 +1457,14 @@ public abstract class JobBase
     /// DEPRECATED: Use GetKeyBytes(Pkcs12Store, string, string) instead.
     /// Extract private key bytes from X509Certificate2 (uses deprecated APIs)
     /// </summary>
+    /// <param name="certObj">The X509Certificate2 object containing the private key.</param>
+    /// <param name="certPassword">Optional password for the certificate.</param>
+    /// <returns>Private key bytes in the appropriate format.</returns>
     [Obsolete("Use GetKeyBytes(Pkcs12Store, string, string) instead to avoid deprecated X509Certificate2.PrivateKey API")]
     protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
     {
-        Logger.LogDebug("Entered GetKeyBytes(X509Certificate2) - DEPRECATED");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogWarning("GetKeyBytes(X509Certificate2) is deprecated. Use GetKeyBytes(Pkcs12Store) instead.");
         Logger.LogWarning("GetKeyBytes(X509Certificate2) is deprecated. Use GetKeyBytes(Pkcs12Store) instead.");
         Logger.LogTrace("Key algo: {KeyAlgo}", certObj.GetKeyAlgorithm());
         Logger.LogTrace("Has private key: {HasPrivateKey}", certObj.HasPrivateKey);
@@ -1359,18 +1502,22 @@ public abstract class JobBase
                     break;
             }
 
-            if (keyBytes != null) return keyBytes;
+            if (keyBytes != null)
+            {
+                Logger.MethodExit(MsLogLevel.Debug);
+                return keyBytes;
+            }
 
             Logger.LogError("Unable to parse private key");
-
+            // Note: MethodExit not called here as we're throwing
             throw new InvalidKeyException($"Unable to parse private key from certificate '{certObj.Thumbprint}'");
         }
         catch (Exception e)
         {
             Logger.LogError("Unknown error getting key bytes, but we're going to try a different method");
-            Logger.LogError("{Message}", e.Message);
-            Logger.LogTrace("{Message}", e.ToString());
-            Logger.LogTrace("{Trace}", e.StackTrace);
+            Logger.LogError("Error: {Message}", e.Message);
+            Logger.LogTrace("Exception details: {Details}", e.ToString());
+            Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
             try
             {
                 if (certObj.HasPrivateKey)
@@ -1382,15 +1529,16 @@ public abstract class JobBase
                         keyBytes = certObj.PrivateKey.ExportPkcs8PrivateKey();
                         #pragma warning restore SYSLIB0028
                         Logger.LogTrace("ExportPkcs8PrivateKey() complete");
+                        Logger.MethodExit(MsLogLevel.Debug);
                         return keyBytes;
                     }
                     catch (Exception e2)
                     {
                         Logger.LogError(
-                            "Unknown error exporting private key as PKCS8, but we're going to try a a final method ");
-                        Logger.LogError(e2.Message);
-                        Logger.LogTrace(e2.ToString());
-                        Logger.LogTrace(e2.StackTrace);
+                            "Unknown error exporting private key as PKCS8, attempting final method");
+                        Logger.LogError("Error: {Message}", e2.Message);
+                        Logger.LogTrace("Exception details: {Details}", e2.ToString());
+                        Logger.LogTrace("Stack trace: {StackTrace}", e2.StackTrace);
                         //attempt to export encrypted pkcs8
                         Logger.LogDebug("Attempting to export encrypted PKCS8 private key");
                         Logger.LogTrace("ExportEncryptedPkcs8PrivateKey()");
@@ -1402,21 +1550,29 @@ public abstract class JobBase
                                 1));
                         #pragma warning restore SYSLIB0028
                         Logger.LogTrace("ExportEncryptedPkcs8PrivateKey() complete");
+                        Logger.MethodExit(MsLogLevel.Debug);
                         return keyBytes;
                     }
             }
             catch (Exception ie)
             {
-                Logger.LogError("Unknown error exporting private key as PKCS8, returning null");
-                Logger.LogError("{Message}", ie.Message);
-                Logger.LogTrace("{Message}", ie.ToString());
-                Logger.LogTrace("{Trace}", ie.StackTrace);
+                Logger.LogError("Unknown error exporting private key as PKCS8, returning empty array");
+                Logger.LogError("Error: {Message}", ie.Message);
+                Logger.LogTrace("Exception details: {Details}", ie.ToString());
+                Logger.LogTrace("Stack trace: {StackTrace}", ie.StackTrace);
             }
 
+            Logger.MethodExit(MsLogLevel.Debug);
             return Array.Empty<byte>();
         }
     }
 
+    /// <summary>
+    /// Creates a JobResult indicating job failure with the specified message.
+    /// </summary>
+    /// <param name="message">The failure message describing why the job failed.</param>
+    /// <param name="jobHistoryId">The job history ID for tracking.</param>
+    /// <returns>A JobResult with Failure status.</returns>
     protected static JobResult FailJob(string message, long jobHistoryId)
     {
         return new JobResult
@@ -1427,6 +1583,12 @@ public abstract class JobBase
         };
     }
 
+    /// <summary>
+    /// Creates a JobResult indicating job success.
+    /// </summary>
+    /// <param name="jobHistoryId">The job history ID for tracking.</param>
+    /// <param name="jobMessage">Optional message to include with the result.</param>
+    /// <returns>A JobResult with Success status.</returns>
     protected static JobResult SuccessJob(long jobHistoryId, string jobMessage = null)
     {
         var result = new JobResult
@@ -1440,15 +1602,21 @@ public abstract class JobBase
         return result;
     }
 
+    /// <summary>
+    /// Parses and extracts the private key from a management job's PKCS12 certificate data.
+    /// Looks for a private key entry matching the specified alias.
+    /// </summary>
+    /// <param name="config">The management job configuration containing certificate data.</param>
+    /// <returns>The private key in PEM format, or null if not found.</returns>
     protected string ParseJobPrivateKey(ManagementJobConfiguration config)
     {
-        Logger.LogTrace("Entered ParseJobPrivateKey()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         if (string.IsNullOrWhiteSpace(config.JobCertificate.Alias)) Logger.LogTrace("No Alias Found");
 
         // Load PFX
         Logger.LogTrace("Loading PFX from job contents");
         var pfxBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-        Logger.LogTrace("PFX loaded successfully");
+        Logger.LogTrace("PFX loaded successfully, {Length} bytes", pfxBytes.Length);
 
         var alias = config.JobCertificate.Alias;
         Logger.LogTrace("Alias: {Alias}", alias);
@@ -1462,12 +1630,12 @@ public abstract class JobBase
         store.Load(pkcs12Stream, config.JobCertificate.PrivateKeyPassword.ToCharArray());
 
         // Find the private key entry with the given alias
-        Logger.LogDebug("Attempting to get private key entry with alias");
+        Logger.LogDebug("Searching for private key entry with alias: {Alias}", alias);
         foreach (var aliasName in store.Aliases)
         {
-            Logger.LogTrace("Alias: {Alias}", aliasName);
+            Logger.LogTrace("Checking alias: {Alias}", aliasName);
             if (!aliasName.Equals(alias) || !store.IsKeyEntry(aliasName)) continue;
-            Logger.LogDebug("Alias found, attempting to get private key");
+            Logger.LogDebug("Alias found, extracting private key");
             var keyEntry = store.GetKey(aliasName);
 
             // Convert the private key to unencrypted PEM format
@@ -1476,18 +1644,28 @@ public abstract class JobBase
             pemWriter.WriteObject(keyEntry.Key);
             pemWriter.Writer.Flush();
 
-            Logger.LogDebug("Private key found for alias {Alias}, returning private key", alias);
+            Logger.LogDebug("Private key extracted for alias: {Alias}", alias);
+            Logger.MethodExit(MsLogLevel.Debug);
             return stringWriter.ToString();
         }
 
-        Logger.LogDebug("Alias '{Alias}' not found, returning null private key", alias);
+        Logger.LogDebug("Alias '{Alias}' not found, returning null", alias);
+        Logger.MethodExit(MsLogLevel.Debug);
         return null; // Private key with the given alias not found
     }
 
+    /// <summary>
+    /// Retrieves the store password from configuration or from a Kubernetes buddy secret.
+    /// Handles password stored directly, in a separate K8S secret, or embedded in the certificate secret.
+    /// </summary>
+    /// <param name="certData">The certificate secret that may contain an embedded password.</param>
+    /// <returns>The store password as a string.</returns>
+    /// <exception cref="InvalidK8SSecretException">Thrown when password cannot be retrieved from K8S secret.</exception>
+    /// <exception cref="Exception">Thrown when no valid password source is available.</exception>
     protected string getK8SStorePassword(V1Secret certData)
     {
-        Logger.MethodEntry();
-        Logger.LogDebug("Attempting to get store password from K8S secret");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Retrieving store password from K8S secret or configuration");
         var storePasswordBytes = Array.Empty<byte>();
 
         // if secret is a buddy pass
@@ -1596,13 +1774,21 @@ public abstract class JobBase
         Logger.LogTrace("Password length (after trimming): {Length}", storePassword.Length);
         Logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
 
-        Logger.MethodExit();
+        Logger.MethodExit(MsLogLevel.Debug);
         return storePassword;
     }
 
+    /// <summary>
+    /// Loads a PKCS12/PFX store from byte data using the provided password.
+    /// </summary>
+    /// <param name="pkcs12Data">The PKCS12 data bytes.</param>
+    /// <param name="password">The password to decrypt the store.</param>
+    /// <returns>A loaded Pkcs12Store instance.</returns>
     protected Pkcs12Store LoadPkcs12Store(byte[] pkcs12Data, string password)
     {
-        Logger.LogDebug("Entered LoadPkcs12Store()");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogTrace("PKCS12 data size: {Length} bytes", pkcs12Data?.Length ?? 0);
+
         var storeBuilder = new Pkcs12StoreBuilder();
         var store = storeBuilder.Build();
 
@@ -1611,69 +1797,92 @@ public abstract class JobBase
         if (password != null) store.Load(pkcs12Stream, password.ToCharArray());
 
         Logger.LogDebug("PKCS12 store loaded successfully");
+        Logger.MethodExit(MsLogLevel.Debug);
         return store;
     }
 
+    /// <summary>
+    /// Extracts a certificate from a PKCS12 store and converts it to PEM format.
+    /// </summary>
+    /// <param name="store">The PKCS12 store containing the certificate.</param>
+    /// <param name="password">The store password (may be needed for certain operations).</param>
+    /// <param name="alias">Optional alias of the certificate. If empty, uses the first key entry.</param>
+    /// <returns>The certificate in PEM format.</returns>
     protected string GetCertificatePem(Pkcs12Store store, string password, string alias = "")
     {
-        Logger.LogDebug("Entered GetCertificatePem()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         if (string.IsNullOrEmpty(alias)) alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
 
-        Logger.LogDebug("Attempting to get certificate with alias {Alias}", alias);
+        Logger.LogDebug("Extracting certificate with alias: {Alias}", alias);
         var cert = store.GetCertificate(alias).Certificate;
 
         using var stringWriter = new StringWriter();
         var pemWriter = new PemWriter(stringWriter);
 
-        Logger.LogDebug("Attempting to write certificate to PEM format");
+        Logger.LogDebug("Converting certificate to PEM format");
         pemWriter.WriteObject(cert);
         pemWriter.Writer.Flush();
 
-        Logger.LogTrace("certificate:\n{Cert}", stringWriter.ToString());
+        Logger.LogTrace("Certificate: {Cert}", LoggingUtilities.RedactCertificatePem(stringWriter.ToString()));
 
         Logger.LogDebug("Returning certificate in PEM format");
+        Logger.MethodExit(MsLogLevel.Debug);
         return stringWriter.ToString();
     }
 
+    /// <summary>
+    /// Extracts a private key from a PKCS12 store and converts it to PEM format.
+    /// </summary>
+    /// <param name="store">The PKCS12 store containing the private key.</param>
+    /// <param name="password">The store password (may be needed for certain operations).</param>
+    /// <param name="alias">Optional alias of the key entry. If empty, uses the first key entry.</param>
+    /// <returns>The private key in PEM format (unencrypted).</returns>
     protected string getPrivateKeyPem(Pkcs12Store store, string password, string alias = "")
     {
-        Logger.LogDebug("Entered getPrivateKeyPem()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         if (string.IsNullOrEmpty(alias))
         {
-            Logger.LogDebug("Alias is empty, attempting to get key entry alias");
+            Logger.LogDebug("Alias is empty, using first key entry alias");
             alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
         }
 
-        Logger.LogDebug("Attempting to get private key with alias {Alias}", alias);
+        Logger.LogDebug("Extracting private key with alias: {Alias}", alias);
         var privateKey = store.GetKey(alias).Key;
 
         using var stringWriter = new StringWriter();
         var pemWriter = new PemWriter(stringWriter);
 
-        Logger.LogDebug("Attempting to write private key to PEM format");
+        Logger.LogDebug("Converting private key to PEM format");
         pemWriter.WriteObject(privateKey);
         pemWriter.Writer.Flush();
 
-        // Logger.LogTrace("private key:\n{Key}", stringWriter.ToString());
-        Logger.LogDebug("Returning private key in PEM format for alias '{Alias}'", alias);
+        Logger.LogDebug("Returning private key in PEM format for alias: {Alias}", alias);
+        Logger.MethodExit(MsLogLevel.Debug);
         return stringWriter.ToString();
     }
 
+    /// <summary>
+    /// Extracts the certificate chain from a PKCS12 store as a list of PEM-formatted certificates.
+    /// </summary>
+    /// <param name="store">The PKCS12 store containing the certificate chain.</param>
+    /// <param name="password">The store password (may be needed for certain operations).</param>
+    /// <param name="alias">Optional alias of the key entry. If empty, uses the first key entry.</param>
+    /// <returns>A list of PEM-formatted certificates representing the chain.</returns>
     protected List<string> getCertChain(Pkcs12Store store, string password, string alias = "")
     {
-        Logger.LogDebug("Entered getCertChain()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         if (string.IsNullOrEmpty(alias))
         {
-            Logger.LogDebug("Alias is empty, attempting to get key entry alias");
+            Logger.LogDebug("Alias is empty, using first key entry alias");
             alias = store.Aliases.FirstOrDefault(store.IsKeyEntry);
         }
 
         var chain = new List<string>();
-        Logger.LogDebug("Attempting to get certificate chain with alias {Alias}", alias);
+        Logger.LogDebug("Extracting certificate chain with alias: {Alias}", alias);
         var chainCerts = store.GetCertificateChain(alias);
         foreach (var chainCert in chainCerts)
         {
-            Logger.LogTrace("Adding certificate to chain");
+            Logger.LogTrace("Adding certificate to chain list");
             using var stringWriter = new StringWriter();
             var pemWriter = new PemWriter(stringWriter);
             pemWriter.WriteObject(chainCert.Certificate);
@@ -1681,11 +1890,16 @@ public abstract class JobBase
             chain.Add(stringWriter.ToString());
         }
 
-        Logger.LogTrace("Certificate chain:\n{Chain}", string.Join("\n", chain));
-        Logger.LogDebug("Returning certificate chain");
+        Logger.LogDebug("Certificate chain extracted with {Count} certificates", chain.Count);
+        Logger.MethodExit(MsLogLevel.Debug);
         return chain;
     }
 
+    /// <summary>
+    /// Determines if the provided byte data is in DER (binary) certificate format.
+    /// </summary>
+    /// <param name="data">The byte data to check.</param>
+    /// <returns>True if the data is valid DER-encoded certificate; otherwise, false.</returns>
     public static bool IsDerFormat(byte[] data)
     {
         try
@@ -1699,6 +1913,11 @@ public abstract class JobBase
         }
     }
 
+    /// <summary>
+    /// Converts DER-encoded certificate data to PEM format.
+    /// </summary>
+    /// <param name="data">The DER-encoded certificate bytes.</param>
+    /// <returns>The certificate in PEM format.</returns>
     public static string ConvertDerToPem(byte[] data)
     {
         var pemObject = new PemObject("CERTIFICATE", data);
@@ -1709,6 +1928,12 @@ public abstract class JobBase
         return stringWriter.ToString();
     }
 
+    /// <summary>
+    /// Computes a SHA-256 hash of the input string.
+    /// Useful for creating consistent identifiers without exposing sensitive data.
+    /// </summary>
+    /// <param name="input">The input string to hash.</param>
+    /// <returns>The SHA-256 hash as a lowercase hexadecimal string.</returns>
     protected static string GetSHA256Hash(string input)
     {
         var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
@@ -1717,51 +1942,79 @@ public abstract class JobBase
     }
 }
 
+/// <summary>
+/// Exception thrown when a certificate store cannot be found in Kubernetes.
+/// </summary>
 public class StoreNotFoundException : Exception
 {
+    /// <summary>Initializes a new instance of StoreNotFoundException.</summary>
     public StoreNotFoundException()
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message.</summary>
+    /// <param name="message">The error message describing the missing store.</param>
     public StoreNotFoundException(string message)
         : base(message)
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
+    /// <param name="message">The error message describing the missing store.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
     public StoreNotFoundException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 }
 
+/// <summary>
+/// Exception thrown when a Kubernetes secret is invalid, malformed, or missing required fields.
+/// </summary>
 public class InvalidK8SSecretException : Exception
 {
+    /// <summary>Initializes a new instance of InvalidK8SSecretException.</summary>
     public InvalidK8SSecretException()
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message.</summary>
+    /// <param name="message">The error message describing the invalid secret.</param>
     public InvalidK8SSecretException(string message)
         : base(message)
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
+    /// <param name="message">The error message describing the invalid secret.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
     public InvalidK8SSecretException(string message, Exception innerException)
         : base(message, innerException)
     {
     }
 }
 
+/// <summary>
+/// Exception thrown when a JKS keystore contains PKCS12 data instead of proper JKS format,
+/// or vice versa (format mismatch between expected and actual store format).
+/// </summary>
 public class JkSisPkcs12Exception : Exception
 {
+    /// <summary>Initializes a new instance of JkSisPkcs12Exception.</summary>
     public JkSisPkcs12Exception()
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message.</summary>
+    /// <param name="message">The error message describing the format mismatch.</param>
     public JkSisPkcs12Exception(string message)
         : base(message)
     {
     }
 
+    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
+    /// <param name="message">The error message describing the format mismatch.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
     public JkSisPkcs12Exception(string message, Exception innerException)
         : base(message, innerException)
     {

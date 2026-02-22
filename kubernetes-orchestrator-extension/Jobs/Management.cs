@@ -18,20 +18,58 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
+/// <summary>
+/// Management job implementation for Kubernetes certificate stores.
+/// Handles Add, Remove, and Create operations for certificates in Kubernetes secrets,
+/// JKS keystores, and PKCS12 keystores.
+/// </summary>
+/// <remarks>
+/// Supports the following operations:
+/// - Add/Create: Add a certificate to a store (Opaque, TLS, JKS, PKCS12)
+/// - Remove: Remove a certificate from a store
+///
+/// Supports the following store types:
+/// - Opaque secrets (K8SSecret)
+/// - TLS secrets (K8STLSSecr)
+/// - JKS keystores (K8SJKS)
+/// - PKCS12 keystores (K8SPKCS12)
+/// - Namespace-wide operations (K8SNS)
+/// - Cluster-wide operations (K8SCluster)
+/// </remarks>
 public class Management : JobBase, IManagementJobExtension
 {
+    /// <summary>
+    /// Initializes a new instance of the Management job with the specified PAM resolver.
+    /// </summary>
+    /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
     public Management(IPAMSecretResolver resolver)
     {
         _resolver = resolver;
     }
 
-    //Job Entry Point
+    /// <summary>
+    /// Main entry point for the management job. Processes Add, Remove, or Create operations
+    /// for certificates in Kubernetes certificate stores.
+    /// </summary>
+    /// <param name="config">Management job configuration containing operation details and certificate data.</param>
+    /// <returns>JobResult indicating success or failure of the management operation.</returns>
+    /// <remarks>
+    /// Configuration parameters available in config:
+    /// - config.ServerUsername, config.ServerPassword - credentials for K8S API authentication
+    /// - config.CertificateStoreDetails.StorePath - location path of certificate store
+    /// - config.CertificateStoreDetails.StorePassword - password for protected stores (JKS/PKCS12)
+    /// - config.JobCertificate.Contents - Base64 encoded certificate (PKCS12 or DER)
+    /// - config.JobCertificate.Alias - certificate alias (for JKS/PKCS12)
+    /// - config.OperationType - Add, Remove, or Create
+    /// - config.Overwrite - whether to overwrite existing certificates
+    /// - config.JobCertificate.PrivateKeyPassword - password for private key in PKCS12
+    /// </remarks>
     public JobResult ProcessJob(ManagementJobConfiguration config)
     {
-        //METHOD ARGUMENTS...
         //config - contains context information passed from KF Command to this job run:
         //
         // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
@@ -51,7 +89,8 @@ public class Management : JobBase, IManagementJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Logger = LogHandler.GetClassLogger(GetType());
-        Logger.MethodEntry();
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing management job {JobId} with operation type {OperationType}", config.JobId, config.OperationType);
         K8SJobCertificate jobCertObj;
         try
         {
@@ -127,8 +166,15 @@ public class Management : JobBase, IManagementJobExtension
     }
 
 
+    /// <summary>
+    /// Creates an empty Kubernetes secret of the specified type.
+    /// Used when no certificate data is provided for a create operation.
+    /// </summary>
+    /// <param name="secretType">The type of secret to create (e.g., "tls", "secret").</param>
+    /// <returns>The created V1Secret object.</returns>
     private V1Secret creatEmptySecret(string secretType)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogWarning(
             "Certificate object and certificate alias are both null or empty.  Assuming this is a 'create_store' action and populating an empty store.");
         var emptyStrArray = Array.Empty<string>();
@@ -145,13 +191,23 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace(createResponse.ToString());
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with no data.");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Handles creation or update of an Opaque secret containing certificate data.
+    /// </summary>
+    /// <param name="certAlias">Alias/thumbprint of the certificate.</param>
+    /// <param name="certObj">Job certificate object containing certificate and key data.</param>
+    /// <param name="keyPasswordStr">Password for the private key.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificate.</param>
+    /// <param name="append">Whether to append to existing data.</param>
+    /// <returns>The created or updated V1Secret object.</returns>
     private V1Secret HandleOpaqueSecret(string certAlias, K8SJobCertificate certObj, string keyPasswordStr = "",
         bool overwrite = false, bool append = false)
     {
-        Logger.LogTrace("Entered HandleOpaqueSecret()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogDebug("Certificate alias: {Alias}", certAlias);
         Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(keyPasswordStr));
         Logger.LogDebug("Operation parameters - Overwrite: {Overwrite}, Append: {Append}", overwrite, append);
@@ -201,12 +257,19 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Secret operation result: {Summary}", LoggingUtilities.GetSecretSummary(createResponse));
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Handles creation, update, or removal of a JKS keystore secret.
+    /// </summary>
+    /// <param name="config">Management job configuration containing JKS and certificate data.</param>
+    /// <param name="remove">Whether this is a remove operation.</param>
+    /// <returns>The created or updated V1Secret object, or null if nothing to remove.</returns>
     private V1Secret HandleJksSecret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.MethodEntry();
+        Logger.MethodEntry(MsLogLevel.Debug);
         // get the jks store from the secret
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
@@ -317,18 +380,26 @@ public class Management : JobBase, IManagementJobExtension
             // update the secret
             Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
             var updateResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
-            Logger.LogDebug("Exiting HandleJKSSecret()...");
+            Logger.LogDebug("JKS secret operation completed successfully");
+            Logger.MethodExit(MsLogLevel.Debug);
             return updateResponse;
         }
         catch (JkSisPkcs12Exception)
         {
+            Logger.LogDebug("JKS data is actually PKCS12, delegating to HandlePkcs12Secret");
             return HandlePkcs12Secret(config, remove);
         }
     }
 
+    /// <summary>
+    /// Handles creation, update, or removal of a PKCS12/PFX keystore secret.
+    /// </summary>
+    /// <param name="config">Management job configuration containing PKCS12 and certificate data.</param>
+    /// <param name="remove">Whether this is a remove operation.</param>
+    /// <returns>The created or updated V1Secret object, or null if nothing to remove.</returns>
     private V1Secret HandlePkcs12Secret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.LogDebug("Entering HandlePkcs12Secret()...");
+        Logger.MethodEntry(MsLogLevel.Debug);
         // get the pkcs12 store from the secret
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
         //getPkcs12BytesFromKubeSecret
@@ -418,7 +489,8 @@ public class Management : JobBase, IManagementJobExtension
         // update the secret
         Logger.LogDebug("Calling CreateOrUpdatePkcs12Secret()...");
         var updateResponse = KubeClient.CreateOrUpdatePkcs12Secret(k8sData, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Exiting HandlePKCS12Secret()...");
+        Logger.LogDebug("PKCS12 secret operation completed successfully");
+        Logger.MethodExit(MsLogLevel.Debug);
         return updateResponse;
     }
 
@@ -474,10 +546,20 @@ public class Management : JobBase, IManagementJobExtension
     //     return createResponse;
     // }
 
+    /// <summary>
+    /// Handles creation or update of a kubernetes.io/tls secret containing certificate data.
+    /// </summary>
+    /// <param name="certAlias">Alias/thumbprint of the certificate.</param>
+    /// <param name="certObj">Job certificate object containing certificate and key data.</param>
+    /// <param name="certPassword">Password for the certificate.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificate.</param>
+    /// <param name="append">Whether to append to existing data.</param>
+    /// <returns>The created or updated V1Secret object.</returns>
     private V1Secret HandleTlsSecret(string certAlias, K8SJobCertificate certObj, string certPassword,
         bool overwrite = false, bool append = true)
     {
-        Logger.LogTrace("Entered HandleTlsSecret()");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing TLS secret for certificate: {Alias}", certAlias);
         Logger.LogTrace("certAlias: " + certAlias);
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
@@ -548,14 +630,25 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Handles Add or Create operations for certificates based on secret type.
+    /// Routes to appropriate handler based on the store type.
+    /// </summary>
+    /// <param name="secretType">Type of secret (tls, opaque, jks, pkcs12, etc.).</param>
+    /// <param name="config">Management job configuration.</param>
+    /// <param name="jobCertObj">Job certificate object with certificate data.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificates.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config,
         K8SJobCertificate jobCertObj, bool overwrite = false)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
         var certPassword = jobCertObj.Password;
-        Logger.LogDebug("Entered HandleCreateOrUpdate()");
+        Logger.LogDebug("Processing create/update for secret type: {SecretType}", secretType);
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
 
@@ -730,13 +823,22 @@ public class Management : JobBase, IManagementJobExtension
         }
 
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.MethodExit(MsLogLevel.Debug);
         return SuccessJob(config.JobHistoryId);
     }
 
 
+    /// <summary>
+    /// Handles Remove operations for certificates.
+    /// Deletes certificates from the specified Kubernetes secret based on store type.
+    /// </summary>
+    /// <param name="secretType">Type of secret (tls, opaque, jks, pkcs12, etc.).</param>
+    /// <param name="config">Management job configuration.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
-        //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing remove for secret type: {SecretType}", secretType);
         var kubeHost = KubeClient.GetHost();
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
@@ -828,6 +930,7 @@ public class Management : JobBase, IManagementJobExtension
         }
 
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.MethodExit(MsLogLevel.Debug);
         return SuccessJob(config.JobHistoryId);
     }
 }

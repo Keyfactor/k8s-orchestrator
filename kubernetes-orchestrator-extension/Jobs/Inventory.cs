@@ -22,39 +22,60 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Org.BouncyCastle.Pkcs;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
-// The Inventory class implements IAgentJobExtension and is meant to find all of the certificates in a given certificate store on a given server
-//  and return those certificates back to Keyfactor for storing in its database.  Private keys will NOT be passed back to Keyfactor Command 
+/// <summary>
+/// Inventory job implementation for Kubernetes certificate stores.
+/// Finds all certificates in a given Kubernetes certificate store (secrets, CSRs, JKS, PKCS12)
+/// and returns them to Keyfactor Command for storage in its database.
+/// Private keys are NOT passed back to Keyfactor Command.
+/// </summary>
+/// <remarks>
+/// Supports the following store types:
+/// - Opaque secrets (K8SSecret)
+/// - TLS secrets (K8STLSSecr)
+/// - Certificate Signing Requests (K8SCert)
+/// - JKS keystores (K8SJKS)
+/// - PKCS12 keystores (K8SPKCS12)
+/// - Cluster-wide inventory (K8SCluster)
+/// - Namespace-wide inventory (K8SNS)
+/// </remarks>
 public class Inventory : JobBase, IInventoryJobExtension
 {
+    /// <summary>
+    /// Initializes a new instance of the Inventory job with the specified PAM resolver.
+    /// </summary>
+    /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
     public Inventory(IPAMSecretResolver resolver)
     {
         _resolver = resolver;
     }
 
-    //Job Entry Point
+    /// <summary>
+    /// Main entry point for the inventory job. Processes the job configuration and returns
+    /// all certificates found in the specified Kubernetes certificate store.
+    /// </summary>
+    /// <param name="config">Inventory job configuration containing store details and credentials.</param>
+    /// <param name="submitInventory">Callback delegate to submit discovered certificates to Keyfactor Command.</param>
+    /// <returns>JobResult indicating success or failure of the inventory operation.</returns>
+    /// <remarks>
+    /// Configuration parameters available in config:
+    /// - config.ServerUsername, config.ServerPassword - credentials for K8S API authentication
+    /// - config.CertificateStoreDetails.StorePath - location path of certificate store
+    /// - config.CertificateStoreDetails.StorePassword - password for protected stores (JKS/PKCS12)
+    /// - config.CertificateStoreDetails.Properties - JSON string with custom store properties
+    /// </remarks>
     public JobResult ProcessJob(InventoryJobConfiguration config, SubmitInventoryUpdate submitInventory)
     {
-        //METHOD ARGUMENTS...
-        //config - contains context information passed from KF Command to this job run:
-        //
-        // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
-        //
-        // config.ServerUsername, config.ServerPassword - credentials for orchestrated server - use to authenticate to certificate store server.
-        // config.CertificateStoreDetails.ClientMachine - server name or IP address of orchestrated server
-        // config.CertificateStoreDetails.StorePath - location path of certificate store on orchestrated server
-        // config.CertificateStoreDetails.StorePassword - if the certificate store has a password, it would be passed here
-        // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
-
-        //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
         Logger ??= LogHandler.GetClassLogger(GetType());
+        Logger.MethodEntry(MsLogLevel.Debug);
 
         try
         {
-            Logger.LogTrace("Calling InitializeStore()");
+            Logger.LogDebug("Initializing store for inventory job {JobId}", config.JobId);
             InitializeStore(config);
             Logger.LogTrace("Returned from InitializeStore()");
 
@@ -319,9 +340,16 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Handles inventory of JKS (Java KeyStore) secrets stored in Kubernetes.
+    /// Deserializes JKS data and extracts all certificates and their chains.
+    /// </summary>
+    /// <param name="config">Job configuration containing store properties.</param>
+    /// <param name="allowedKeys">List of allowed secret data keys to process.</param>
+    /// <returns>Dictionary mapping certificate aliases to their PEM certificate chains.</returns>
     private Dictionary<string, List<string>> HandleJKSSecret(JobConfiguration config, List<string> allowedKeys)
     {
-        Logger.LogDebug("Enter HandleJKSSecret()");
+        Logger.MethodEntry(MsLogLevel.Debug);
         var hasPrivateKeyJks = false;
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
@@ -455,12 +483,22 @@ public class Inventory : JobBase, IInventoryJobExtension
             }
         }
 
+        Logger.LogDebug("JKS inventory complete with {Count} entries", jksInventoryDict.Count);
+        Logger.MethodExit(MsLogLevel.Debug);
         return jksInventoryDict;
     }
 
+    /// <summary>
+    /// Handles inventory of Kubernetes Certificate Signing Requests (CSRs).
+    /// Retrieves certificate data from approved CSRs.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit discovered certificates.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleCertificate(long jobId, SubmitInventoryUpdate submitInventory)
     {
-        Logger.LogDebug("Entering HandleCertificate for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing CSR inventory for job {JobId}", jobId);
         Logger.LogTrace("submitInventory: " + submitInventory);
 
         const bool hasPrivateKey = false;
@@ -470,12 +508,14 @@ public class Inventory : JobBase, IInventoryJobExtension
             var certificates = KubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
             Logger.LogDebug("GetCertificateSigningRequestStatus returned " + certificates.Count() + " certificates.");
             Logger.LogTrace(string.Join(",", certificates));
-            Logger.LogDebug("Calling PushInventory for job id " + jobId + "...");
-            return PushInventory(certificates, jobId, submitInventory);
+            Logger.LogDebug("Pushing {Count} certificates to inventory", certificates.Count());
+            var result = PushInventory(certificates, jobId, submitInventory);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return result;
         }
         catch (HttpOperationException e)
         {
-            Logger.LogError("HttpOperationException: " + e.Message);
+            Logger.LogError("HttpOperationException: {Message}", e.Message);
             Logger.LogTrace(e.ToString());
             Logger.LogTrace(e.StackTrace);
             var certDataErrorMsg =
@@ -504,10 +544,21 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Submits discovered certificates to Keyfactor Command.
+    /// Converts certificate strings to CurrentInventoryItem objects and invokes the submit callback.
+    /// </summary>
+    /// <param name="certsList">Collection of PEM-formatted certificate strings.</param>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit certificates to Keyfactor Command.</param>
+    /// <param name="hasPrivateKey">Whether the certificates have associated private keys in the store.</param>
+    /// <param name="jobMessage">Optional message to include in the job result.</param>
+    /// <returns>JobResult indicating success or failure of the submission.</returns>
     private JobResult PushInventory(IEnumerable<string> certsList, long jobId, SubmitInventoryUpdate submitInventory,
         bool hasPrivateKey = false, string jobMessage = null)
     {
-        Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing certificate list for job {JobId}", jobId);
         Logger.LogTrace("submitInventory: " + submitInventory);
         Logger.LogTrace("certsList: " + certsList);
         var inventoryItems = new List<CurrentInventoryItem>();
@@ -582,10 +633,20 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Submits discovered certificates (dictionary variant) to Keyfactor Command.
+    /// Used for namespace-level inventory where certificates are keyed by their store path.
+    /// </summary>
+    /// <param name="certsList">Dictionary mapping store paths to PEM certificate strings.</param>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit certificates to Keyfactor Command.</param>
+    /// <param name="hasPrivateKey">Whether the certificates have associated private keys in the store.</param>
+    /// <returns>JobResult indicating success or failure of the submission.</returns>
     private JobResult PushInventory(Dictionary<string, string> certsList, long jobId,
         SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
-        Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing {Count} certificate entries for job {JobId}", certsList.Count, jobId);
         Logger.LogTrace("submitInventory: " + submitInventory);
         Logger.LogTrace("certsList: " + certsList);
         var inventoryItems = new List<CurrentInventoryItem>();
@@ -660,10 +721,20 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Submits discovered certificates with chains (dictionary variant) to Keyfactor Command.
+    /// Used for JKS/PKCS12 inventory where each alias has a certificate chain.
+    /// </summary>
+    /// <param name="certsList">Dictionary mapping aliases to lists of PEM certificates (chains).</param>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit certificates to Keyfactor Command.</param>
+    /// <param name="hasPrivateKey">Whether the certificates have associated private keys in the store.</param>
+    /// <returns>JobResult indicating success or failure of the submission.</returns>
     private JobResult PushInventory(Dictionary<string, List<string>> certsList, long jobId,
         SubmitInventoryUpdate submitInventory, bool hasPrivateKey = false)
     {
-        Logger.LogDebug("Entering PushInventory for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing {Count} certificate chain entries for job {JobId}", certsList.Count, jobId);
         Logger.LogTrace("submitInventory: " + submitInventory);
         Logger.LogTrace("certsList: " + certsList);
         var inventoryItems = new List<CurrentInventoryItem>();
@@ -720,10 +791,20 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Handles inventory of Kubernetes Opaque secrets containing certificate data.
+    /// Extracts certificates from the secret's data fields using the specified managed keys.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit discovered certificates.</param>
+    /// <param name="secretManagedKeys">Array of secret data keys to check for certificate data.</param>
+    /// <param name="secretPath">Optional path specification for the secret.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleOpaqueSecret(long jobId, SubmitInventoryUpdate submitInventory, string[] secretManagedKeys,
         string secretPath = "")
     {
-        Logger.LogDebug("Inventory entering HandleOpaqueSecret for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing opaque secret inventory for job {JobId}", jobId);
         const bool hasPrivateKey = true;
         //check if secretAllowedKeys is null or empty
         if (secretManagedKeys == null || secretManagedKeys.Length == 0) secretManagedKeys = new[] { "certificates" };
@@ -796,9 +877,18 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
 
+    /// <summary>
+    /// Handles inventory of Kubernetes TLS secrets (kubernetes.io/tls type).
+    /// Extracts certificate from tls.crt and optionally the CA from ca.crt.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <returns>List of PEM-formatted certificates (chain if present).</returns>
+    /// <exception cref="StoreNotFoundException">Thrown when the secret cannot be found.</exception>
+    /// <exception cref="Exception">Thrown when an error occurs querying the K8S API.</exception>
     private List<string> HandleTlsSecret(long jobId)
     {
-        Logger.LogDebug("Inventory entering HandleTlsSecret for job id " + jobId + "...");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing TLS secret inventory for job {JobId}", jobId);
         Logger.LogTrace("KubeNamespace: " + KubeNamespace);
         Logger.LogTrace("KubeSecretName: " + KubeSecretName);
         Logger.LogTrace("StorePath: " + StorePath);
@@ -960,8 +1050,16 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+    /// <summary>
+    /// Handles inventory of PKCS12/PFX keystores stored in Kubernetes secrets.
+    /// Deserializes PKCS12 data and extracts all certificates and their chains.
+    /// </summary>
+    /// <param name="config">Job configuration containing store properties.</param>
+    /// <param name="allowedKeys">List of allowed secret data keys to process.</param>
+    /// <returns>Dictionary mapping certificate aliases to their PEM certificate chains.</returns>
     private Dictionary<string, List<string>> HandlePkcs12Secret(JobConfiguration config, List<string> allowedKeys)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
         var hasPrivateKey = false;
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
         var k8sData = KubeClient.GetPkcs12Secret(KubeSecretName, KubeNamespace, "", "", allowedKeys);
@@ -1024,6 +1122,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             }
         }
 
+        Logger.LogDebug("PKCS12 inventory complete with {Count} entries", pkcs12InventoryDict.Count);
+        Logger.MethodExit(MsLogLevel.Debug);
         return pkcs12InventoryDict;
     }
 }

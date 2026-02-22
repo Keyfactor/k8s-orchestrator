@@ -37,59 +37,103 @@ using X509Certificate = Org.BouncyCastle.X509.X509Certificate;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
 
+/// <summary>
+/// Provides Kubernetes API client operations for certificate management.
+/// Handles authentication, secret CRUD operations, certificate signing requests,
+/// and discovery of certificate stores across namespaces and clusters.
+/// </summary>
 public class KubeCertificateManagerClient
 {
     private readonly ILogger _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="KubeCertificateManagerClient"/> class.
+    /// </summary>
+    /// <param name="kubeconfig">JSON-formatted kubeconfig containing cluster, user, and context information.</param>
+    /// <param name="useSSL">When true, validates TLS certificates; when false, skips TLS verification.</param>
     public KubeCertificateManagerClient(string kubeconfig, bool useSSL = true)
     {
         _logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod()?.DeclaringType);
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
+        _logger.LogTrace("UseSSL: {UseSSL}", useSSL);
+
         Client = GetKubeClient(kubeconfig);
         ConfigJson = kubeconfig;
         try
         {
             ConfigObj = ParseKubeConfig(kubeconfig, !useSSL); // invert useSSL to skip TLS verification
+            _logger.LogDebug("Successfully parsed kubeconfig for cluster: {ClusterName}", ConfigObj.CurrentContext ?? "unknown");
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogWarning("Failed to parse kubeconfig, using empty configuration: {Message}", ex.Message);
             ConfigObj = new K8SConfiguration();
         }
+        _logger.MethodExit(LogLevel.Debug);
     }
 
+    /// <summary>
+    /// Gets or sets the raw JSON kubeconfig string.
+    /// </summary>
     private string ConfigJson { get; set; }
 
+    /// <summary>
+    /// Gets the parsed Kubernetes configuration object.
+    /// </summary>
     private K8SConfiguration ConfigObj { get; }
 
+    /// <summary>
+    /// Gets or sets the Kubernetes API client instance.
+    /// </summary>
     private IKubernetes Client { get; set; }
 
+    /// <summary>
+    /// Gets the name of the Kubernetes cluster from the configuration.
+    /// Falls back to the host URL if the cluster name cannot be determined.
+    /// </summary>
+    /// <returns>The cluster name or host URL.</returns>
     public string GetClusterName()
     {
-        _logger.LogTrace("Entered GetClusterName()");
+        _logger.MethodEntry(LogLevel.Debug);
         try
         {
-            _logger.LogTrace("Returning cluster name from ConfigObj");
             if (ConfigObj == null)
             {
                 _logger.LogWarning("ConfigObj is null, falling back to GetHost()");
-                return GetHost();
+                var host = GetHost();
+                _logger.MethodExit(LogLevel.Debug);
+                return host;
             }
             if (ConfigObj.Clusters == null)
             {
                 _logger.LogWarning("ConfigObj.Clusters is null, falling back to GetHost()");
-                return GetHost();
+                var host = GetHost();
+                _logger.MethodExit(LogLevel.Debug);
+                return host;
             }
-            return ConfigObj.Clusters.FirstOrDefault()?.Name;
+            var clusterName = ConfigObj.Clusters.FirstOrDefault()?.Name;
+            _logger.LogDebug("Returning cluster name: {ClusterName}", clusterName);
+            _logger.MethodExit(LogLevel.Debug);
+            return clusterName;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error getting cluster name from ConfigObj, attempting to return client base uri");
-            return GetHost();
+            var host = GetHost();
+            _logger.MethodExit(LogLevel.Debug);
+            return host;
         }
     }
 
+    /// <summary>
+    /// Gets the base URL of the Kubernetes API server.
+    /// </summary>
+    /// <returns>The API server base URL as a string.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the client or its BaseUri is null.</exception>
     public string GetHost()
     {
-        _logger.LogTrace("Entered GetHost()");
+        _logger.MethodEntry(LogLevel.Debug);
         if (Client == null)
         {
             _logger.LogError("Client is null in GetHost()");
@@ -100,13 +144,23 @@ public class KubeCertificateManagerClient
             _logger.LogError("Client.BaseUri is null in GetHost()");
             throw new InvalidOperationException("Kubernetes client BaseUri is null. Check kubeconfig configuration.");
         }
-        return Client.BaseUri.ToString();
+        var host = Client.BaseUri.ToString();
+        _logger.LogDebug("Returning host: {Host}", host);
+        _logger.MethodExit(LogLevel.Debug);
+        return host;
     }
 
+    /// <summary>
+    /// Parses a kubeconfig JSON string into a K8SConfiguration object.
+    /// Extracts cluster, user, and context information for API authentication.
+    /// </summary>
+    /// <param name="kubeconfig">JSON-formatted kubeconfig string.</param>
+    /// <param name="skipTLSVerify">When true, skips TLS certificate verification.</param>
+    /// <returns>Parsed K8SConfiguration object.</returns>
     private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
     {
-        _logger.LogTrace("Entered ParseKubeConfig()");
-        _logger.LogTrace("Kubeconfig length: {Length}", kubeconfig?.Length ?? 0);
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Kubeconfig length: {Length}, skipTLSVerify: {SkipTLS}", kubeconfig?.Length ?? 0, skipTLSVerify);
         _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
 
         try
@@ -262,6 +316,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("Finished parsing contexts");
             _logger.LogDebug("Finished parsing kubeconfig");
 
+            _logger.MethodExit(LogLevel.Debug);
             return k8SConfiguration;
         }
         catch (Exception ex)
@@ -273,9 +328,15 @@ public class KubeCertificateManagerClient
         }
     }
 
+    /// <summary>
+    /// Creates and configures a Kubernetes API client from the provided kubeconfig.
+    /// Implements retry logic for transient connection failures.
+    /// </summary>
+    /// <param name="kubeconfig">JSON-formatted kubeconfig string.</param>
+    /// <returns>Configured IKubernetes client instance.</returns>
     private IKubernetes GetKubeClient(string kubeconfig)
     {
-        _logger.LogTrace("Entered GetKubeClient()");
+        _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("Getting executing assembly location");
         var strExeFilePath = Assembly.GetExecutingAssembly().Location;
         _logger.LogTrace("Executing assembly location: {ExeFilePath}", strExeFilePath);
@@ -335,7 +396,7 @@ public class KubeCertificateManagerClient
 
             _logger.LogTrace("Setting Client property");
             Client = client;
-            _logger.LogTrace("Exiting GetKubeClient()");
+            _logger.MethodExit(LogLevel.Debug);
             return client;
         }
         catch (Exception ex)
@@ -347,12 +408,21 @@ public class KubeCertificateManagerClient
     }
 
     /// <summary>
-    /// Find an alias in a PKCS12 store by Common Name
+    /// Finds an alias in a PKCS12 store by matching the certificate's Common Name.
     /// </summary>
+    /// <param name="store">The PKCS12 store to search.</param>
+    /// <param name="cn">The Common Name to match (case-insensitive, partial match).</param>
+    /// <returns>The matching alias, or null if not found.</returns>
     private string FindAliasByCN(Pkcs12Store store, string cn)
     {
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Searching for CN: {CN}", cn);
         if (store == null || string.IsNullOrEmpty(cn))
+        {
+            _logger.LogDebug("Store or CN is null/empty, returning null");
+            _logger.MethodExit(LogLevel.Debug);
             return null;
+        }
 
         foreach (var alias in store.Aliases)
         {
@@ -450,6 +520,24 @@ public class KubeCertificateManagerClient
         return foundCertificate;
     }
 
+    /// <summary>
+    /// Removes a certificate from a PKCS12 secret store in Kubernetes.
+    /// Loads the existing store, removes the matching certificate entry, and updates the secret.
+    /// </summary>
+    /// <param name="jobCertificate">The certificate to remove, containing thumbprint or alias for matching.</param>
+    /// <param name="secretName">Name of the Kubernetes secret containing the PKCS12 store.</param>
+    /// <param name="namespaceName">Kubernetes namespace where the secret resides.</param>
+    /// <param name="secretType">Type of secret (e.g., "pkcs12", "pfx").</param>
+    /// <param name="certDataFieldName">Field name within the secret containing the PKCS12 data.</param>
+    /// <param name="storePasswd">Password for the PKCS12 store.</param>
+    /// <param name="k8SSecretData">Existing secret data object.</param>
+    /// <param name="append">When true, appends to existing entries.</param>
+    /// <param name="overwrite">When true, overwrites existing entries.</param>
+    /// <param name="passwdIsK8SSecret">When true, password is stored in a separate Kubernetes secret.</param>
+    /// <param name="passwordSecretPath">Path to the password secret if passwdIsK8SSecret is true.</param>
+    /// <param name="passwordFieldName">Field name containing the password in the password secret.</param>
+    /// <param name="certdataFieldNames">Array of allowed field names to process.</param>
+    /// <returns>The updated V1Secret object.</returns>
     public V1Secret RemoveFromPKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName,
         string namespaceName, string secretType, string certDataFieldName,
         string storePasswd, V1Secret k8SSecretData,
@@ -457,7 +545,10 @@ public class KubeCertificateManagerClient
         string passwordFieldName = "password",
         string[] certdataFieldNames = null)
     {
-        _logger.LogTrace("Entered RemoveFromPKCS12SecretStore()");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Parameters - SecretName: {SecretName}, Namespace: {Namespace}, SecretType: {SecretType}",
+            secretName, namespaceName, secretType);
+        _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswd));
         _logger.LogTrace("Calling GetSecret()");
         var existingPkcs12DataObj = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
 
@@ -680,10 +771,29 @@ public class KubeCertificateManagerClient
 
         _logger.LogTrace("Finished creating V1Secret object");
 
-        _logger.LogTrace("Exiting UpdatePKCS12SecretStore()");
+        _logger.MethodExit(LogLevel.Debug);
         return updatedSecret;
     }
 
+    /// <summary>
+    /// Updates a PKCS12 secret store in Kubernetes by adding or modifying certificate entries.
+    /// Supports password storage in a separate "buddy" secret for security.
+    /// </summary>
+    /// <param name="jobCertificate">The certificate to add/update in the store.</param>
+    /// <param name="secretName">Name of the Kubernetes secret containing the PKCS12 store.</param>
+    /// <param name="namespaceName">Kubernetes namespace where the secret resides.</param>
+    /// <param name="secretType">Type of secret (e.g., "pkcs12", "pfx").</param>
+    /// <param name="certdataFieldName">Field name within the secret containing the PKCS12 data.</param>
+    /// <param name="storePasswd">Password for the PKCS12 store.</param>
+    /// <param name="k8SSecretData">Existing secret data object.</param>
+    /// <param name="append">When true, appends to existing entries.</param>
+    /// <param name="overwrite">When true, overwrites existing entries with same alias.</param>
+    /// <param name="passwdIsK8sSecret">When true, password is stored in a separate Kubernetes secret.</param>
+    /// <param name="passwordSecretPath">Path to the password secret if passwdIsK8sSecret is true.</param>
+    /// <param name="passwordFieldName">Field name containing the password in the password secret.</param>
+    /// <param name="certdataFieldNames">Array of allowed field names to process.</param>
+    /// <param name="remove">When true, removes the certificate instead of adding.</param>
+    /// <returns>The updated V1Secret object.</returns>
     public V1Secret UpdatePKCS12SecretStore(K8SJobCertificate jobCertificate, string secretName, string namespaceName,
         string secretType, string certdataFieldName,
         string storePasswd, V1Secret k8SSecretData,
@@ -691,7 +801,9 @@ public class KubeCertificateManagerClient
         string passwordFieldName = "password",
         string[] certdataFieldNames = null, bool remove = false)
     {
-        _logger.LogTrace("Entered UpdatePKCS12SecretStore()");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Parameters - SecretName: {SecretName}, Namespace: {Namespace}, Overwrite: {Overwrite}, Append: {Append}",
+            secretName, namespaceName, overwrite, append);
         _logger.LogTrace("Calling GetSecret()");
         var existingPkcs12DataObj = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
         // var existingPkcs12Bytes = existingPkcs12DataObj.Data[certdataFieldName];
@@ -1038,18 +1150,38 @@ public class KubeCertificateManagerClient
 
         _logger.LogTrace("Finished creating V1Secret object");
 
-        _logger.LogTrace("Exiting UpdatePKCS12SecretStore()");
+        _logger.MethodExit(LogLevel.Debug);
         return updatedSecret;
     }
 
+    /// <summary>
+    /// Creates or updates a certificate store secret in Kubernetes.
+    /// Routes to appropriate handler based on secret type (PKCS12, PFX, JKS).
+    /// </summary>
+    /// <param name="jobCertificate">The certificate to store.</param>
+    /// <param name="secretName">Name of the Kubernetes secret.</param>
+    /// <param name="namespaceName">Kubernetes namespace.</param>
+    /// <param name="secretType">Type of store (pkcs12, pfx, jks).</param>
+    /// <param name="overwrite">When true, overwrites existing entries.</param>
+    /// <param name="certDataFieldName">Field name for certificate data.</param>
+    /// <param name="passwordFieldName">Field name for password.</param>
+    /// <param name="passwordSecretPath">Path to password secret if stored separately.</param>
+    /// <param name="passwordIsK8SSecret">When true, password is in a separate secret.</param>
+    /// <param name="password">Store password.</param>
+    /// <param name="allowedKeys">Allowed field names to process.</param>
+    /// <param name="remove">When true, removes instead of adds.</param>
+    /// <returns>The created or updated V1Secret.</returns>
     public V1Secret CreateOrUpdateCertificateStoreSecret(K8SJobCertificate jobCertificate, string secretName,
         string namespaceName, string secretType, bool overwrite = false, string certDataFieldName = "pkcs12",
         string passwordFieldName = "password",
         string passwordSecretPath = "", bool passwordIsK8SSecret = false, string password = "",
         string[] allowedKeys = null, bool remove = false)
     {
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Parameters - SecretName: {SecretName}, Namespace: {Namespace}, SecretType: {SecretType}, Remove: {Remove}",
+            secretName, namespaceName, secretType, remove);
         var storePasswd = string.IsNullOrEmpty(password) ? jobCertificate.Password : password;
-        _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
+        _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswd));
         _logger.LogTrace("Calling CreateNewSecret()");
         V1Secret k8SSecretData;
         switch (secretType)
@@ -1948,14 +2080,21 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Completed discovering certificates from k8s certificate resources.");
         _logger.LogTrace("locations.Count: " + locations.Count);
         _logger.LogTrace("locations: " + locations);
-        _logger.LogTrace("Exiting DiscoverCertificates()");
+        _logger.MethodExit(LogLevel.Debug);
         return locations;
     }
 
+    /// <summary>
+    /// Gets the status of a Kubernetes Certificate Signing Request.
+    /// Returns the signed certificate PEM if the CSR has been approved and signed.
+    /// </summary>
+    /// <param name="name">Name of the CSR resource.</param>
+    /// <returns>Array containing the certificate PEM, or empty if not yet signed.</returns>
     public string[] GetCertificateSigningRequestStatus(string name)
     {
-        _logger.LogTrace("Entered GetCertificateSigningRequestStatus()");
-        _logger.LogDebug($"Attempting to read {name} certificate signing request from {GetHost()}...");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("CSR Name: {Name}", name);
+        _logger.LogDebug("Attempting to read {Name} certificate signing request from {Host}...", name, GetHost());
         var cr = Client.CertificatesV1.ReadCertificateSigningRequest(name);
         _logger.LogDebug($"Successfully read {name} certificate signing request from {GetHost()}.");
         _logger.LogTrace("cr: " + cr);
@@ -1975,37 +2114,73 @@ public class KubeCertificateManagerClient
         _logger.LogDebug($"Attempting to parse certificate from certificate resource {name}.");
         var cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(utfCert);
         _logger.LogTrace("cert: " + cert);
-        _logger.LogTrace("Exiting GetCertificateSigningRequestStatus()");
+        _logger.MethodExit(LogLevel.Debug);
         return new[] { utfCert };
     }
 
+    /// <summary>
+    /// Reads a DER-encoded certificate from a base64 string.
+    /// </summary>
+    /// <param name="derString">Base64-encoded DER certificate data.</param>
+    /// <returns>Parsed X509Certificate object.</returns>
     public X509Certificate ReadDerCertificate(string derString)
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var derData = Convert.FromBase64String(derString);
         var certificateParser = new X509CertificateParser();
-        return certificateParser.ReadCertificate(derData);
+        var cert = certificateParser.ReadCertificate(derData);
+        _logger.LogDebug("Parsed DER certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+        _logger.MethodExit(LogLevel.Debug);
+        return cert;
     }
 
+    /// <summary>
+    /// Reads a PEM-encoded certificate from a string.
+    /// </summary>
+    /// <param name="pemString">PEM-encoded certificate string.</param>
+    /// <returns>Parsed X509Certificate object, or null if not a valid certificate.</returns>
     public X509Certificate ReadPemCertificate(string pemString)
     {
+        _logger.MethodEntry(LogLevel.Debug);
         using var reader = new StringReader(pemString);
         var pemReader = new PemReader(reader);
         var pemObject = pemReader.ReadPemObject();
-        if (pemObject is not { Type: "CERTIFICATE" }) return null;
+        if (pemObject is not { Type: "CERTIFICATE" })
+        {
+            _logger.LogDebug("PEM object is not a certificate, returning null");
+            _logger.MethodExit(LogLevel.Debug);
+            return null;
+        }
 
         var certificateBytes = pemObject.Content;
         var certificateParser = new X509CertificateParser();
-        return certificateParser.ReadCertificate(certificateBytes);
+        var cert = certificateParser.ReadCertificate(certificateBytes);
+        _logger.LogDebug("Parsed PEM certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+        _logger.MethodExit(LogLevel.Debug);
+        return cert;
     }
 
+    /// <summary>
+    /// Extracts a private key from a PKCS12 store and converts it to PEM format.
+    /// Supports RSA and EC private keys.
+    /// </summary>
+    /// <param name="store">The PKCS12 store containing the private key.</param>
+    /// <param name="password">Password for the store (currently unused, key is already decrypted).</param>
+    /// <returns>PEM-formatted private key string.</returns>
+    /// <exception cref="Exception">Thrown when no private key is found or key type is unsupported.</exception>
     public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password)
     {
-        // Get the first private key entry
+        _logger.MethodEntry(LogLevel.Debug);
         // Get the first private key entry
         var alias = store.Aliases.FirstOrDefault(entryAlias => store.IsKeyEntry(entryAlias));
 
-        if (alias == null) throw new Exception("No private key found in the provided PFX/P12 file.");
+        if (alias == null)
+        {
+            _logger.LogError("No private key found in the provided PFX/P12 file");
+            throw new Exception("No private key found in the provided PFX/P12 file.");
+        }
 
+        _logger.LogDebug("Found private key with alias: {Alias}", alias);
         // Get the private key
         var keyEntry = store.GetKey(alias);
         var privateKeyParams = keyEntry.Key;
@@ -2016,6 +2191,7 @@ public class KubeCertificateManagerClient
             ECPrivateKeyParameters => "EC PRIVATE KEY",
             _ => throw new Exception("Unsupported private key type.")
         };
+        _logger.LogDebug("Private key type: {KeyType}", pemType);
 
         // Convert the private key to PEM format
         var sw = new StringWriter();
@@ -2026,11 +2202,19 @@ public class KubeCertificateManagerClient
         pemWriter.WriteObject(pemObject);
         pemWriter.Writer.Flush();
 
+        _logger.LogTrace("Private key: {Key}", LoggingUtilities.RedactPrivateKeyPem(sw.ToString()));
+        _logger.MethodExit(LogLevel.Debug);
         return sw.ToString();
     }
 
+    /// <summary>
+    /// Loads a certificate chain from PEM data containing multiple certificates.
+    /// </summary>
+    /// <param name="pemData">PEM string potentially containing multiple certificates.</param>
+    /// <returns>List of parsed X509Certificate objects.</returns>
     public List<X509Certificate> LoadCertificateChain(string pemData)
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var pemReader = new PemReader(new StringReader(pemData));
         var certificates = new List<X509Certificate>();
 
@@ -2043,24 +2227,45 @@ public class KubeCertificateManagerClient
                 certificates.Add(certificate);
             }
 
+        _logger.LogDebug("Loaded {Count} certificates from chain", certificates.Count);
+        _logger.MethodExit(LogLevel.Debug);
         return certificates;
     }
 
+    /// <summary>
+    /// Converts a BouncyCastle X509Certificate to PEM format.
+    /// </summary>
+    /// <param name="certificate">The certificate to convert.</param>
+    /// <returns>PEM-formatted certificate string.</returns>
     public string ConvertToPem(X509Certificate certificate)
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var pemObject = new PemObject("CERTIFICATE", certificate.GetEncoded());
         using var stringWriter = new StringWriter();
         var pemWriter = new PemWriter(stringWriter);
         pemWriter.WriteObject(pemObject);
         pemWriter.Writer.Flush();
+        _logger.MethodExit(LogLevel.Debug);
         return stringWriter.ToString();
     }
 
+    /// <summary>
+    /// Discovers secrets across namespaces in the Kubernetes cluster.
+    /// Filters by secret type and allowed keys.
+    /// </summary>
+    /// <param name="allowedKeys">Array of allowed secret data field names.</param>
+    /// <param name="secType">Secret type filter (e.g., "Opaque", "kubernetes.io/tls").</param>
+    /// <param name="ns">Namespace to search, or "default".</param>
+    /// <param name="namespaceIsStore">When true, treats entire namespace as a single store.</param>
+    /// <param name="clusterIsStore">When true, treats entire cluster as a single store.</param>
+    /// <returns>List of discovered secret locations.</returns>
     public List<string> DiscoverSecrets(
         string[] allowedKeys, string secType, string ns = "default",
         bool namespaceIsStore = false, bool clusterIsStore = false)
     {
-        _logger.LogTrace("Entered DiscoverSecrets()");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}",
+            string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns);
         var locations = new List<string>();
         var clusterName = GetClusterName() ?? GetHost();
         _logger.LogTrace("ClusterName: {ClusterName}", clusterName);
@@ -2089,20 +2294,34 @@ public class KubeCertificateManagerClient
                 nsObj.Metadata.Name, allowedKeys, secType, locations, clusterName);
         }
 
-        _logger.LogDebug("Discovered locations: {Locations}", locations);
-        _logger.LogTrace("Exiting DiscoverSecrets()");
+        _logger.LogDebug("Discovered {Count} locations", locations.Count);
+        _logger.MethodExit(LogLevel.Debug);
         return locations;
     }
 
+    /// <summary>
+    /// Fetches all namespaces from the Kubernetes cluster.
+    /// </summary>
+    /// <param name="clusterName">Name of the cluster for logging.</param>
+    /// <returns>Enumerable of V1Namespace objects.</returns>
     private IEnumerable<V1Namespace> FetchNamespaces(string clusterName)
     {
-        return RetryPolicy(() =>
+        _logger.MethodEntry(LogLevel.Debug);
+        var result = RetryPolicy(() =>
         {
             _logger.LogDebug("Attempting to list Kubernetes namespaces from {ClusterName}", clusterName);
             return Client.CoreV1.ListNamespace().Items;
         });
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
     }
 
+    /// <summary>
+    /// Filters namespaces based on the provided list.
+    /// </summary>
+    /// <param name="namespaces">All available namespaces.</param>
+    /// <param name="nsList">List of namespace names to include, or "all" for all namespaces.</param>
+    /// <returns>Filtered enumerable of namespaces.</returns>
     private IEnumerable<V1Namespace> FilterNamespaces(IEnumerable<V1Namespace> namespaces, string[] nsList)
     {
         foreach (var nsObj in namespaces)
@@ -2113,10 +2332,16 @@ public class KubeCertificateManagerClient
             }
             else
             {
-                _logger.LogDebug("Skipping namespace '{Namespace}' as it does not match filter", nsObj.Metadata.Name);
+                _logger.LogTrace("Skipping namespace '{Namespace}' as it does not match filter", nsObj.Metadata.Name);
             }
     }
 
+    /// <summary>
+    /// Adds a namespace-level location to the discovery results.
+    /// </summary>
+    /// <param name="locations">List to add the location to.</param>
+    /// <param name="clusterName">Name of the cluster.</param>
+    /// <param name="namespaceName">Name of the namespace.</param>
     private void AddNamespaceLocation(List<string> locations, string clusterName, string namespaceName)
     {
         var nsLocation = $"{clusterName}/namespace/{namespaceName}";
@@ -2124,9 +2349,18 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Added namespace-level location: {NamespaceLocation}", nsLocation);
     }
 
+    /// <summary>
+    /// Discovers secrets within a specific namespace.
+    /// </summary>
+    /// <param name="namespaceName">Namespace to search.</param>
+    /// <param name="allowedKeys">Allowed secret data field names.</param>
+    /// <param name="secType">Secret type filter.</param>
+    /// <param name="locations">List to add discovered locations to.</param>
+    /// <param name="clusterName">Name of the cluster.</param>
     private void DiscoverSecretsInNamespace(
         string namespaceName, string[] allowedKeys, string secType, List<string> locations, string clusterName)
     {
+        _logger.MethodEntry(LogLevel.Debug);
         _logger.LogDebug("Discovering secrets in namespace: {Namespace}", namespaceName);
 
         var secrets = RetryPolicy(() =>
@@ -2275,11 +2509,24 @@ public class KubeCertificateManagerClient
         }
     }
 
+    /// <summary>
+    /// Retrieves a JKS (Java KeyStore) secret from Kubernetes.
+    /// Filters secret data by allowed key extensions.
+    /// </summary>
+    /// <param name="secretName">Name of the Kubernetes secret.</param>
+    /// <param name="namespaceName">Namespace containing the secret.</param>
+    /// <param name="password">Password for the JKS store.</param>
+    /// <param name="passwordPath">Path to password secret if stored separately.</param>
+    /// <param name="allowedKeys">List of allowed file extensions/keys (defaults to jks).</param>
+    /// <returns>JksSecret object containing the secret data.</returns>
+    /// <exception cref="InvalidK8SSecretException">Thrown when the secret exists but has no data.</exception>
+    /// <exception cref="StoreNotFoundException">Thrown when the secret does not exist.</exception>
     public JksSecret GetJksSecret(string secretName, string namespaceName, string password = null,
         string passwordPath = null, List<string> allowedKeys = null)
     {
-        _logger.LogTrace("Entered GetJKSSecret()");
-        _logger.LogTrace("secretName: " + secretName);
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("SecretName: {SecretName}, Namespace: {Namespace}", secretName, namespaceName);
+        _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
         // Read k8s secret
         _logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
         try
@@ -2322,10 +2569,11 @@ public class KubeCertificateManagerClient
                     AllowedKeys = allowedKeys,
                     Inventory = secretData
                 };
-                _logger.LogTrace("Exiting GetJKSSecret()");
+                _logger.MethodExit(LogLevel.Debug);
                 return output;
             }
 
+            _logger.LogError("K8S secret {SecretName} in namespace {Namespace} has no data", secretName, namespaceName);
             throw new InvalidK8SSecretException($"K8S secret {namespaceName}/secrets/{secretName} is empty.");
         }
         catch (HttpOperationException e)
@@ -2350,11 +2598,23 @@ public class KubeCertificateManagerClient
         }
     }
 
+    /// <summary>
+    /// Retrieves a PKCS12/PFX secret from Kubernetes.
+    /// Filters secret data by allowed key extensions.
+    /// </summary>
+    /// <param name="secretName">Name of the Kubernetes secret.</param>
+    /// <param name="namespaceName">Namespace containing the secret.</param>
+    /// <param name="password">Password for the PKCS12 store.</param>
+    /// <param name="passwordPath">Path to password secret if stored separately.</param>
+    /// <param name="allowedKeys">List of allowed file extensions/keys (defaults to p12, pfx, pkcs12).</param>
+    /// <returns>Pkcs12Secret object containing the secret data.</returns>
+    /// <exception cref="StoreNotFoundException">Thrown when the secret does not exist.</exception>
     public Pkcs12Secret GetPkcs12Secret(string secretName, string namespaceName, string password = null,
         string passwordPath = null, List<string> allowedKeys = null)
     {
-        _logger.LogTrace("Entered GetPKCS12Secret()");
-        _logger.LogTrace("secretName: " + secretName);
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("SecretName: {SecretName}, Namespace: {Namespace}", secretName, namespaceName);
+        _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
         // Read k8s secret
         _logger.LogTrace("Calling CoreV1.ReadNamespacedSecret()");
         try
@@ -2408,9 +2668,17 @@ public class KubeCertificateManagerClient
         }
     }
 
+    /// <summary>
+    /// Creates a Kubernetes Certificate Signing Request (CSR).
+    /// </summary>
+    /// <param name="name">Name of the CSR resource.</param>
+    /// <param name="namespaceName">Namespace for the CSR metadata.</param>
+    /// <param name="csr">PEM-encoded certificate signing request.</param>
+    /// <returns>The created V1CertificateSigningRequest object.</returns>
     public V1CertificateSigningRequest CreateCertificateSigningRequest(string name, string namespaceName, string csr)
     {
-        _logger.LogTrace("Entered CreateCertificateSigningRequest()");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("CSR Name: {Name}, Namespace: {Namespace}", name, namespaceName);
         var request = new V1CertificateSigningRequest
         {
             ApiVersion = "certificates.k8s.io/v1",
@@ -2430,13 +2698,26 @@ public class KubeCertificateManagerClient
         };
         _logger.LogTrace("request: " + request);
         _logger.LogTrace("Calling CertificatesV1.CreateCertificateSigningRequest()");
-        return Client.CertificatesV1.CreateCertificateSigningRequest(request);
+        var result = Client.CertificatesV1.CreateCertificateSigningRequest(request);
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
     }
 
+    /// <summary>
+    /// Generates a new certificate signing request (CSR) with private key.
+    /// Creates an RSA key pair and builds a CSR with the specified SANs and IPs.
+    /// </summary>
+    /// <param name="name">Common Name for the certificate.</param>
+    /// <param name="sans">Subject Alternative Names (DNS names).</param>
+    /// <param name="ips">IP addresses to include in SAN.</param>
+    /// <param name="keyType">Key algorithm type (default: RSA).</param>
+    /// <param name="keyBits">Key size in bits (default: 4096).</param>
+    /// <returns>CsrObject containing CSR, private key, and public key in PEM format.</returns>
     public CsrObject GenerateCertificateRequest(string name, string[] sans, IPAddress[] ips,
         string keyType = "RSA", int keyBits = 4096)
     {
-        _logger.LogTrace("Entered GenerateCertificateRequest()");
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("Name: {Name}, KeyType: {KeyType}, KeyBits: {KeyBits}", name, keyType, keyBits);
         var sanBuilder = new SubjectAlternativeNameBuilder();
         _logger.LogDebug($"Building IP and SAN lists for CSR {name}");
 
@@ -2476,37 +2757,68 @@ public class KubeCertificateManagerClient
         var pubKeyPem = "-----BEGIN PUBLIC KEY-----\r\n" +
                         Convert.ToBase64String(pubkey) +
                         "\r\n-----END PUBLIC KEY-----";
-        return new CsrObject
+        var result = new CsrObject
         {
             Csr = csrPem,
             PrivateKey = keyPem,
             PublicKey = pubKeyPem
         };
+        _logger.LogTrace("Generated CSR: {CSR}", LoggingUtilities.RedactCertificatePem(csrPem));
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
     }
 
 
+    /// <summary>
+    /// Gets certificate inventory from Opaque secrets.
+    /// Currently returns empty list - placeholder for future implementation.
+    /// </summary>
+    /// <returns>Empty list of inventory items.</returns>
     public IEnumerable<CurrentInventoryItem> GetOpaqueSecretCertificateInventory()
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var inventoryItems = new List<CurrentInventoryItem>();
+        _logger.MethodExit(LogLevel.Debug);
         return inventoryItems;
     }
 
+    /// <summary>
+    /// Gets certificate inventory from TLS secrets.
+    /// Currently returns empty list - placeholder for future implementation.
+    /// </summary>
+    /// <returns>Empty list of inventory items.</returns>
     public IEnumerable<CurrentInventoryItem> GetTlsSecretCertificateInventory()
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var inventoryItems = new List<CurrentInventoryItem>();
+        _logger.MethodExit(LogLevel.Debug);
         return inventoryItems;
     }
 
+    /// <summary>
+    /// Gets certificate inventory from all certificate resources.
+    /// Currently returns empty list - placeholder for future implementation.
+    /// </summary>
+    /// <returns>Empty list of inventory items.</returns>
     public IEnumerable<CurrentInventoryItem> GetCertificateInventory()
     {
+        _logger.MethodEntry(LogLevel.Debug);
         var inventoryItems = new List<CurrentInventoryItem>();
+        _logger.MethodExit(LogLevel.Debug);
         return inventoryItems;
     }
 
+    /// <summary>
+    /// Creates or updates a JKS secret in Kubernetes.
+    /// Preserves existing data fields while updating the inventory items.
+    /// </summary>
+    /// <param name="k8SData">JksSecret containing the data to store.</param>
+    /// <param name="kubeSecretName">Name of the Kubernetes secret.</param>
+    /// <param name="kubeNamespace">Namespace for the secret.</param>
+    /// <returns>The created or updated V1Secret.</returns>
     public V1Secret CreateOrUpdateJksSecret(JksSecret k8SData, string kubeSecretName, string kubeNamespace)
     {
-        // Create V1Secret object and replace existing secret
-        _logger.LogDebug("Entered CreateOrUpdateJksSecret()");
+        _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("kubeSecretName: {Name}", kubeSecretName);
         _logger.LogTrace("kubeNamespace: {Namespace}", kubeNamespace);
         var s1 = new V1Secret
@@ -2548,11 +2860,23 @@ public class KubeCertificateManagerClient
 
         // Replace existing secret
         _logger.LogDebug("Replacing secret {Name} in namespace {Namespace}", kubeSecretName, kubeNamespace);
-        return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        var result = Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
     }
 
+    /// <summary>
+    /// Creates or updates a PKCS12 secret in Kubernetes.
+    /// Preserves existing data fields while updating the inventory items.
+    /// </summary>
+    /// <param name="k8SData">Pkcs12Secret containing the data to store.</param>
+    /// <param name="kubeSecretName">Name of the Kubernetes secret.</param>
+    /// <param name="kubeNamespace">Namespace for the secret.</param>
+    /// <returns>The created or updated V1Secret.</returns>
     public V1Secret CreateOrUpdatePkcs12Secret(Pkcs12Secret k8SData, string kubeSecretName, string kubeNamespace)
     {
+        _logger.MethodEntry(LogLevel.Debug);
+        _logger.LogTrace("SecretName: {Name}, Namespace: {Namespace}", kubeSecretName, kubeNamespace);
         // Create V1Secret object and replace existing secret
         var s1 = new V1Secret
         {
@@ -2582,35 +2906,64 @@ public class KubeCertificateManagerClient
         }
 
         // Replace existing secret
-        return Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        _logger.LogDebug("Replacing secret {Name} in namespace {Namespace}", kubeSecretName, kubeNamespace);
+        var result = Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
     }
 
+    /// <summary>
+    /// Represents a JKS (Java KeyStore) secret in Kubernetes.
+    /// </summary>
     public struct JksSecret
     {
+        /// <summary>Path to the secret in format namespace/secrets/name.</summary>
         public string SecretPath;
+        /// <summary>Field name within the secret containing the JKS data.</summary>
         public string SecretFieldName;
+        /// <summary>The underlying Kubernetes V1Secret object.</summary>
         public V1Secret Secret;
+        /// <summary>Password for the JKS store.</summary>
         public string Password;
+        /// <summary>Path to a separate secret containing the password.</summary>
         public string PasswordPath;
+        /// <summary>List of allowed file extensions/keys.</summary>
         public List<string> AllowedKeys;
+        /// <summary>Dictionary of field names to JKS data bytes.</summary>
         public Dictionary<string, byte[]> Inventory;
     }
 
+    /// <summary>
+    /// Represents a PKCS12/PFX secret in Kubernetes.
+    /// </summary>
     public struct Pkcs12Secret
     {
+        /// <summary>Path to the secret in format namespace/secrets/name.</summary>
         public string SecretPath;
+        /// <summary>Field name within the secret containing the PKCS12 data.</summary>
         public string SecretFieldName;
+        /// <summary>The underlying Kubernetes V1Secret object.</summary>
         public V1Secret Secret;
+        /// <summary>Password for the PKCS12 store.</summary>
         public string Password;
+        /// <summary>Path to a separate secret containing the password.</summary>
         public string PasswordPath;
+        /// <summary>List of allowed file extensions/keys.</summary>
         public List<string> AllowedKeys;
+        /// <summary>Dictionary of field names to PKCS12 data bytes.</summary>
         public Dictionary<string, byte[]> Inventory;
     }
 
+    /// <summary>
+    /// Represents a Certificate Signing Request with associated key pair.
+    /// </summary>
     public struct CsrObject
     {
+        /// <summary>PEM-encoded certificate signing request.</summary>
         public string Csr;
+        /// <summary>PEM-encoded private key.</summary>
         public string PrivateKey;
+        /// <summary>PEM-encoded public key.</summary>
         public string PublicKey;
     }
 }
