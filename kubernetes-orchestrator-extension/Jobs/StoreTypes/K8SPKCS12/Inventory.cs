@@ -30,4 +30,8 @@ public class Inventory : InventoryBase
 
     /// <inheritdoc />
     protected override StoreType GetStoreType() => StoreType.K8SPKCS12;
+
+    /// <inheritdoc />
+    /// <remarks>PKCS12 stores require the secret to exist - an empty PKCS12 keystore is not valid.</remarks>
+    protected override bool UseLenientBehaviorForMissingStore => false;
 }

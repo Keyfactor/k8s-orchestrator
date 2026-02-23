@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using Keyfactor.Extensions.Orchestrator.K8S.Exceptions;
 using Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Logging;
@@ -36,6 +37,14 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
     protected InventoryBase(IPAMSecretResolver resolver) : base(resolver)
     {
     }
+
+    /// <summary>
+    /// Gets whether to use lenient behavior for missing stores.
+    /// When true, returns Success with empty inventory for missing stores.
+    /// When false, returns Failure for missing stores.
+    /// Default is true for TLS/Opaque, override to false for JKS/PKCS12.
+    /// </summary>
+    protected virtual bool UseLenientBehaviorForMissingStore => true;
 
     /// <summary>
     /// Main entry point for the inventory job.
@@ -78,10 +87,16 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
         catch (StoreNotFoundException ex)
         {
             Logger.LogWarning("Store not found: {Message}", ex.Message);
-            // Return empty inventory with warning
-            submitInventory.Invoke(new List<CurrentInventoryItem>());
-            return WarningJob($"WARNING: Store not found in Kubernetes cluster. Assuming empty inventory. {ex.Message}",
-                config.JobHistoryId);
+
+            if (UseLenientBehaviorForMissingStore)
+            {
+                // Return empty inventory with success (lenient behavior for missing stores)
+                submitInventory.Invoke(new List<CurrentInventoryItem>());
+                return SuccessJob(config.JobHistoryId, $"{ex.Message} - returned empty inventory");
+            }
+
+            // Return failure for store types that require existing stores (JKS, PKCS12)
+            return FailJob(ex.Message, config.JobHistoryId);
         }
         catch (Exception ex)
         {

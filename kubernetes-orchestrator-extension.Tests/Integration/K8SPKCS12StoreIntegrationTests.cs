@@ -14,7 +14,7 @@ using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SPKCS12;
 using Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;

@@ -21,6 +21,7 @@ using k8s.Autorest;
 using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Exceptions;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
@@ -488,36 +489,6 @@ public partial class KubeCertificateManagerClient
         }
 
         return null;
-    }
-
-    [Obsolete("Use FindAliasByCN with Pkcs12Store instead")]
-    public X509Certificate2 FindCertificateByCN(X509Certificate2Collection certificates, string cn)
-    {
-        var foundCertificate = certificates
-            .OfType<X509Certificate2>()
-            .FirstOrDefault(cert => cert.SubjectName.Name.Contains($"CN={cn}", StringComparison.OrdinalIgnoreCase));
-
-        return foundCertificate;
-    }
-
-    [Obsolete("Use FindAliasByThumbprint with Pkcs12Store instead")]
-    public X509Certificate2 FindCertificateByThumbprint(X509Certificate2Collection certificates, string thumbprint)
-    {
-        var foundCertificate = certificates
-            .OfType<X509Certificate2>()
-            .FirstOrDefault(cert => cert.Thumbprint == thumbprint);
-
-        return foundCertificate;
-    }
-
-    [Obsolete("Use FindAliasByName with Pkcs12Store instead")]
-    public X509Certificate2 FindCertificateByAlias(X509Certificate2Collection certificates, string alias)
-    {
-        var foundCertificate = certificates
-            .OfType<X509Certificate2>()
-            .FirstOrDefault(cert => cert.SubjectName.Name != null && cert.SubjectName.Name.Contains(alias));
-
-        return foundCertificate;
     }
 
     /// <summary>

@@ -15,7 +15,7 @@
       },
       "CertStores.K8SCluster.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCluster.Reenrollment"
       },
       "CertStores.K8SNS.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -31,7 +31,7 @@
       },
       "CertStores.K8SNS.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SNS.Reenrollment"
       },
       "CertStores.K8SJKS.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -95,7 +95,7 @@
       },
       "CertStores.K8SSecret.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SSecret.Reenrollment"
       },
       "CertStores.K8STLSSecr.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
@@ -111,7 +111,7 @@
       },
       "CertStores.K8STLSSecr.Reenrollment": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",
-        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.Reenrollment"
+        "TypeFullName": "Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8STLSSecr.Reenrollment"
       },
       "CertStores.K8SCert.Inventory": {
         "assemblypath": "Keyfactor.Orchestrators.K8S.dll",

@@ -15,6 +15,7 @@ using System.Text;
 using Common.Logging;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Exceptions;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -32,158 +33,6 @@ using Org.BouncyCastle.X509;
 using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-
-/// <summary>
-/// Data model representing a Kubernetes certificate store configuration.
-/// Contains namespace, secret name, secret type, credentials, and certificate data.
-/// </summary>
-public class KubernetesCertStore
-{
-    /// <summary>Kubernetes namespace where the secret resides.</summary>
-    public string KubeNamespace { get; set; } = "";
-
-    /// <summary>Name of the Kubernetes secret.</summary>
-    public string KubeSecretName { get; set; } = "";
-
-    /// <summary>Type of Kubernetes secret (e.g., Opaque, kubernetes.io/tls).</summary>
-    public string KubeSecretType { get; set; } = "";
-
-    /// <summary>Service account credentials for Kubernetes API access (kubeconfig JSON).</summary>
-    public string KubeSvcCreds { get; set; } = "";
-
-    /// <summary>Array of certificates contained in this store.</summary>
-    public Cert[] Certs { get; set; }
-}
-
-/// <summary>
-/// Data model containing Kubernetes cluster credentials for API authentication.
-/// </summary>
-public class KubeCreds
-{
-    /// <summary>Kubernetes API server URL.</summary>
-    public string KubeServer { get; set; } = "";
-
-    /// <summary>Service account bearer token for authentication.</summary>
-    public string KubeToken { get; set; } = "";
-
-    /// <summary>Cluster CA certificate (base64 encoded).</summary>
-    public string KubeCert { get; set; } = "";
-}
-
-/// <summary>
-/// Data model representing a certificate with optional private key.
-/// </summary>
-public class Cert
-{
-    /// <summary>Alias/friendly name for the certificate.</summary>
-    public string Alias { get; set; } = "";
-
-    /// <summary>Certificate data (typically PEM or base64 encoded).</summary>
-    public string CertData { get; set; } = "";
-
-    /// <summary>Private key data (typically PEM format).</summary>
-    public string PrivateKey { get; set; } = "";
-}
-
-/// <summary>
-/// Comprehensive data model for a certificate processed during a Keyfactor orchestrator job.
-/// Contains certificate data in multiple formats (PEM, bytes, base64), private key data,
-/// certificate chain information, and password details.
-/// </summary>
-public class K8SJobCertificate
-{
-    /// <summary>Alias/friendly name for the certificate entry.</summary>
-    public string Alias { get; set; } = "";
-
-    /// <summary>Base64 encoded certificate data.</summary>
-    public string CertB64 { get; set; } = "";
-
-    /// <summary>Certificate in PEM format.</summary>
-    public string CertPem { get; set; } = "";
-
-    /// <summary>SHA-1 thumbprint of the certificate for identification.</summary>
-    public string CertThumbprint { get; set; } = "";
-
-    /// <summary>Raw certificate bytes (DER encoded).</summary>
-    public byte[] CertBytes { get; set; }
-
-    /// <summary>Private key in PEM format (unencrypted).</summary>
-    public string PrivateKeyPem { get; set; } = "";
-
-    /// <summary>Raw private key bytes (PKCS#8 format).</summary>
-    public byte[] PrivateKeyBytes { get; set; }
-
-    /// <summary>Password protecting the private key (if encrypted).</summary>
-    public string Password { get; set; } = "";
-
-    /// <summary>Indicates if the password is stored in a separate Kubernetes secret.</summary>
-    public bool PasswordIsK8SSecret { get; set; } = false;
-
-    /// <summary>Password for the certificate store (JKS/PKCS12).</summary>
-    public string StorePassword { get; set; } = "";
-
-    /// <summary>Path to a separate Kubernetes secret containing the store password.</summary>
-    public string StorePasswordPath { get; set; } = "";
-
-    /// <summary>Indicates whether this certificate has an associated private key.</summary>
-    public bool HasPrivateKey { get; set; } = false;
-
-    /// <summary>Indicates whether the certificate/key is password protected.</summary>
-    public bool HasPassword { get; set; } = false;
-
-    /// <summary>
-    /// BouncyCastle X509CertificateEntry containing the certificate
-    /// </summary>
-    public X509CertificateEntry CertificateEntry { get; set; }
-
-    /// <summary>
-    /// BouncyCastle X509CertificateEntry array containing the certificate chain
-    /// </summary>
-    public X509CertificateEntry[] CertificateEntryChain { get; set; }
-
-    public byte[] Pkcs12 { get; set; }
-
-    public List<string> ChainPem { get; set; }
-
-    /// <summary>
-    /// Optional: K8SCertificateContext providing BouncyCastle-based certificate operations.
-    /// This property can be used for modern certificate handling without X509Certificate2 dependencies.
-    /// </summary>
-    public Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext CertificateContext { get; set; }
-
-    /// <summary>
-    /// Factory method to create K8SCertificateContext from this job certificate's data
-    /// </summary>
-    /// <returns>K8SCertificateContext instance or null if certificate data is unavailable</returns>
-    public Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext GetCertificateContext()
-    {
-        if (CertificateEntry?.Certificate == null)
-            return null;
-
-        var context = new Keyfactor.Extensions.Orchestrator.K8S.Models.K8SCertificateContext
-        {
-            Certificate = CertificateEntry.Certificate,
-            CertPem = CertPem,
-            PrivateKeyPem = PrivateKeyPem
-        };
-
-        // Add chain if available
-        if (CertificateEntryChain != null && CertificateEntryChain.Length > 0)
-        {
-            context.Chain = CertificateEntryChain
-                .Skip(1) // Skip the first one (leaf cert)
-                .Select(entry => entry.Certificate)
-                .ToList();
-
-            if (ChainPem != null && ChainPem.Count > 0)
-            {
-                context.ChainPem = ChainPem.Skip(1).ToList();
-            }
-        }
-
-        return context;
-    }
-}
 
 /// <summary>
 /// Abstract base class for all Kubernetes orchestrator jobs (Inventory, Management, Discovery, Reenrollment).
@@ -920,7 +769,7 @@ public abstract class JobBase
         if (storeProperties == null)
         {
             Logger.MethodExit(MsLogLevel.Debug);
-            throw new ConfigurationException(
+            throw new Exceptions.ConfigurationException(
                 $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
         }
 
@@ -1145,7 +994,7 @@ public abstract class JobBase
             const string credsErr =
                 "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
             Logger.LogError(credsErr);
-            throw new ConfigurationException(credsErr);
+            throw new Exceptions.ConfigurationException(credsErr);
         }
 
         switch (KubeSecretType)
@@ -1450,120 +1299,6 @@ public abstract class JobBase
             Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
             // Note: MethodExit not called here as we're throwing
             throw new InvalidKeyException($"Unable to extract private key from alias '{alias}'", e);
-        }
-    }
-
-    /// <summary>
-    /// DEPRECATED: Use GetKeyBytes(Pkcs12Store, string, string) instead.
-    /// Extract private key bytes from X509Certificate2 (uses deprecated APIs)
-    /// </summary>
-    /// <param name="certObj">The X509Certificate2 object containing the private key.</param>
-    /// <param name="certPassword">Optional password for the certificate.</param>
-    /// <returns>Private key bytes in the appropriate format.</returns>
-    [Obsolete("Use GetKeyBytes(Pkcs12Store, string, string) instead to avoid deprecated X509Certificate2.PrivateKey API")]
-    protected byte[] GetKeyBytes(X509Certificate2 certObj, string certPassword = null)
-    {
-        Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogWarning("GetKeyBytes(X509Certificate2) is deprecated. Use GetKeyBytes(Pkcs12Store) instead.");
-        Logger.LogWarning("GetKeyBytes(X509Certificate2) is deprecated. Use GetKeyBytes(Pkcs12Store) instead.");
-        Logger.LogTrace("Key algo: {KeyAlgo}", certObj.GetKeyAlgorithm());
-        Logger.LogTrace("Has private key: {HasPrivateKey}", certObj.HasPrivateKey);
-        Logger.LogTrace("Pub key: {PublicKey}", certObj.GetPublicKey());
-
-        byte[] keyBytes;
-
-        try
-        {
-            switch (certObj.GetKeyAlgorithm())
-            {
-                case "RSA":
-                    Logger.LogDebug("Attempting to export private key as RSA");
-                    Logger.LogTrace("GetRSAPrivateKey().ExportRSAPrivateKey(): ");
-                    keyBytes = certObj.GetRSAPrivateKey()?.ExportRSAPrivateKey();
-                    Logger.LogTrace("ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "ECDSA":
-                    Logger.LogDebug("Attempting to export private key as ECDSA");
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportECPrivateKey(): ");
-                    keyBytes = certObj.GetECDsaPrivateKey()?.ExportECPrivateKey();
-                    Logger.LogTrace("GetECDsaPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                case "DSA":
-                    Logger.LogDebug("Attempting to export private key as DSA");
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): ");
-                    keyBytes = certObj.GetDSAPrivateKey()?.ExportPkcs8PrivateKey();
-                    Logger.LogTrace("GetDSAPrivateKey().ExportPkcs8PrivateKey(): completed");
-                    break;
-                default:
-                    Logger.LogWarning("Unknown key algorithm, attempting to export as PKCS12");
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword)");
-                    keyBytes = certObj.Export(X509ContentType.Pkcs12, certPassword);
-                    Logger.LogTrace("Export(X509ContentType.Pkcs12, certPassword) complete");
-                    break;
-            }
-
-            if (keyBytes != null)
-            {
-                Logger.MethodExit(MsLogLevel.Debug);
-                return keyBytes;
-            }
-
-            Logger.LogError("Unable to parse private key");
-            // Note: MethodExit not called here as we're throwing
-            throw new InvalidKeyException($"Unable to parse private key from certificate '{certObj.Thumbprint}'");
-        }
-        catch (Exception e)
-        {
-            Logger.LogError("Unknown error getting key bytes, but we're going to try a different method");
-            Logger.LogError("Error: {Message}", e.Message);
-            Logger.LogTrace("Exception details: {Details}", e.ToString());
-            Logger.LogTrace("Stack trace: {StackTrace}", e.StackTrace);
-            try
-            {
-                if (certObj.HasPrivateKey)
-                    try
-                    {
-                        Logger.LogDebug("Attempting to export private key as PKCS8");
-                        Logger.LogTrace("ExportPkcs8PrivateKey()");
-                        #pragma warning disable SYSLIB0028
-                        keyBytes = certObj.PrivateKey.ExportPkcs8PrivateKey();
-                        #pragma warning restore SYSLIB0028
-                        Logger.LogTrace("ExportPkcs8PrivateKey() complete");
-                        Logger.MethodExit(MsLogLevel.Debug);
-                        return keyBytes;
-                    }
-                    catch (Exception e2)
-                    {
-                        Logger.LogError(
-                            "Unknown error exporting private key as PKCS8, attempting final method");
-                        Logger.LogError("Error: {Message}", e2.Message);
-                        Logger.LogTrace("Exception details: {Details}", e2.ToString());
-                        Logger.LogTrace("Stack trace: {StackTrace}", e2.StackTrace);
-                        //attempt to export encrypted pkcs8
-                        Logger.LogDebug("Attempting to export encrypted PKCS8 private key");
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey()");
-                        #pragma warning disable SYSLIB0028
-                        keyBytes = certObj.PrivateKey.ExportEncryptedPkcs8PrivateKey(certPassword,
-                            new PbeParameters(
-                                PbeEncryptionAlgorithm.Aes128Cbc,
-                                HashAlgorithmName.SHA256,
-                                1));
-                        #pragma warning restore SYSLIB0028
-                        Logger.LogTrace("ExportEncryptedPkcs8PrivateKey() complete");
-                        Logger.MethodExit(MsLogLevel.Debug);
-                        return keyBytes;
-                    }
-            }
-            catch (Exception ie)
-            {
-                Logger.LogError("Unknown error exporting private key as PKCS8, returning empty array");
-                Logger.LogError("Error: {Message}", ie.Message);
-                Logger.LogTrace("Exception details: {Details}", ie.ToString());
-                Logger.LogTrace("Stack trace: {StackTrace}", ie.StackTrace);
-            }
-
-            Logger.MethodExit(MsLogLevel.Debug);
-            return Array.Empty<byte>();
         }
     }
 
@@ -1939,57 +1674,5 @@ public abstract class JobBase
         var passwordHashBytes = SHA256.Create().ComputeHash(Encoding.UTF8.GetBytes(input));
         var passwordHash = BitConverter.ToString(passwordHashBytes).Replace("-", "").ToLower();
         return passwordHash;
-    }
-}
-
-/// <summary>
-/// Exception thrown when a certificate store cannot be found in Kubernetes.
-/// </summary>
-public class StoreNotFoundException : Exception
-{
-    /// <summary>Initializes a new instance of StoreNotFoundException.</summary>
-    public StoreNotFoundException()
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message.</summary>
-    /// <param name="message">The error message describing the missing store.</param>
-    public StoreNotFoundException(string message)
-        : base(message)
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
-    /// <param name="message">The error message describing the missing store.</param>
-    /// <param name="innerException">The exception that caused this exception.</param>
-    public StoreNotFoundException(string message, Exception innerException)
-        : base(message, innerException)
-    {
-    }
-}
-
-/// <summary>
-/// Exception thrown when a Kubernetes secret is invalid, malformed, or missing required fields.
-/// </summary>
-public class InvalidK8SSecretException : Exception
-{
-    /// <summary>Initializes a new instance of InvalidK8SSecretException.</summary>
-    public InvalidK8SSecretException()
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message.</summary>
-    /// <param name="message">The error message describing the invalid secret.</param>
-    public InvalidK8SSecretException(string message)
-        : base(message)
-    {
-    }
-
-    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
-    /// <param name="message">The error message describing the invalid secret.</param>
-    /// <param name="innerException">The exception that caused this exception.</param>
-    public InvalidK8SSecretException(string message, Exception innerException)
-        : base(message, innerException)
-    {
     }
 }

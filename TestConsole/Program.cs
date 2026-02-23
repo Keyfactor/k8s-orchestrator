@@ -17,12 +17,21 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Moq;
 using Newtonsoft.Json;
+
+// Store-type-specific job imports
+using K8SClusterJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCluster;
+using K8SNSJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SNS;
+using K8SJKSJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SJKS;
+using K8SPKCS12Jobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SPKCS12;
+using K8SSecretJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SSecret;
+using K8STLSSecrJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8STLSSecr;
+using K8SCertJobs = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCert;
 
 namespace TestConsole;
 
@@ -223,6 +232,59 @@ internal class Program
         throw new Exception("Invalid job type");
     }
 
+    /// <summary>
+    /// Creates the appropriate Inventory job based on the capability/store type.
+    /// </summary>
+    private static IInventoryJobExtension CreateInventoryJob(string capability, IPAMSecretResolver resolver)
+    {
+        return capability?.ToUpperInvariant() switch
+        {
+            "CERTSTORES.K8SCLUSTER.INVENTORY" or "K8SCLUSTER" => new K8SClusterJobs.Inventory(resolver),
+            "CERTSTORES.K8SNS.INVENTORY" or "K8SNS" => new K8SNSJobs.Inventory(resolver),
+            "CERTSTORES.K8SJKS.INVENTORY" or "K8SJKS" => new K8SJKSJobs.Inventory(resolver),
+            "CERTSTORES.K8SPKCS12.INVENTORY" or "CERTSTORES.K8SPFX.INVENTORY" or "K8SPKCS12" or "K8SPFX" => new K8SPKCS12Jobs.Inventory(resolver),
+            "CERTSTORES.K8SSECRET.INVENTORY" or "K8SSECRET" => new K8SSecretJobs.Inventory(resolver),
+            "CERTSTORES.K8STLSSECR.INVENTORY" or "K8STLSSECR" => new K8STLSSecrJobs.Inventory(resolver),
+            "CERTSTORES.K8SCERT.INVENTORY" or "K8SCERT" => new K8SCertJobs.Inventory(resolver),
+            _ => throw new ArgumentException($"Unknown capability for inventory: {capability}")
+        };
+    }
+
+    /// <summary>
+    /// Creates the appropriate Management job based on the capability/store type.
+    /// </summary>
+    private static IManagementJobExtension CreateManagementJob(string capability, IPAMSecretResolver resolver)
+    {
+        return capability?.ToUpperInvariant() switch
+        {
+            "CERTSTORES.K8SCLUSTER.MANAGEMENT" or "K8SCLUSTER" => new K8SClusterJobs.Management(resolver),
+            "CERTSTORES.K8SNS.MANAGEMENT" or "K8SNS" => new K8SNSJobs.Management(resolver),
+            "CERTSTORES.K8SJKS.MANAGEMENT" or "K8SJKS" => new K8SJKSJobs.Management(resolver),
+            "CERTSTORES.K8SPKCS12.MANAGEMENT" or "CERTSTORES.K8SPFX.MANAGEMENT" or "K8SPKCS12" or "K8SPFX" => new K8SPKCS12Jobs.Management(resolver),
+            "CERTSTORES.K8SSECRET.MANAGEMENT" or "K8SSECRET" => new K8SSecretJobs.Management(resolver),
+            "CERTSTORES.K8STLSSECR.MANAGEMENT" or "K8STLSSECR" => new K8STLSSecrJobs.Management(resolver),
+            _ => throw new ArgumentException($"Unknown capability for management: {capability}")
+        };
+    }
+
+    /// <summary>
+    /// Creates the appropriate Discovery job based on the capability/store type.
+    /// </summary>
+    private static IDiscoveryJobExtension CreateDiscoveryJob(string capability, IPAMSecretResolver resolver)
+    {
+        return capability?.ToUpperInvariant() switch
+        {
+            "CERTSTORES.K8SCLUSTER.DISCOVERY" or "K8SCLUSTER" => new K8SClusterJobs.Discovery(resolver),
+            "CERTSTORES.K8SNS.DISCOVERY" or "K8SNS" => new K8SNSJobs.Discovery(resolver),
+            "CERTSTORES.K8SJKS.DISCOVERY" or "K8SJKS" => new K8SJKSJobs.Discovery(resolver),
+            "CERTSTORES.K8SPKCS12.DISCOVERY" or "CERTSTORES.K8SPFX.DISCOVERY" or "K8SPKCS12" or "K8SPFX" => new K8SPKCS12Jobs.Discovery(resolver),
+            "CERTSTORES.K8SSECRET.DISCOVERY" or "K8SSECRET" => new K8SSecretJobs.Discovery(resolver),
+            "CERTSTORES.K8STLSSECR.DISCOVERY" or "K8STLSSECR" => new K8STLSSecrJobs.Discovery(resolver),
+            "CERTSTORES.K8SCERT.DISCOVERY" or "K8SCERT" => new K8SCertJobs.Discovery(resolver),
+            _ => throw new ArgumentException($"Unknown capability for discovery: {capability}")
+        };
+    }
+
     private static async Task Main(string[] args)
     {
         var runTypeStr = Environment.GetEnvironmentVariable("TEST_MANUAL");
@@ -282,7 +344,6 @@ internal class Program
                     // Get test configurations from testConfigPath
 
                     tests = GetTestConfig(testConfigPath, input);
-                    var inv = new Inventory(secretResolver.Object);
 
                     Console.WriteLine("Running Inventory Job Test Cases");
                     foreach (var testCase in tests)
@@ -301,6 +362,7 @@ internal class Program
                                 GetInventoryJobConfiguration(JsonConvert.SerializeObject(testCase.JobConfig));
                             SubmitInventoryUpdate sui = GetItems;
 
+                            var inv = CreateInventoryJob(testCase.JobConfig.Capability, secretResolver.Object);
                             var jobResult = inv.ProcessJob(invJobConfig, sui);
 
                             if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
@@ -416,7 +478,7 @@ internal class Program
                                         isTrustedRoot = bool.Parse(isTrustedRootStr);
                                     }
 
-                                    var mgmt = new Management(secretResolver.Object);
+                                    var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
 
                                     var jobConfig = GetJobManagementConfiguration(
                                         JsonConvert.SerializeObject(testCase.JobConfig),
@@ -469,7 +531,7 @@ internal class Program
                                         alias = Console.ReadLine();
                                     }
 
-                                    var mgmt = new Management(secretResolver.Object);
+                                    var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
 
                                     var jobConfig =
                                         GetJobManagementConfiguration(JsonConvert.SerializeObject(testCase.JobConfig),
@@ -516,7 +578,6 @@ internal class Program
                 case "disc":
                 case "d":
                     tests = GetTestConfig(testConfigPath, input);
-                    var discovery = new Discovery(secretResolver.Object);
 
                     Console.WriteLine("Running Discovery Job Test Cases");
                     foreach (var testCase in tests)
@@ -541,6 +602,7 @@ internal class Program
                             // }
                             discPaths.Add("tls");
                             SubmitDiscoveryUpdate dui = DiscoverItems;
+                            var discovery = CreateDiscoveryJob(testCase.JobConfig.Capability, secretResolver.Object);
                             var jobResult = discovery.ProcessJob(discoveryJobConfiguration, dui);
 
                             if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||

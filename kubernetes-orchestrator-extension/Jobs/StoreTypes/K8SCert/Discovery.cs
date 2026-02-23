@@ -5,6 +5,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
+using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Constants;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
@@ -18,12 +20,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCert;
 
 /// <summary>
 /// Discovery job for Kubernetes Certificate Signing Requests (CSRs).
-/// Currently not supported - returns failure.
+/// Discovers signed CSRs in the Kubernetes cluster.
 /// </summary>
-/// <remarks>
-/// CSR discovery is not implemented because CSRs are managed differently
-/// from secrets and typically don't contain discoverable certificate stores.
-/// </remarks>
 public class Discovery : DiscoveryBase
 {
     /// <summary>
@@ -47,16 +45,37 @@ public class Discovery : DiscoveryBase
     protected override string GetSecretTypeFilter() => "certificate";
 
     /// <summary>
-    /// Discovery is not supported for K8SCert store type.
+    /// Discovers signed Certificate Signing Requests (CSRs) in the Kubernetes cluster.
     /// </summary>
     public new JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)
     {
         InitializeInfrastructure();
         Logger.MethodEntry(MsLogLevel.Debug);
 
-        Logger.LogError("Discovery not supported for K8SCert store type");
-        Logger.MethodExit(MsLogLevel.Debug);
+        try
+        {
+            Logger.LogInformation("Begin CSR DISCOVERY for job {JobId}", config.JobId);
 
-        return FailJob("Discovery not supported for store type 'K8SCert'", config.JobHistoryId);
+            // Initialize Kubernetes client
+            InitializeKubeClient(config.ServerPassword, config.UseSSL);
+
+            // Discover CSRs
+            var locations = KubeClient.DiscoverCertificates();
+            Logger.LogInformation("Discovered {Count} CSR locations", locations.Count);
+
+            // Submit discoveries
+            var distinctLocations = locations.Distinct().ToArray();
+            submitDiscovery.Invoke(distinctLocations);
+
+            Logger.MethodExit(MsLogLevel.Debug);
+            return SuccessJob(config.JobHistoryId,
+                $"Discovered the following CSR locations: {string.Join(", ", distinctLocations)}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CSR Discovery failed: {Message}", ex.Message);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return FailJob(ex.Message, config.JobHistoryId);
+        }
     }
 }

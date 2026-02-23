@@ -236,6 +236,10 @@ public class JobConfigurationParser
             {
                 context.CertDataFieldName = (string)props["KubeSecretKey"] ?? "";
             }
+            else if (HasProperty(props, "StoreFileName"))
+            {
+                context.CertDataFieldName = (string)props["StoreFileName"] ?? "";
+            }
 
             // Extract chain options
             if (HasProperty(props, "SeparateChain"))

@@ -66,12 +66,11 @@ public static class SecretTypeParser
         if (string.IsNullOrWhiteSpace(capability))
             return StoreType.Unknown;
 
-        // Extract the store type from capability string (e.g., "CertStores.K8SJKS.Inventory" -> "K8SJKS")
+        // Handle both formats:
+        // - Full: "CertStores.K8SJKS.Inventory" -> "K8SJKS"
+        // - Short: "K8SJKS" -> "K8SJKS"
         var parts = capability.Split('.');
-        if (parts.Length < 2)
-            return StoreType.Unknown;
-
-        var storeTypeName = parts[1].ToUpperInvariant();
+        var storeTypeName = parts.Length >= 2 ? parts[1].ToUpperInvariant() : capability.ToUpperInvariant();
 
         return storeTypeName switch
         {

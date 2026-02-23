@@ -93,8 +93,8 @@ public class StorePathResolver
         }
 
         // For single-secret stores, single part is the secret name
-        var ns = existingNamespace ?? "default";
-        var secretName = existingSecretName ?? parts[0];
+        var ns = string.IsNullOrEmpty(existingNamespace) ? "default" : existingNamespace;
+        var secretName = string.IsNullOrEmpty(existingSecretName) ? parts[0] : existingSecretName;
 
         _logger.LogInformation(
             "Store path is 1 part, treating as secret name: {SecretName} in namespace: {Namespace}",
@@ -121,15 +121,15 @@ public class StorePathResolver
         if (storeType == StoreType.K8SNS)
         {
             // Pattern: <cluster_name>/<namespace_name> or namespace/<namespace_name>
-            var ns = existingNamespace ?? parts[1];
+            var ns = string.IsNullOrEmpty(existingNamespace) ? parts[1] : existingNamespace;
             _logger.LogInformation(
                 "Store path is 2 parts for K8SNS, treating as cluster/namespace: {Namespace}", ns);
             return StorePathInfo.Success(originalPath, ns, "", secretType, storeType, parts[0]);
         }
 
         // Pattern: <namespace>/<secret_name>
-        var resolvedNs = existingNamespace ?? parts[0];
-        var resolvedSecret = existingSecretName ?? parts[1];
+        var resolvedNs = string.IsNullOrEmpty(existingNamespace) ? parts[0] : existingNamespace;
+        var resolvedSecret = string.IsNullOrEmpty(existingSecretName) ? parts[1] : existingSecretName;
 
         _logger.LogInformation(
             "Store path is 2 parts, treating as namespace/secret: {Namespace}/{Secret}",
@@ -156,7 +156,7 @@ public class StorePathResolver
         if (storeType == StoreType.K8SNS)
         {
             // Pattern: <cluster>/namespace/<namespace_name>
-            var ns = existingNamespace ?? parts[2];
+            var ns = string.IsNullOrEmpty(existingNamespace) ? parts[2] : existingNamespace;
             _logger.LogInformation(
                 "Store path is 3 parts for K8SNS, treating as cluster/namespace/ns_name: {Namespace}", ns);
             return StorePathInfo.Success(originalPath, ns, "", secretType, storeType, parts[0]);
@@ -166,8 +166,8 @@ public class StorePathResolver
         if (IsReservedKeyword(parts[1]))
         {
             // Pattern: <namespace>/<keyword>/<secret_name>
-            var ns = existingNamespace ?? parts[0];
-            var secret = existingSecretName ?? parts[2];
+            var ns = string.IsNullOrEmpty(existingNamespace) ? parts[0] : existingNamespace;
+            var secret = string.IsNullOrEmpty(existingSecretName) ? parts[2] : existingSecretName;
             _logger.LogInformation(
                 "Store path is 3 parts with keyword, treating as namespace/type/secret: {Namespace}/{Secret}",
                 ns, secret);
@@ -175,8 +175,8 @@ public class StorePathResolver
         }
 
         // Pattern: <cluster>/<namespace>/<secret_name>
-        var resolvedNs = existingNamespace ?? parts[1];
-        var resolvedSecret = existingSecretName ?? parts[2];
+        var resolvedNs = string.IsNullOrEmpty(existingNamespace) ? parts[1] : existingNamespace;
+        var resolvedSecret = string.IsNullOrEmpty(existingSecretName) ? parts[2] : existingSecretName;
 
         _logger.LogInformation(
             "Store path is 3 parts, treating as cluster/namespace/secret: {Namespace}/{Secret}",
@@ -199,8 +199,8 @@ public class StorePathResolver
         }
 
         // Pattern: <cluster>/<namespace>/<secret_type>/<secret_name>
-        var resolvedNs = existingNamespace ?? parts[1];
-        var resolvedSecret = existingSecretName ?? parts[3];
+        var resolvedNs = string.IsNullOrEmpty(existingNamespace) ? parts[1] : existingNamespace;
+        var resolvedSecret = string.IsNullOrEmpty(existingSecretName) ? parts[3] : existingSecretName;
         var parsedSecretType = SecretTypeParser.ParseSecretType(parts[2]);
 
         if (parsedSecretType == SecretType.Unknown)

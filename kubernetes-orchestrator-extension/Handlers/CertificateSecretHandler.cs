@@ -11,6 +11,7 @@ using System.Linq;
 using k8s.Autorest;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
+using Keyfactor.Extensions.Orchestrator.K8S.Exceptions;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Orchestrators.Extensions;
@@ -54,7 +55,7 @@ public class CertificateSecretHandler : BaseSecretHandler
         catch (HttpOperationException ex) when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             Logger.LogWarning("CSR not found: {SecretName}", context.SecretName);
-            return InventoryResult.Warning($"CSR '{context.SecretName}' not found");
+            throw new StoreNotFoundException($"CSR '{context.SecretName}' was not found");
         }
         catch (Exception ex)
         {

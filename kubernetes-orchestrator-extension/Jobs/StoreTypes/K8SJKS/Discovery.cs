@@ -45,10 +45,20 @@ public class Discovery : DiscoveryBase
     protected override string[] GetAllowedKeys(DiscoveryJobConfiguration config)
     {
         // JKS discovery also checks "extensions" and "patterns" properties
-        var extensionsKeys = config.JobProperties?["extensions"]?.ToString()?.Split(',')
-            ?? Array.Empty<string>();
-        var patternsKeys = config.JobProperties?["patterns"]?.ToString()?.Split(',')
-            ?? Array.Empty<string>();
+        var extensionsKeys = Array.Empty<string>();
+        var patternsKeys = Array.Empty<string>();
+
+        if (config.JobProperties != null)
+        {
+            if (config.JobProperties.TryGetValue("extensions", out var extensionsValue) && extensionsValue != null)
+            {
+                extensionsKeys = extensionsValue.ToString()?.Split(',') ?? Array.Empty<string>();
+            }
+            if (config.JobProperties.TryGetValue("patterns", out var patternsValue) && patternsValue != null)
+            {
+                patternsKeys = patternsValue.ToString()?.Split(',') ?? Array.Empty<string>();
+            }
+        }
 
         return extensionsKeys
             .Concat(patternsKeys)

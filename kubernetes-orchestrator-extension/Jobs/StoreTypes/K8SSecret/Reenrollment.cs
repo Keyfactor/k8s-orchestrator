@@ -9,29 +9,25 @@ using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SJKS;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SSecret;
 
 /// <summary>
-/// Inventory job for Java KeyStore (JKS) files stored in Kubernetes Opaque secrets.
-/// Discovers certificates and their chains within JKS keystores.
+/// Reenrollment job for Opaque secrets in Kubernetes.
+/// Currently not implemented.
 /// </summary>
-public class Inventory : InventoryBase
+public class Reenrollment : ReenrollmentBase
 {
     /// <summary>
-    /// Creates a new JKS inventory job with the specified PAM resolver.
+    /// Creates a new K8SSecret reenrollment job with the specified PAM resolver.
     /// </summary>
     /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
-    public Inventory(IPAMSecretResolver resolver) : base(resolver)
+    public Reenrollment(IPAMSecretResolver resolver) : base(resolver)
     {
     }
 
     /// <inheritdoc />
-    protected override SecretType GetSecretType() => SecretType.Jks;
+    protected override SecretType GetSecretType() => SecretType.Opaque;
 
     /// <inheritdoc />
-    protected override StoreType GetStoreType() => StoreType.K8SJKS;
-
-    /// <inheritdoc />
-    /// <remarks>JKS stores require the secret to exist - an empty JKS keystore is not valid.</remarks>
-    protected override bool UseLenientBehaviorForMissingStore => false;
+    protected override StoreType GetStoreType() => StoreType.K8SSecret;
 }

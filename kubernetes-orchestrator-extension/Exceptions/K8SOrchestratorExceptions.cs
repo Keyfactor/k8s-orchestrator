@@ -61,8 +61,57 @@ public abstract class K8SOrchestratorException : Exception
     }
 }
 
-// Note: StoreNotFoundException is defined in Keyfactor.Extensions.Orchestrator.K8S.Jobs namespace
-// to maintain backwards compatibility with existing code. Use that class instead.
+/// <summary>
+/// Exception thrown when a certificate store cannot be found in Kubernetes.
+/// </summary>
+public class StoreNotFoundException : Exception
+{
+    /// <summary>Initializes a new instance of StoreNotFoundException.</summary>
+    public StoreNotFoundException()
+    {
+    }
+
+    /// <summary>Initializes a new instance with the specified error message.</summary>
+    /// <param name="message">The error message describing the missing store.</param>
+    public StoreNotFoundException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
+    /// <param name="message">The error message describing the missing store.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
+    public StoreNotFoundException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
+
+/// <summary>
+/// Exception thrown when a Kubernetes secret is invalid, malformed, or missing required fields.
+/// </summary>
+public class InvalidK8SSecretException : Exception
+{
+    /// <summary>Initializes a new instance of InvalidK8SSecretException.</summary>
+    public InvalidK8SSecretException()
+    {
+    }
+
+    /// <summary>Initializes a new instance with the specified error message.</summary>
+    /// <param name="message">The error message describing the invalid secret.</param>
+    public InvalidK8SSecretException(string message)
+        : base(message)
+    {
+    }
+
+    /// <summary>Initializes a new instance with the specified error message and inner exception.</summary>
+    /// <param name="message">The error message describing the invalid secret.</param>
+    /// <param name="innerException">The exception that caused this exception.</param>
+    public InvalidK8SSecretException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
+}
 
 /// <summary>
 /// Exception thrown when a Kubernetes secret has invalid or malformed data.

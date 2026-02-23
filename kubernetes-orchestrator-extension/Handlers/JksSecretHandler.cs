@@ -19,7 +19,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreNotFoundException;
+using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Exceptions.StoreNotFoundException;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 
@@ -184,7 +184,9 @@ public class JksSecretHandler : BaseSecretHandler
             }
 
             var alias = string.IsNullOrEmpty(certificate.Alias) ? "default" : certificate.Alias;
-            var existingDataFieldName = SecretFieldNames.DefaultJks;
+            var existingDataFieldName = !string.IsNullOrEmpty(context.CertDataFieldName)
+                ? context.CertDataFieldName
+                : SecretFieldNames.DefaultJks;
 
             // Parse alias for field name
             if (alias.Contains('/'))
@@ -259,10 +261,12 @@ public class JksSecretHandler : BaseSecretHandler
                 return SuccessJob(context.JobHistoryId, "Secret not found, nothing to remove");
             }
 
-            var existingDataFieldName = SecretFieldNames.DefaultJks;
+            var existingDataFieldName = !string.IsNullOrEmpty(context.CertDataFieldName)
+                ? context.CertDataFieldName
+                : SecretFieldNames.DefaultJks;
             var entryAlias = alias;
 
-            if (alias.Contains('/'))
+            if (alias != null && alias.Contains('/'))
             {
                 var aliasParts = alias.Split('/');
                 existingDataFieldName = aliasParts[0];

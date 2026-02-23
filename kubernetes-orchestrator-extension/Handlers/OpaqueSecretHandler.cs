@@ -16,7 +16,7 @@ using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreNotFoundException;
+using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Exceptions.StoreNotFoundException;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 

@@ -16,7 +16,7 @@ using Keyfactor.Extensions.Orchestrator.K8S.Handlers.Serializers;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreNotFoundException;
+using StoreNotFoundException = Keyfactor.Extensions.Orchestrator.K8S.Exceptions.StoreNotFoundException;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 
@@ -142,7 +142,9 @@ public class Pkcs12SecretHandler : BaseSecretHandler
                 alias = certificate.CertThumbprint ?? "default";
             }
 
-            var existingDataFieldName = SecretFieldNames.DefaultPkcs12;
+            var existingDataFieldName = !string.IsNullOrEmpty(context.CertDataFieldName)
+                ? context.CertDataFieldName
+                : SecretFieldNames.DefaultPkcs12;
 
             // Parse alias for field name
             if (alias.Contains('/'))
@@ -207,10 +209,12 @@ public class Pkcs12SecretHandler : BaseSecretHandler
                 return SuccessJob(context.JobHistoryId, "Secret not found, nothing to remove");
             }
 
-            var existingDataFieldName = SecretFieldNames.DefaultPkcs12;
+            var existingDataFieldName = !string.IsNullOrEmpty(context.CertDataFieldName)
+                ? context.CertDataFieldName
+                : SecretFieldNames.DefaultPkcs12;
             var entryAlias = alias;
 
-            if (alias.Contains('/'))
+            if (alias != null && alias.Contains('/'))
             {
                 var aliasParts = alias.Split('/');
                 existingDataFieldName = aliasParts[0];
