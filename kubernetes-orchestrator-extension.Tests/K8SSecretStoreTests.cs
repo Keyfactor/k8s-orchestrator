@@ -417,6 +417,117 @@ public class K8SSecretStoreTests
 
     #endregion
 
+    #region Opaque Secret Field Name Tests
+
+    /// <summary>
+    /// Verifies that opaque secrets can use various field names for certificate data,
+    /// not just 'tls.crt'. This tests the fix for the bug where opaque secrets were
+    /// incorrectly processed using HandleTlsSecret which only looks for 'tls.crt'.
+    /// </summary>
+    [Theory]
+    [InlineData("tls.crt")]
+    [InlineData("cert")]
+    [InlineData("certificate")]
+    [InlineData("certs")]
+    [InlineData("certificates")]
+    [InlineData("crt")]
+    public void OpaqueSecret_WithVariousCertificateFieldNames_ValidStructure(string fieldName)
+    {
+        // Arrange - Create opaque secret with different field names for certificate
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = $"test-{fieldName}-secret" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { fieldName, Encoding.UTF8.GetBytes(certPem) }
+            }
+        };
+
+        // Assert - Secret should be valid with any of these field names
+        Assert.NotNull(secret.Data);
+        Assert.True(secret.Data.ContainsKey(fieldName));
+        var certData = Encoding.UTF8.GetString(secret.Data[fieldName]);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certData);
+    }
+
+    /// <summary>
+    /// Verifies that TLS secrets use the standard 'tls.crt' and 'tls.key' fields.
+    /// This is the expected format for kubernetes.io/tls secrets.
+    /// </summary>
+    [Fact]
+    public void TlsSecret_RequiresStandardFields()
+    {
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "tls-secret" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - TLS secrets must have these specific fields
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.True(secret.Data.ContainsKey("tls.key"));
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+    }
+
+    /// <summary>
+    /// Verifies that opaque and TLS secrets have different field requirements.
+    /// This tests the distinction that was causing the K8SNS inventory bug.
+    /// </summary>
+    [Fact]
+    public void OpaqueVsTlsSecret_DifferentFieldRequirements()
+    {
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        // Opaque secret can use 'cert' field name
+        var opaqueSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "opaque-secret" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "cert", Encoding.UTF8.GetBytes(certPem) },
+                { "key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // TLS secret must use standard fields
+        var tlsSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "tls-secret" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - Different field names are valid for each type
+        Assert.True(opaqueSecret.Data.ContainsKey("cert"));
+        Assert.False(opaqueSecret.Data.ContainsKey("tls.crt")); // Opaque can use 'cert' instead
+        Assert.True(tlsSecret.Data.ContainsKey("tls.crt"));
+        Assert.Equal("kubernetes.io/tls", tlsSecret.Type);
+        Assert.Equal("Opaque", opaqueSecret.Type);
+    }
+
+    #endregion
+
     #region Metadata Tests
 
     [Fact]

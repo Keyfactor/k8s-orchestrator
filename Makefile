@@ -126,6 +126,16 @@ test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=
 	fi; \
 	dotnet test --filter "FullyQualifiedName~Integration"
 
+.PHONY: test-integration-fast
+test-integration-fast: ## Run integration tests on single framework (net8.0 only, ~50% faster)
+	@source .env; \
+	source .test.env; \
+	export RUN_INTEGRATION_TESTS=true; \
+	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
+		export INTEGRATION_TEST_KUBECONFIG; \
+	fi; \
+	dotnet test -f net8.0 --filter "FullyQualifiedName~Integration"
+
 .PHONY: test-coverage
 test-coverage: ## Run tests with code coverage and generate HTML report
 	@source .env; \

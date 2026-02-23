@@ -526,4 +526,118 @@ public class K8SNSStoreIntegrationTests : IAsyncLifetime
     }
 
     #endregion
+
+    #region Key Type Coverage Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_Rsa2048Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-rsa2048-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.Rsa2048);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_Rsa4096Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-rsa4096-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.Rsa4096);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_EcP256Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-ecp256-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.EcP256);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_EcP384Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-ecp384-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.EcP384);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_EcP521Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-ecp521-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.EcP521);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_Ed25519Certificate_AddAndInventory_Success()
+    {
+        var secretName = $"test-ed25519-ns-{Guid.NewGuid():N}";
+        _createdSecrets.Add(secretName);
+        await AddAndInventoryCertificate(secretName, KeyType.Ed25519);
+    }
+
+    private async Task AddAndInventoryCertificate(string secretName, KeyType keyType)
+    {
+        // Generate certificate with specified key type
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"KeyType Test {keyType}");
+        var pfxPassword = "testpassword";
+
+        // Add certificate
+        var addJobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SNS",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = $"secrets/opaque/{secretName}",
+                PrivateKeyPassword = pfxPassword,
+                Contents = Convert.ToBase64String(
+                    CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, pfxPassword))
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace,
+                Properties = "{\"KubeSecretType\":\"namespace\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(_mockPamResolver.Object);
+        var addResult = await Task.Run(() => management.ProcessJob(addJobConfig));
+
+        Assert.True(addResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Add {keyType} certificate expected Success but got {addResult.Result}. FailureMessage: {addResult.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+
+        // Inventory the certificate
+        var invJobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace,
+                Properties = "{\"KubeSecretType\":\"namespace\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+        var invResult = await Task.Run(() => inventory.ProcessJob(invJobConfig, (inventoryItems) => true));
+
+        Assert.True(invResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Inventory {keyType} certificate expected Success but got {invResult.Result}. FailureMessage: {invResult.FailureMessage}");
+    }
+
+    #endregion
 }

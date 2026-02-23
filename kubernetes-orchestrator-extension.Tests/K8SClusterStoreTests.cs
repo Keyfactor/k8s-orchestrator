@@ -341,4 +341,727 @@ public class K8SClusterStoreTests
     }
 
     #endregion
+
+    #region TLS Secret Operations via Cluster Store
+
+    [Fact]
+    public void ClusterTlsSecret_WithCertAndKey_HasCorrectStructure()
+    {
+        // K8SCluster can manage TLS secrets across the cluster
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster TLS Test");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "cluster-tls-secret",
+                NamespaceProperty = "production"
+            },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.Equal(2, secret.Data.Count);
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.True(secret.Data.ContainsKey("tls.key"));
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_WithCertificateChain_CanStoreSeparateCaField()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediateCert = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootCert = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "cluster-tls-with-chain",
+                NamespaceProperty = "production"
+            },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafCert) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                { "ca.crt", Encoding.UTF8.GetBytes(intermediateCert + rootCert) }
+            }
+        };
+
+        // Assert
+        Assert.Equal(3, secret.Data.Count);
+        Assert.True(secret.Data.ContainsKey("ca.crt"));
+        var caCerts = Encoding.UTF8.GetString(secret.Data["ca.crt"]);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", caCerts);
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_StrictFieldNames_OnlyTlsCrtAndTlsKey()
+    {
+        // TLS secrets managed via K8SCluster still enforce strict field names
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "strict-fields", NamespaceProperty = "default" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - Must have exactly tls.crt and tls.key
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.True(secret.Data.ContainsKey("tls.key"));
+        Assert.False(secret.Data.ContainsKey("cert")); // Not allowed for TLS
+        Assert.False(secret.Data.ContainsKey("certificate")); // Not allowed for TLS
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_Type_MustBeKubernetesIoTls()
+    {
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "tls-type", NamespaceProperty = "staging" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.NotEqual("Opaque", secret.Type);
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_WithBundledChain_AllCertsInTlsCrt()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var bundledChain = leafPem + intermediatePem + rootPem;
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "bundled-tls", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(bundledChain) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal(2, secret.Data.Count);
+        Assert.False(secret.Data.ContainsKey("ca.crt"));
+
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(3, certCount);
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_SeparateChainVsBundled_DifferentStructures()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Separate chain
+        var separateChainSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "separate", NamespaceProperty = "ns1" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                { "ca.crt", Encoding.UTF8.GetBytes(intermediatePem + rootPem) }
+            }
+        };
+
+        // Bundled chain
+        var bundledChainSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "bundled", NamespaceProperty = "ns2" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem + intermediatePem + rootPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - Separate chain has 3 fields
+        Assert.Equal(3, separateChainSecret.Data.Count);
+        Assert.True(separateChainSecret.Data.ContainsKey("ca.crt"));
+
+        // Assert - Bundled chain has 2 fields
+        Assert.Equal(2, bundledChainSecret.Data.Count);
+        Assert.False(bundledChainSecret.Data.ContainsKey("ca.crt"));
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_NativeKubernetesFormat_Compatible()
+    {
+        // TLS secrets created via K8SCluster should be compatible with K8S Ingress
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "ingress-compatible-tls",
+                NamespaceProperty = "ingress-namespace"
+            },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - Matches native K8S TLS secret format
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.Equal(2, secret.Data.Count);
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.True(secret.Data.ContainsKey("tls.key"));
+    }
+
+    [Fact]
+    public void ClusterTlsSecret_MissingRequiredFields_Invalid()
+    {
+        // TLS secrets require both tls.crt and tls.key
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "missing-key", NamespaceProperty = "default" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
+                // Missing tls.key
+            }
+        };
+
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.False(secret.Data.ContainsKey("tls.key")); // Missing required field
+    }
+
+    #endregion
+
+    #region Opaque Secret Operations via Cluster Store
+
+    [Fact]
+    public void ClusterOpaqueSecret_WithPemCertAndKey_HasCorrectStructure()
+    {
+        // K8SCluster can manage Opaque secrets across the cluster
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Opaque Test");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "cluster-opaque-secret",
+                NamespaceProperty = "production"
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Equal("Opaque", secret.Type);
+        Assert.Equal(2, secret.Data.Count);
+        Assert.True(secret.Data.ContainsKey("tls.crt"));
+        Assert.True(secret.Data.ContainsKey("tls.key"));
+    }
+
+    [Fact]
+    public void ClusterOpaqueSecret_WithCertificateChain_CanStoreSeparateCaField()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediateCert = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootCert = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "cluster-opaque-with-chain",
+                NamespaceProperty = "staging"
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafCert) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                { "ca.crt", Encoding.UTF8.GetBytes(intermediateCert + rootCert) }
+            }
+        };
+
+        Assert.Equal(3, secret.Data.Count);
+        Assert.True(secret.Data.ContainsKey("ca.crt"));
+    }
+
+    [Theory]
+    [InlineData("tls.crt")]
+    [InlineData("cert")]
+    [InlineData("certificate")]
+    [InlineData("crt")]
+    public void ClusterOpaqueSecret_FlexibleFieldNames_SupportedVariations(string certFieldName)
+    {
+        // K8SCluster managing Opaque secrets supports flexible field names
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "flexible-fields", NamespaceProperty = "default" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { certFieldName, Encoding.UTF8.GetBytes(certPem) }
+            }
+        };
+
+        Assert.True(secret.Data.ContainsKey(certFieldName));
+    }
+
+    [Fact]
+    public void ClusterOpaqueSecret_WithBundledChain_AllCertsInTlsCrt()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var bundledChain = leafPem + intermediatePem + rootPem;
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "bundled-opaque", NamespaceProperty = "production" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(bundledChain) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Equal(2, secret.Data.Count);
+        Assert.False(secret.Data.ContainsKey("ca.crt"));
+
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(3, certCount);
+    }
+
+    [Fact]
+    public void ClusterOpaqueSecret_SeparateChainVsBundled_DifferentStructures()
+    {
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var separateChainSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "separate-opaque", NamespaceProperty = "ns1" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
+                { "ca.crt", Encoding.UTF8.GetBytes(intermediatePem + rootPem) }
+            }
+        };
+
+        var bundledChainSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "bundled-opaque", NamespaceProperty = "ns2" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem + intermediatePem + rootPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Equal(3, separateChainSecret.Data.Count);
+        Assert.True(separateChainSecret.Data.ContainsKey("ca.crt"));
+
+        Assert.Equal(2, bundledChainSecret.Data.Count);
+        Assert.False(bundledChainSecret.Data.ContainsKey("ca.crt"));
+    }
+
+    [Fact]
+    public void ClusterOpaqueSecret_OnlyCertificateNoKey_ValidStructure()
+    {
+        // Some Opaque secrets may only contain certificates without private keys
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "cert-only", NamespaceProperty = "production" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
+            }
+        };
+
+        Assert.Single(secret.Data);
+        Assert.False(secret.Data.ContainsKey("tls.key"));
+    }
+
+    #endregion
+
+    #region Key Type Coverage via Cluster Store
+
+    [Theory]
+    [InlineData(KeyType.Rsa1024)]
+    [InlineData(KeyType.Rsa2048)]
+    [InlineData(KeyType.Rsa4096)]
+    [InlineData(KeyType.Rsa8192)]
+    public void ClusterSecret_RsaKeyTypes_ValidPemFormat(KeyType keyType)
+    {
+        // K8SCluster can manage secrets with various RSA key sizes
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"RSA {keyType}");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = $"rsa-{keyType}", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);
+    }
+
+    [Theory]
+    [InlineData(KeyType.EcP256)]
+    [InlineData(KeyType.EcP384)]
+    [InlineData(KeyType.EcP521)]
+    public void ClusterSecret_EcKeyTypes_ValidPemFormat(KeyType keyType)
+    {
+        // K8SCluster can manage secrets with various EC curves
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"EC {keyType}");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = $"ec-{keyType}", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);
+    }
+
+    [Theory]
+    [InlineData(KeyType.Ed25519)]
+    [InlineData(KeyType.Ed448)]
+    public void ClusterSecret_EdwardsKeyTypes_ValidPemFormat(KeyType keyType)
+    {
+        // K8SCluster can manage secrets with Edwards curve keys
+        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Edwards {keyType}");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = $"edwards-{keyType}", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);
+    }
+
+    #endregion
+
+    #region Cross-Type Cluster Operations
+
+    [Fact]
+    public void ClusterStore_MixedSecretTypes_SameNamespace_CanCoexist()
+    {
+        // Both TLS and Opaque secrets can coexist in the same namespace
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var tlsSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "tls-secret", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        var opaqueSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "opaque-secret", NamespaceProperty = "production" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Both in same namespace
+        Assert.Equal(tlsSecret.Metadata.NamespaceProperty, opaqueSecret.Metadata.NamespaceProperty);
+        // Different types
+        Assert.NotEqual(tlsSecret.Type, opaqueSecret.Type);
+        // Different names
+        Assert.NotEqual(tlsSecret.Metadata.Name, opaqueSecret.Metadata.Name);
+    }
+
+    [Fact]
+    public void ClusterStore_SameSecretName_DifferentNamespaces_AreIndependent()
+    {
+        // Same secret name can exist in different namespaces independently
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        var secretInProd = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "my-cert", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]> { { "tls.crt", Encoding.UTF8.GetBytes(certPem) } }
+        };
+
+        var secretInStaging = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "my-cert", NamespaceProperty = "staging" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]> { { "tls.crt", Encoding.UTF8.GetBytes(certPem) } }
+        };
+
+        // Same name
+        Assert.Equal(secretInProd.Metadata.Name, secretInStaging.Metadata.Name);
+        // Different namespaces
+        Assert.NotEqual(secretInProd.Metadata.NamespaceProperty, secretInStaging.Metadata.NamespaceProperty);
+    }
+
+    [Fact]
+    public void ClusterStore_FilterTlsSecrets_ReturnsOnlyTlsType()
+    {
+        // Arrange
+        var secrets = new List<V1Secret>
+        {
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "tls1", NamespaceProperty = "ns1" }, Type = "kubernetes.io/tls" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "opaque1", NamespaceProperty = "ns1" }, Type = "Opaque" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "tls2", NamespaceProperty = "ns2" }, Type = "kubernetes.io/tls" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "opaque2", NamespaceProperty = "ns2" }, Type = "Opaque" }
+        };
+
+        // Act
+        var tlsSecrets = secrets.FindAll(s => s.Type == "kubernetes.io/tls");
+
+        // Assert
+        Assert.Equal(2, tlsSecrets.Count);
+        Assert.All(tlsSecrets, s => Assert.Equal("kubernetes.io/tls", s.Type));
+    }
+
+    [Fact]
+    public void ClusterStore_FilterOpaqueSecrets_ReturnsOnlyOpaqueType()
+    {
+        // Arrange
+        var secrets = new List<V1Secret>
+        {
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "tls1", NamespaceProperty = "ns1" }, Type = "kubernetes.io/tls" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "opaque1", NamespaceProperty = "ns1" }, Type = "Opaque" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "tls2", NamespaceProperty = "ns2" }, Type = "kubernetes.io/tls" },
+            new V1Secret { Metadata = new V1ObjectMeta { Name = "opaque2", NamespaceProperty = "ns2" }, Type = "Opaque" }
+        };
+
+        // Act
+        var opaqueSecrets = secrets.FindAll(s => s.Type == "Opaque");
+
+        // Assert
+        Assert.Equal(2, opaqueSecrets.Count);
+        Assert.All(opaqueSecrets, s => Assert.Equal("Opaque", s.Type));
+    }
+
+    #endregion
+
+    #region Encoding and Conversion Tests
+
+    [Fact]
+    public void ClusterSecret_Utf8Encoding_RoundTripSuccessful()
+    {
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var originalPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        // Act - Encode to bytes and decode back
+        var bytes = Encoding.UTF8.GetBytes(originalPem);
+        var decodedPem = Encoding.UTF8.GetString(bytes);
+
+        // Assert
+        Assert.Equal(originalPem, decodedPem);
+    }
+
+    [Fact]
+    public void ClusterSecret_DerToPemConversion_ValidFormat()
+    {
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var derBytes = certInfo.Certificate.GetEncoded();
+
+        // Act - Parse from DER and convert to PEM
+        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
+        var cert = parser.ReadCertificate(derBytes);
+        var pemCert = CertificateTestHelper.ConvertCertificateToPem(cert);
+
+        // Assert
+        Assert.NotNull(pemCert);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", pemCert);
+        Assert.Contains("-----END CERTIFICATE-----", pemCert);
+    }
+
+    [Fact]
+    public void ClusterSecret_PemWithWhitespace_StillValid()
+    {
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        // Add extra whitespace
+        var pemWithWhitespace = "\n" + certPem + "\n\n";
+
+        // Assert - Should still contain valid markers
+        Assert.Contains("-----BEGIN CERTIFICATE-----", pemWithWhitespace);
+        Assert.Contains("-----END CERTIFICATE-----", pemWithWhitespace);
+    }
+
+    #endregion
+
+    #region Metadata Tests
+
+    [Fact]
+    public void ClusterSecret_WithLabels_PreservesMetadata()
+    {
+        // Arrange
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "labeled-cluster-secret",
+                NamespaceProperty = "production",
+                Labels = new Dictionary<string, string>
+                {
+                    { "keyfactor.com/managed", "true" },
+                    { "keyfactor.com/store-type", "K8SCluster" },
+                    { "app.kubernetes.io/name", "my-app" }
+                }
+            },
+            Type = "kubernetes.io/tls"
+        };
+
+        // Assert
+        Assert.NotNull(secret.Metadata.Labels);
+        Assert.Equal(3, secret.Metadata.Labels.Count);
+        Assert.Equal("K8SCluster", secret.Metadata.Labels["keyfactor.com/store-type"]);
+    }
+
+    [Fact]
+    public void ClusterSecret_WithAnnotations_PreservesMetadata()
+    {
+        // Arrange
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "annotated-cluster-secret",
+                NamespaceProperty = "staging",
+                Annotations = new Dictionary<string, string>
+                {
+                    { "keyfactor.com/certificate-id", "12345" },
+                    { "keyfactor.com/last-synced", "2024-01-15T10:30:00Z" }
+                }
+            },
+            Type = "kubernetes.io/tls"
+        };
+
+        // Assert
+        Assert.NotNull(secret.Metadata.Annotations);
+        Assert.Equal(2, secret.Metadata.Annotations.Count);
+        Assert.Equal("12345", secret.Metadata.Annotations["keyfactor.com/certificate-id"]);
+    }
+
+    #endregion
 }

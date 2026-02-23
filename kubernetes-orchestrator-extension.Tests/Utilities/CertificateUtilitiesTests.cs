@@ -767,6 +767,64 @@ public class CertificateUtilitiesTests
 
     #endregion
 
+    #region Certificate Parsing Edge Cases
+
+    /// <summary>
+    /// Verifies that invalid/corrupt certificate data doesn't cause null reference exceptions.
+    /// This tests the fix for the Ed25519 null reference bug where both PEM and DER parsing
+    /// could fail, leading to a null object being passed to ConvertToPem.
+    /// </summary>
+    [Fact]
+    public void ParseCertificateFromPem_InvalidData_ReturnsNullNotException()
+    {
+        // Arrange - Invalid/corrupt data that can't be parsed as PEM
+        var invalidData = "This is not a valid PEM certificate";
+
+        // Act - Should return null or throw meaningful exception, not NullReferenceException
+        try
+        {
+            var result = CertificateUtilities.ParseCertificateFromPem(invalidData);
+            // If it returns null, that's acceptable behavior
+            // The calling code should handle null appropriately
+        }
+        catch (NullReferenceException)
+        {
+            // This is the bug we're preventing - should never get NullReferenceException
+            Assert.Fail("ParseCertificateFromPem should not throw NullReferenceException for invalid data");
+        }
+        catch (Exception ex)
+        {
+            // Other exceptions (like format exceptions) are acceptable
+            Assert.NotNull(ex.Message);
+        }
+    }
+
+    [Fact]
+    public void ParseCertificateFromDer_InvalidData_ReturnsNullNotException()
+    {
+        // Arrange - Random bytes that can't be parsed as DER
+        var invalidData = new byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 };
+
+        // Act - Should return null or throw meaningful exception, not NullReferenceException
+        try
+        {
+            var result = CertificateUtilities.ParseCertificateFromDer(invalidData);
+            // If it returns null, that's acceptable behavior
+        }
+        catch (NullReferenceException)
+        {
+            // This is the bug we're preventing - should never get NullReferenceException
+            Assert.Fail("ParseCertificateFromDer should not throw NullReferenceException for invalid data");
+        }
+        catch (Exception ex)
+        {
+            // Other exceptions (like format exceptions) are acceptable
+            Assert.NotNull(ex.Message);
+        }
+    }
+
+    #endregion
+
     #region Null Argument Tests
 
     [Fact]
