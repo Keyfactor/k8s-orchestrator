@@ -44,7 +44,7 @@ internal class PAMUtilities
         }
 
         // test if field is JSON string
-        if (key.StartsWith("{") && key.EndsWith("}"))
+        if (key.StartsWith('{') && key.EndsWith('}'))
         {
             try
             {

@@ -186,13 +186,10 @@ public class CredentialResolver
     public bool ValidateCredentials(SecretOperationContext context)
     {
         // For password-protected stores, validate password configuration
-        if (context.PasswordIsK8SSecret)
+        if (context.PasswordIsK8SSecret && string.IsNullOrEmpty(context.PasswordSecretPath))
         {
-            if (string.IsNullOrEmpty(context.PasswordSecretPath))
-            {
-                _logger.LogWarning("Password is configured as K8S secret but no path is provided");
-                return false;
-            }
+            _logger.LogWarning("Password is configured as K8S secret but no path is provided");
+            return false;
         }
 
         return true;

@@ -213,7 +213,7 @@ public class TlsSecretHandler : BaseSecretHandler
         {
             Logger.LogDebug("Removing TLS secret {Namespace}/{SecretName}", context.Namespace, context.SecretName);
 
-            var response = client.DeleteCertificateStoreSecret(
+            client.DeleteCertificateStoreSecret(
                 context.SecretName,
                 context.Namespace,
                 "tls_secret",

@@ -178,7 +178,7 @@ public class OpaqueSecretHandler : BaseSecretHandler
         {
             Logger.LogDebug("Removing Opaque secret {Namespace}/{SecretName}", context.Namespace, context.SecretName);
 
-            var response = client.DeleteCertificateStoreSecret(
+            client.DeleteCertificateStoreSecret(
                 context.SecretName,
                 context.Namespace,
                 "secret",
