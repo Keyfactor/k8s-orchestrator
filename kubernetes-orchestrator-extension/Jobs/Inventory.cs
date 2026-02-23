@@ -115,7 +115,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         OpaqueAllowedKeys?.ToString());
                     try
                     {
-                        var opaqueInventory = HandleTlsSecret(config.JobHistoryId);
+                        var opaqueInventory = HandleOpaqueSecretAsList(config.JobHistoryId);
                         Logger.LogDebug("Returned inventory count: {Count}", opaqueInventory.Count.ToString());
                         return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, true);
                     }
@@ -207,12 +207,13 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleTlsSecret(config.JobHistoryId);
-                            clusterInventoryDict[StorePath] = opaqueObj;
+                            var opaqueObj = HandleOpaqueSecretAsList(config.JobHistoryId);
+                            if (opaqueObj.Count > 0)
+                                clusterInventoryDict[StorePath] = opaqueObj;
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message +
+                            Logger.LogError("Error processing Opaque Secret: " + opaqueSecret + " - " + ex.Message +
                                             "\n\t" + ex.StackTrace);
                             errors.Add(ex.Message);
                         }
@@ -267,12 +268,13 @@ public class Inventory : JobBase, IInventoryJobExtension
                             storePathSplitList.RemoveAt(0);
                             StorePath = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = opaqueObj[0];
+                            var opaqueObj = HandleOpaqueSecretAsList(config.JobHistoryId);
+                            if (opaqueObj.Count > 0)
+                                namespaceInventoryDict[StorePath] = opaqueObj[0];
                         }
                         catch (Exception ex)
                         {
-                            Logger.LogError("Error processing TLS Secret: " + opaqueSecret + " - " + ex.Message +
+                            Logger.LogError("Error processing Opaque Secret: " + opaqueSecret + " - " + ex.Message +
                                             "\n\t" + ex.StackTrace);
                             namespaceErrors.Add(ex.Message);
                         }
@@ -792,6 +794,133 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
     /// <summary>
+    /// Handles inventory of Kubernetes Opaque secrets and returns certificate list.
+    /// Extracts certificates from the secret's data fields using OpaqueAllowedKeys.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <returns>List of PEM-formatted certificates found in the opaque secret.</returns>
+    /// <exception cref="StoreNotFoundException">Thrown when the secret cannot be found.</exception>
+    /// <exception cref="Exception">Thrown when an error occurs querying the K8S API.</exception>
+    private List<string> HandleOpaqueSecretAsList(long jobId)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing opaque secret inventory for job {JobId}", jobId);
+        Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+        Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        Logger.LogTrace("StorePath: " + StorePath);
+
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogWarning("KubeNamespace is null or empty. Attempting to parse from StorePath...");
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                KubeNamespace = StorePath.Split("/").First();
+                Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+                if (KubeNamespace == KubeSecretName)
+                {
+                    Logger.LogWarning("KubeNamespace was equal to KubeSecretName. Setting KubeNamespace to 'default'...");
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                Logger.LogWarning("StorePath was null or empty. Setting KubeNamespace to 'default'...");
+                KubeNamespace = "default";
+            }
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogWarning("KubeSecretName is null or empty. Attempting to parse from StorePath...");
+            KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        }
+
+        Logger.LogDebug($"Querying Kubernetes opaque secret API for {KubeSecretName} in namespace {KubeNamespace}...");
+        try
+        {
+            var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            var certsList = new List<string>();
+
+            // Iterate through allowed keys to find certificate data
+            foreach (var allowedKey in OpaqueAllowedKeys)
+            {
+                if (!certData.Data.ContainsKey(allowedKey)) continue;
+
+                Logger.LogDebug("Found certificate data in key: {Key}", allowedKey);
+                var certificatesBytes = certData.Data[allowedKey];
+                var certPem = Encoding.UTF8.GetString(certificatesBytes);
+
+                // Try to parse as PEM first
+                var certObj = KubeClient.ReadPemCertificate(certPem);
+                if (certObj == null)
+                {
+                    Logger.LogDebug("Failed to parse certificate as PEM. Attempting to parse as DER...");
+                    certObj = KubeClient.ReadDerCertificate(certPem);
+                    if (certObj != null)
+                    {
+                        certPem = KubeClient.ConvertToPem(certObj);
+                    }
+                    else
+                    {
+                        // Both PEM and DER parsing failed
+                        throw new InvalidOperationException(
+                            $"Failed to parse certificate from secret '{KubeSecretName}' key '{allowedKey}' in namespace '{KubeNamespace}'. " +
+                            "The certificate data could not be parsed as PEM or DER format.");
+                    }
+                }
+                else
+                {
+                    certPem = KubeClient.ConvertToPem(certObj);
+                }
+
+                if (!string.IsNullOrEmpty(certPem))
+                {
+                    certsList.Add(certPem);
+                    // For opaque secrets, we typically only have one certificate field per secret
+                    break;
+                }
+            }
+
+            // Check for certificate chain
+            if (certsList.Count == 1)
+            {
+                var originalCertBytes = certData.Data.Values.FirstOrDefault();
+                if (originalCertBytes != null)
+                {
+                    var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(originalCertBytes));
+                    if (certChain != null && certChain.Count > 1)
+                    {
+                        certsList.Clear();
+                        Logger.LogDebug("Certificate chain detected. Parsing chain...");
+                        foreach (var cert in certChain)
+                        {
+                            certsList.Add(KubeClient.ConvertToPem(cert));
+                        }
+                    }
+                }
+            }
+
+            Logger.LogTrace("certsList count: " + certsList.Count);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return certsList;
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogError(e.Message);
+            var certDataErrorMsg = $"Kubernetes opaque secret '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
+            Logger.LogError(certDataErrorMsg);
+            throw new StoreNotFoundException(certDataErrorMsg);
+        }
+        catch (Exception e) when (e is not StoreNotFoundException && e is not InvalidOperationException)
+        {
+            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+            Logger.LogError(certDataErrorMsg);
+            throw new Exception(certDataErrorMsg);
+        }
+    }
+
+    /// <summary>
     /// Handles inventory of Kubernetes Opaque secrets containing certificate data.
     /// Extracts certificates from the secret's data fields using the specified managed keys.
     /// </summary>
@@ -959,7 +1088,10 @@ public class Inventory : JobBase, IInventoryJobExtension
                 }
                 else
                 {
-                    certPem = KubeClient.ConvertToPem(certObj);
+                    // Both PEM and DER parsing failed - throw a meaningful error
+                    throw new InvalidOperationException(
+                        $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
+                        "The certificate data could not be parsed as PEM or DER format.");
                 }
 
                 Logger.LogTrace("certPem: " + certPem);
