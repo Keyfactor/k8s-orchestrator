@@ -2185,13 +2185,19 @@ public class KubeCertificateManagerClient
         var keyEntry = store.GetKey(alias);
         var privateKeyParams = keyEntry.Key;
 
-        var pemType = privateKeyParams switch
+        // Determine key type for logging. For PKCS#8 format, we use "PRIVATE KEY" for all types.
+        var keyTypeName = privateKeyParams switch
         {
-            RsaPrivateCrtKeyParameters => "RSA PRIVATE KEY",
-            ECPrivateKeyParameters => "EC PRIVATE KEY",
-            _ => throw new Exception("Unsupported private key type.")
+            RsaPrivateCrtKeyParameters => "RSA",
+            ECPrivateKeyParameters => "EC",
+            Ed25519PrivateKeyParameters => "Ed25519",
+            Ed448PrivateKeyParameters => "Ed448",
+            _ => "Unknown"
         };
-        _logger.LogDebug("Private key type: {KeyType}", pemType);
+        _logger.LogDebug("Private key type: {KeyType}", keyTypeName);
+
+        // Use PKCS#8 format ("PRIVATE KEY") which supports all key types including Ed25519/Ed448
+        const string pemType = "PRIVATE KEY";
 
         // Convert the private key to PEM format
         var sw = new StringWriter();
