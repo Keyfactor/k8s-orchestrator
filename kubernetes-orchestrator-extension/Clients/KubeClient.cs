@@ -169,150 +169,150 @@ public partial class KubeCertificateManagerClient
             var k8SConfiguration = new K8SConfiguration();
             _logger.LogTrace("K8SConfiguration object created");
 
-        _logger.LogTrace("Checking if kubeconfig is null or empty");
-        if (string.IsNullOrEmpty(kubeconfig))
-        {
-            _logger.LogError("kubeconfig is null or empty");
-            throw new KubeConfigException(
-                "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
-        }
-
-        try
-        {
-            // test if kubeconfig is base64 encoded
-            _logger.LogDebug("Testing if kubeconfig is base64 encoded");
-            var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
-            kubeconfig = decodedKubeconfig;
-            _logger.LogDebug("Successfully decoded kubeconfig from base64");
-        }
-        catch
-        {
-            _logger.LogTrace("Kubeconfig is not base64 encoded");
-        }
-
-        _logger.LogTrace("Checking if kubeconfig is escaped JSON");
-        if (kubeconfig.StartsWith("\\"))
-        {
-            _logger.LogDebug("Un-escaping kubeconfig JSON");
-            kubeconfig = kubeconfig.Replace("\\", "");
-            kubeconfig = kubeconfig.Replace("\\n", "\n");
-            _logger.LogDebug("Successfully un-escaped kubeconfig JSON");
-        }
-
-        // parse kubeconfig as a dictionary of string, string
-        if (!kubeconfig.StartsWith("{"))
-        {
-            _logger.LogError("kubeconfig is not a JSON object");
-            throw new KubeConfigException(
-                "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
-            // return k8SConfiguration;
-        }
-
-
-        _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
-
-        //load json into dictionary of string, string
-        _logger.LogTrace("Deserializing kubeconfig JSON");
-        var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(kubeconfig);
-        _logger.LogTrace("Deserialized kubeconfig JSON successfully");
-
-        _logger.LogTrace("Creating K8SConfiguration object");
-        k8SConfiguration = new K8SConfiguration
-        {
-            ApiVersion = configDict["apiVersion"].ToString(),
-            Kind = configDict["kind"].ToString(),
-            CurrentContext = configDict["current-context"].ToString(),
-            Clusters = new List<Cluster>(),
-            Users = new List<User>(),
-            Contexts = new List<Context>()
-        };
-
-        // parse clusters
-        _logger.LogDebug("Parsing clusters");
-        var cl = configDict["clusters"];
-
-        _logger.LogTrace("Entering foreach loop to parse clusters...");
-        foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString() ?? string.Empty))
-        {
-            _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
-            // get environment variable for skip tls verify and convert to bool
-            var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
-            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
-                skipTlsEnvStr);
-            if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
-                (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+            _logger.LogTrace("Checking if kubeconfig is null or empty");
+            if (string.IsNullOrEmpty(kubeconfig))
             {
-                if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
-                _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
-                if (skipTlsVerifyEnv && !skipTLSVerify)
-                {
-                    _logger.LogWarning(
-                        "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
-                    skipTLSVerify = true;
-                }
+                _logger.LogError("kubeconfig is null or empty");
+                throw new KubeConfigException(
+                    "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
             }
 
-            var clusterObj = new Cluster
+            try
             {
-                Name = clusterMetadata["name"]?.ToString(),
-                ClusterEndpoint = new ClusterEndpoint
-                {
-                    Server = clusterMetadata["cluster"]?["server"]?.ToString(),
-                    CertificateAuthorityData = clusterMetadata["cluster"]?["certificate-authority-data"]?.ToString(),
-                    SkipTlsVerify = skipTLSVerify
-                }
-            };
-            _logger.LogDebug("Cluster metadata - Name: {Name}, Server: {Server}, SkipTlsVerify: {SkipTls}",
-                clusterObj.Name, clusterObj.ClusterEndpoint?.Server, skipTLSVerify);
-            _logger.LogTrace("Certificate authority data: {CaDataPresence}",
-                LoggingUtilities.GetFieldPresence("certificate-authority-data", clusterObj.ClusterEndpoint?.CertificateAuthorityData));
-            k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
-        }
-
-        _logger.LogTrace("Finished parsing clusters");
-
-        _logger.LogDebug("Parsing users");
-        _logger.LogTrace("Entering foreach loop to parse users...");
-        // parse users
-        foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString() ?? string.Empty))
-        {
-            var token = user["user"]?["token"]?.ToString();
-            var userObj = new User
+                // test if kubeconfig is base64 encoded
+                _logger.LogDebug("Testing if kubeconfig is base64 encoded");
+                var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
+                kubeconfig = decodedKubeconfig;
+                _logger.LogDebug("Successfully decoded kubeconfig from base64");
+            }
+            catch
             {
-                Name = user["name"]?.ToString(),
-                UserCredentials = new UserCredentials
-                {
-                    UserName = user["name"]?.ToString(),
-                    Token = token
-                }
-            };
-            _logger.LogDebug("User metadata - Name: {Name}, HasToken: {HasToken}",
-                userObj.Name, !string.IsNullOrEmpty(token));
-            _logger.LogTrace("Token: {Token}", LoggingUtilities.RedactToken(token));
-            k8SConfiguration.Users = new List<User> { userObj };
-        }
+                _logger.LogTrace("Kubeconfig is not base64 encoded");
+            }
 
-        _logger.LogTrace("Finished parsing users");
-
-        _logger.LogDebug("Parsing contexts");
-        _logger.LogTrace("Entering foreach loop to parse contexts...");
-        foreach (var ctx in JsonConvert.DeserializeObject<JArray>(configDict["contexts"].ToString() ?? string.Empty))
-        {
-            _logger.LogTrace("Creating Context object");
-            var contextObj = new Context
+            _logger.LogTrace("Checking if kubeconfig is escaped JSON");
+            if (kubeconfig.StartsWith("\\"))
             {
-                Name = ctx["name"]?.ToString(),
-                ContextDetails = new ContextDetails
-                {
-                    Cluster = ctx["context"]?["cluster"]?.ToString(),
-                    Namespace = ctx["context"]?["namespace"]?.ToString(),
-                    User = ctx["context"]?["user"]?.ToString()
-                }
+                _logger.LogDebug("Un-escaping kubeconfig JSON");
+                kubeconfig = kubeconfig.Replace("\\", "");
+                kubeconfig = kubeconfig.Replace("\\n", "\n");
+                _logger.LogDebug("Successfully un-escaped kubeconfig JSON");
+            }
+
+            // parse kubeconfig as a dictionary of string, string
+            if (!kubeconfig.StartsWith("{"))
+            {
+                _logger.LogError("kubeconfig is not a JSON object");
+                throw new KubeConfigException(
+                    "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
+                // return k8SConfiguration;
+            }
+
+
+            _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
+
+            //load json into dictionary of string, string
+            _logger.LogTrace("Deserializing kubeconfig JSON");
+            var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(kubeconfig);
+            _logger.LogTrace("Deserialized kubeconfig JSON successfully");
+
+            _logger.LogTrace("Creating K8SConfiguration object");
+            k8SConfiguration = new K8SConfiguration
+            {
+                ApiVersion = configDict["apiVersion"].ToString(),
+                Kind = configDict["kind"].ToString(),
+                CurrentContext = configDict["current-context"].ToString(),
+                Clusters = new List<Cluster>(),
+                Users = new List<User>(),
+                Contexts = new List<Context>()
             };
-            _logger.LogDebug("Context metadata - Name: {Name}, Cluster: {Cluster}, Namespace: {Namespace}, User: {User}",
-                contextObj.Name, contextObj.ContextDetails?.Cluster, contextObj.ContextDetails?.Namespace, contextObj.ContextDetails?.User);
-            k8SConfiguration.Contexts = new List<Context> { contextObj };
-        }
+
+            // parse clusters
+            _logger.LogDebug("Parsing clusters");
+            var cl = configDict["clusters"];
+
+            _logger.LogTrace("Entering foreach loop to parse clusters...");
+            foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString() ?? string.Empty))
+            {
+                _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
+                // get environment variable for skip tls verify and convert to bool
+                var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
+                _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
+                    skipTlsEnvStr);
+                if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
+                    (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
+                {
+                    if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
+                    _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
+                    if (skipTlsVerifyEnv && !skipTLSVerify)
+                    {
+                        _logger.LogWarning(
+                            "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
+                        skipTLSVerify = true;
+                    }
+                }
+
+                var clusterObj = new Cluster
+                {
+                    Name = clusterMetadata["name"]?.ToString(),
+                    ClusterEndpoint = new ClusterEndpoint
+                    {
+                        Server = clusterMetadata["cluster"]?["server"]?.ToString(),
+                        CertificateAuthorityData = clusterMetadata["cluster"]?["certificate-authority-data"]?.ToString(),
+                        SkipTlsVerify = skipTLSVerify
+                    }
+                };
+                _logger.LogDebug("Cluster metadata - Name: {Name}, Server: {Server}, SkipTlsVerify: {SkipTls}",
+                    clusterObj.Name, clusterObj.ClusterEndpoint?.Server, skipTLSVerify);
+                _logger.LogTrace("Certificate authority data: {CaDataPresence}",
+                    LoggingUtilities.GetFieldPresence("certificate-authority-data", clusterObj.ClusterEndpoint?.CertificateAuthorityData));
+                k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
+            }
+
+            _logger.LogTrace("Finished parsing clusters");
+
+            _logger.LogDebug("Parsing users");
+            _logger.LogTrace("Entering foreach loop to parse users...");
+            // parse users
+            foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString() ?? string.Empty))
+            {
+                var token = user["user"]?["token"]?.ToString();
+                var userObj = new User
+                {
+                    Name = user["name"]?.ToString(),
+                    UserCredentials = new UserCredentials
+                    {
+                        UserName = user["name"]?.ToString(),
+                        Token = token
+                    }
+                };
+                _logger.LogDebug("User metadata - Name: {Name}, HasToken: {HasToken}",
+                    userObj.Name, !string.IsNullOrEmpty(token));
+                _logger.LogTrace("Token: {Token}", LoggingUtilities.RedactToken(token));
+                k8SConfiguration.Users = new List<User> { userObj };
+            }
+
+            _logger.LogTrace("Finished parsing users");
+
+            _logger.LogDebug("Parsing contexts");
+            _logger.LogTrace("Entering foreach loop to parse contexts...");
+            foreach (var ctx in JsonConvert.DeserializeObject<JArray>(configDict["contexts"].ToString() ?? string.Empty))
+            {
+                _logger.LogTrace("Creating Context object");
+                var contextObj = new Context
+                {
+                    Name = ctx["name"]?.ToString(),
+                    ContextDetails = new ContextDetails
+                    {
+                        Cluster = ctx["context"]?["cluster"]?.ToString(),
+                        Namespace = ctx["context"]?["namespace"]?.ToString(),
+                        User = ctx["context"]?["user"]?.ToString()
+                    }
+                };
+                _logger.LogDebug("Context metadata - Name: {Name}, Cluster: {Cluster}, Namespace: {Namespace}, User: {User}",
+                    contextObj.Name, contextObj.ContextDetails?.Cluster, contextObj.ContextDetails?.Namespace, contextObj.ContextDetails?.User);
+                k8SConfiguration.Contexts = new List<Context> { contextObj };
+            }
 
             _logger.LogTrace("Finished parsing contexts");
             _logger.LogDebug("Finished parsing kubeconfig");
@@ -669,71 +669,71 @@ public partial class KubeCertificateManagerClient
             case false
                 when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
                 : // password is not empty and passwordSecretPath is empty
-            {
-                _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
-                break;
-            }
+                {
+                    _logger.LogDebug("Adding password to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
+                    secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
+                    break;
+                }
             case false
                 when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
                 : // password is not empty and passwordSecretPath is not empty
-            {
-                _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
-                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+                {
+                    _logger.LogDebug("Adding password secret path to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
+                    secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[^1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
-                {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                    // Lookup password secret path on cluster to see if it exists
+                    _logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                    var splitPasswordPath = passwordSecretPath.Split("/");
+                    // Assume secret pattern is namespace/secretName
+                    var passwordSecretName = splitPasswordPath[^1];
+                    var passwordSecretNamespace = splitPasswordPath[0];
                     _logger.LogDebug(
-                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    // Update secret
-                    _logger.LogDebug(
-                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
-                        passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug(
-                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    var passwordSecretData = new V1Secret
+                        $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    try
                     {
-                        Metadata = new V1ObjectMeta
+                        var passwordSecret =
+                            Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                        // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                        _logger.LogDebug(
+                            $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        // Update secret
+                        _logger.LogDebug(
+                            $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
+                        var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
+                            passwordSecretName, passwordSecretNamespace);
+                        _logger.LogDebug(
+                            $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    }
+                    catch (HttpOperationException e)
+                    {
+                        _logger.LogError(
+                            $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        _logger.LogError(e.Message);
+                        // Attempt to create a new secret
+                        _logger.LogDebug(
+                            $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        var passwordSecretData = new V1Secret
                         {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
+                            Metadata = new V1ObjectMeta
+                            {
+                                Name = passwordSecretName,
+                                NamespaceProperty = passwordSecretNamespace
+                            },
+                            Data = new Dictionary<string, byte[]>
                         {
                             { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
                         }
-                    };
-                    var createdPasswordSecret =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
-                }
+                        };
+                        var createdPasswordSecret =
+                            Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                        _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    }
 
-                break;
-            }
+                    break;
+                }
         }
 
         // Update secret on K8S
@@ -1048,71 +1048,71 @@ public partial class KubeCertificateManagerClient
             case false
                 when string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
                 : // password is not empty and passwordSecretPath is empty
-            {
-                _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
-                break;
-            }
+                {
+                    _logger.LogDebug("Adding password to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
+                    secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(storePasswd));
+                    break;
+                }
             case false
                 when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
                 : // password is not empty and passwordSecretPath is not empty
-            {
-                _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
-                secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+                {
+                    _logger.LogDebug("Adding password secret path to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
+                    secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[^1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
-                {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                    // Lookup password secret path on cluster to see if it exists
+                    _logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                    var splitPasswordPath = passwordSecretPath.Split("/");
+                    // Assume secret pattern is namespace/secretName
+                    var passwordSecretName = splitPasswordPath[^1];
+                    var passwordSecretNamespace = splitPasswordPath[0];
                     _logger.LogDebug(
-                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    // Update secret
-                    _logger.LogDebug(
-                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
-                        passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug(
-                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    var passwordSecretData = new V1Secret
+                        $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    try
                     {
-                        Metadata = new V1ObjectMeta
+                        var passwordSecret =
+                            Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                        // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                        _logger.LogDebug(
+                            $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        // Update secret
+                        _logger.LogDebug(
+                            $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
+                        var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
+                            passwordSecretName, passwordSecretNamespace);
+                        _logger.LogDebug(
+                            $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    }
+                    catch (HttpOperationException e)
+                    {
+                        _logger.LogError(
+                            $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        _logger.LogError(e.Message);
+                        // Attempt to create a new secret
+                        _logger.LogDebug(
+                            $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        var passwordSecretData = new V1Secret
                         {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
+                            Metadata = new V1ObjectMeta
+                            {
+                                Name = passwordSecretName,
+                                NamespaceProperty = passwordSecretNamespace
+                            },
+                            Data = new Dictionary<string, byte[]>
                         {
                             { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
                         }
-                    };
-                    var createdPasswordSecret =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
-                }
+                        };
+                        var createdPasswordSecret =
+                            Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                        _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    }
 
-                break;
-            }
+                    break;
+                }
         }
 
         // Update secret on K8S
@@ -1416,65 +1416,65 @@ public partial class KubeCertificateManagerClient
             case false
                 when certObj.PasswordIsK8SSecret && string.IsNullOrEmpty(certObj.StorePasswordPath)
                 : // This means the password is expected to be on the secret so add it
-            {
-                _logger.LogDebug("Adding password to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-
-                // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
-
-                k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite));
-                break;
-            }
-            case false when !string.IsNullOrEmpty(passwordSecretPath):
-            {
-                _logger.LogDebug("Adding password secret path to secret...");
-                if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-                // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
-
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
                 {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    password = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    _logger.LogDebug("Adding password to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
+
                     // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
-                    var passwordSecretData = new V1Secret
+
+                    k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite));
+                    break;
+                }
+            case false when !string.IsNullOrEmpty(passwordSecretPath):
+                {
+                    _logger.LogDebug("Adding password secret path to secret...");
+                    if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
+                    // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
+
+                    // Lookup password secret path on cluster to see if it exists
+                    _logger.LogDebug("Attempting to lookup password secret path on cluster...");
+                    var splitPasswordPath = passwordSecretPath.Split("/");
+                    // Assume secret pattern is namespace/secretName
+                    var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+                    var passwordSecretNamespace = splitPasswordPath[0];
+                    _logger.LogDebug(
+                        $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                    try
                     {
-                        Metadata = new V1ObjectMeta
+                        var passwordSecret =
+                            Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
+                        password = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
+                    }
+                    catch (HttpOperationException e)
+                    {
+                        _logger.LogError(
+                            $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        _logger.LogError(e.Message);
+                        // Attempt to create a new secret
+                        _logger.LogDebug(
+                            $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+                        // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
+                        var passwordSecretData = new V1Secret
                         {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
+                            Metadata = new V1ObjectMeta
+                            {
+                                Name = passwordSecretName,
+                                NamespaceProperty = passwordSecretNamespace
+                            },
+                            Data = new Dictionary<string, byte[]>
                         {
                             { passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite) }
                         }
-                    };
-                    _logger.LogDebug("Calling CreateNamespacedSecret()");
-                    var passwordSecretResponse =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Finished calling CreateNamespacedSecret()");
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
-                }
+                        };
+                        _logger.LogDebug("Calling CreateNamespacedSecret()");
+                        var passwordSecretResponse =
+                            Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
+                        _logger.LogDebug("Finished calling CreateNamespacedSecret()");
+                        _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    }
 
-                break;
-            }
+                    break;
+                }
         }
 
         _logger.LogTrace("Exiting CreateNewSecret()");
@@ -1774,25 +1774,25 @@ public partial class KubeCertificateManagerClient
             //     
             //     return CreateNewSecret(secretName, namespaceName, keyPem,certPem,"","",secretType);
             case "secret":
-            {
-                _logger.LogInformation($"Attempting to update opaque secret {secretName} in namespace {namespaceName}");
-                _logger.LogTrace("Calling UpdateOpaqueSecret()");
-                return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, newData);
-            }
+                {
+                    _logger.LogInformation($"Attempting to update opaque secret {secretName} in namespace {namespaceName}");
+                    _logger.LogTrace("Calling UpdateOpaqueSecret()");
+                    return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, newData);
+                }
             // case "tls_secret" when !overwrite:
             //     var errMsg = "Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.";
             //     Logger.LogError(errMsg);
             //     Logger.LogTrace("Exiting UpdateSecretStore()");
             //     throw new Exception(errMsg);
             case "tls_secret":
-            {
-                _logger.LogInformation($"Attempting to update tls secret {secretName} in namespace {namespaceName}");
-                _logger.LogTrace("Calling ReplaceNamespacedSecret()");
-                var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
-                _logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
-                _logger.LogTrace("Exiting UpdateSecretStore()");
-                return secretResponse;
-            }
+                {
+                    _logger.LogInformation($"Attempting to update tls secret {secretName} in namespace {namespaceName}");
+                    _logger.LogTrace("Calling ReplaceNamespacedSecret()");
+                    var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
+                    _logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
+                    _logger.LogTrace("Exiting UpdateSecretStore()");
+                    return secretResponse;
+                }
             default:
                 var dErrMsg =
                     $"Secret type not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.";

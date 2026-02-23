@@ -429,131 +429,131 @@ internal class Program
                                 case "Add":
                                 case "add":
                                 case "a":
-                                {
-                                    // Get from env var TEST_PKEY_PASSWORD or prompt for it if not set
-                                    var testPrivateKeyPwd = Environment.GetEnvironmentVariable("TEST_PKEY_PASSWORD") ??
-                                                            testCase.JobConfig.JobCertificate.PrivateKeyPassword;
-                                    var privateKeyPwd = testPrivateKeyPwd;
-                                    if (string.IsNullOrEmpty(testPrivateKeyPwd) &&
-                                        isManualTest) //Only prompt on explicit set of TEST_USE_PKEY_PASS and that password has not been provided
                                     {
+                                        // Get from env var TEST_PKEY_PASSWORD or prompt for it if not set
+                                        var testPrivateKeyPwd = Environment.GetEnvironmentVariable("TEST_PKEY_PASSWORD") ??
+                                                                testCase.JobConfig.JobCertificate.PrivateKeyPassword;
+                                        var privateKeyPwd = testPrivateKeyPwd;
+                                        if (string.IsNullOrEmpty(testPrivateKeyPwd) &&
+                                            isManualTest) //Only prompt on explicit set of TEST_USE_PKEY_PASS and that password has not been provided
+                                        {
+                                            Console.WriteLine(
+                                                "Enter private key password or leave blank if no private key");
+                                            privateKeyPwd = Console.ReadLine();
+                                        }
+                                        else
+                                        {
+                                            Console.WriteLine(
+                                                "Using Private Key Password from env var 'TEST_PKEY_PASSWORD'");
+                                            Console.WriteLine("Password: " + testPrivateKeyPwd);
+                                        }
+
+                                        var isOverwriteStr = Environment.GetEnvironmentVariable("TEST_JOB_OVERWRITE") ??
+                                                             "true";
+                                        var isOverwrite = !string.IsNullOrEmpty(isOverwriteStr) &&
+                                                          bool.Parse(isOverwriteStr);
+                                        if (string.IsNullOrEmpty(isOverwriteStr) && isManualTest)
+                                        {
+                                            Console.WriteLine("Overwrite? Enter true or false");
+                                            isOverwriteStr = Console.ReadLine();
+                                            isOverwrite = bool.Parse(isOverwriteStr);
+                                        }
+
+                                        var certAlias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ??
+                                                        testCase.JobConfig.JobCertificate.Alias;
+                                        if (string.IsNullOrEmpty(certAlias) && isManualTest)
+                                        {
+                                            Console.WriteLine("Enter cert alias. This is usually the cert thumbprint.");
+                                            certAlias = Console.ReadLine();
+                                        }
+
+                                        var isTrustedRootStr = Environment.GetEnvironmentVariable("TEST_IS_TRUSTED_ROOT") ??
+                                                               "false";
+                                        var isTrustedRoot = !string.IsNullOrEmpty(isTrustedRootStr) &&
+                                                            bool.Parse(isTrustedRootStr);
+                                        if (string.IsNullOrEmpty(isTrustedRootStr) && isManualTest)
+                                        {
+                                            Console.WriteLine("Trusted Root? Enter true or false");
+                                            isTrustedRootStr = Console.ReadLine();
+                                            isTrustedRoot = bool.Parse(isTrustedRootStr);
+                                        }
+
+                                        var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
+
+                                        var jobConfig = GetJobManagementConfiguration(
+                                            JsonConvert.SerializeObject(testCase.JobConfig),
+                                            certAlias,
+                                            privateKeyPwd,
+                                            isOverwrite,
+                                            isTrustedRoot
+                                        );
+
+                                        jobResult = mgmt.ProcessJob(jobConfig);
+                                        if (testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Success)
+                                        {
+                                            testOutputDict[testCase.TestName] =
+                                                $"Failure - {jobResult.FailureMessage} This test case was expected to fail but succeeded.";
+                                            Console.ForegroundColor = ConsoleColor.Red;
+                                            hasFailure = true;
+                                        }
+                                        else if (!testCase.Fail &&
+                                                 jobResult.Result == OrchestratorJobStatusJobResult.Failure)
+                                        {
+                                            testOutputDict[testCase.TestName] =
+                                                $"Failure - {jobResult.FailureMessage} This test case was expected to succeed but failed.";
+                                            Console.ForegroundColor = ConsoleColor.Red;
+                                            hasFailure = true;
+                                        }
+                                        else
+                                        {
+                                            testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
+                                            Console.ForegroundColor = ConsoleColor.Green;
+                                        }
+
                                         Console.WriteLine(
-                                            "Enter private key password or leave blank if no private key");
-                                        privateKeyPwd = Console.ReadLine();
-                                    }
-                                    else
-                                    {
-                                        Console.WriteLine(
-                                            "Using Private Key Password from env var 'TEST_PKEY_PASSWORD'");
-                                        Console.WriteLine("Password: " + testPrivateKeyPwd);
-                                    }
+                                            $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{jobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{jobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
 
-                                    var isOverwriteStr = Environment.GetEnvironmentVariable("TEST_JOB_OVERWRITE") ??
-                                                         "true";
-                                    var isOverwrite = !string.IsNullOrEmpty(isOverwriteStr) &&
-                                                      bool.Parse(isOverwriteStr);
-                                    if (string.IsNullOrEmpty(isOverwriteStr) && isManualTest)
-                                    {
-                                        Console.WriteLine("Overwrite? Enter true or false");
-                                        isOverwriteStr = Console.ReadLine();
-                                        isOverwrite = bool.Parse(isOverwriteStr);
+                                        Console.ResetColor();
+                                        break;
                                     }
-
-                                    var certAlias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ??
-                                                    testCase.JobConfig.JobCertificate.Alias;
-                                    if (string.IsNullOrEmpty(certAlias) && isManualTest)
-                                    {
-                                        Console.WriteLine("Enter cert alias. This is usually the cert thumbprint.");
-                                        certAlias = Console.ReadLine();
-                                    }
-
-                                    var isTrustedRootStr = Environment.GetEnvironmentVariable("TEST_IS_TRUSTED_ROOT") ??
-                                                           "false";
-                                    var isTrustedRoot = !string.IsNullOrEmpty(isTrustedRootStr) &&
-                                                        bool.Parse(isTrustedRootStr);
-                                    if (string.IsNullOrEmpty(isTrustedRootStr) && isManualTest)
-                                    {
-                                        Console.WriteLine("Trusted Root? Enter true or false");
-                                        isTrustedRootStr = Console.ReadLine();
-                                        isTrustedRoot = bool.Parse(isTrustedRootStr);
-                                    }
-
-                                    var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
-
-                                    var jobConfig = GetJobManagementConfiguration(
-                                        JsonConvert.SerializeObject(testCase.JobConfig),
-                                        certAlias,
-                                        privateKeyPwd,
-                                        isOverwrite,
-                                        isTrustedRoot
-                                    );
-
-                                    jobResult = mgmt.ProcessJob(jobConfig);
-                                    if (testCase.Fail && jobResult.Result == OrchestratorJobStatusJobResult.Success)
-                                    {
-                                        testOutputDict[testCase.TestName] =
-                                            $"Failure - {jobResult.FailureMessage} This test case was expected to fail but succeeded.";
-                                        Console.ForegroundColor = ConsoleColor.Red;
-                                        hasFailure = true;
-                                    }
-                                    else if (!testCase.Fail &&
-                                             jobResult.Result == OrchestratorJobStatusJobResult.Failure)
-                                    {
-                                        testOutputDict[testCase.TestName] =
-                                            $"Failure - {jobResult.FailureMessage} This test case was expected to succeed but failed.";
-                                        Console.ForegroundColor = ConsoleColor.Red;
-                                        hasFailure = true;
-                                    }
-                                    else
-                                    {
-                                        testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
-                                        Console.ForegroundColor = ConsoleColor.Green;
-                                    }
-
-                                    Console.WriteLine(
-                                        $"Job Hist ID:{jobResult.JobHistoryId}\nStorePath:{jobConfig.CertificateStoreDetails.StorePath}\nStore Properties:\n{jobConfig.CertificateStoreDetails.Properties}\nMessage: {jobResult.FailureMessage}\nResult: {jobResult.Result}");
-
-                                    Console.ResetColor();
-                                    break;
-                                }
                                 case "Remove":
                                 case "remove":
                                 case "rem":
                                 case "r":
-                                {
-                                    // Get alias from env TEST_CERT_REMOVE_ALIAS or prompt for it if not set
-                                    var alias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ??
-                                                testCase.JobConfig.JobCertificate.Thumbprint?.ToString() ??
-                                                testCase.JobConfig.JobCertificate.Alias;
-                                    if (string.IsNullOrEmpty(alias) && isManualTest)
                                     {
-                                        Console.WriteLine("Alias Enter Alias Name");
-                                        alias = Console.ReadLine();
+                                        // Get alias from env TEST_CERT_REMOVE_ALIAS or prompt for it if not set
+                                        var alias = Environment.GetEnvironmentVariable("TEST_CERT_ALIAS") ??
+                                                    testCase.JobConfig.JobCertificate.Thumbprint?.ToString() ??
+                                                    testCase.JobConfig.JobCertificate.Alias;
+                                        if (string.IsNullOrEmpty(alias) && isManualTest)
+                                        {
+                                            Console.WriteLine("Alias Enter Alias Name");
+                                            alias = Console.ReadLine();
+                                        }
+
+                                        var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
+
+                                        var jobConfig =
+                                            GetJobManagementConfiguration(JsonConvert.SerializeObject(testCase.JobConfig),
+                                                alias);
+
+                                        jobResult = mgmt.ProcessJob(jobConfig);
+                                        if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
+                                            (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
+                                        {
+                                            testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
+                                            Console.ForegroundColor = ConsoleColor.Green;
+                                        }
+                                        else
+                                        {
+                                            testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
+                                            Console.ForegroundColor = ConsoleColor.Red;
+                                            hasFailure = true;
+                                        }
+
+                                        Console.ResetColor();
+                                        break;
                                     }
-
-                                    var mgmt = CreateManagementJob(testCase.JobConfig.Capability, secretResolver.Object);
-
-                                    var jobConfig =
-                                        GetJobManagementConfiguration(JsonConvert.SerializeObject(testCase.JobConfig),
-                                            alias);
-
-                                    jobResult = mgmt.ProcessJob(jobConfig);
-                                    if (jobResult.Result == OrchestratorJobStatusJobResult.Success ||
-                                        (jobResult.Result == OrchestratorJobStatusJobResult.Failure && testCase.Fail))
-                                    {
-                                        testOutputDict[testCase.TestName] = $"Success {jobResult.FailureMessage}";
-                                        Console.ForegroundColor = ConsoleColor.Green;
-                                    }
-                                    else
-                                    {
-                                        testOutputDict[testCase.TestName] = $"Failure - {jobResult.FailureMessage}";
-                                        Console.ForegroundColor = ConsoleColor.Red;
-                                        hasFailure = true;
-                                    }
-
-                                    Console.ResetColor();
-                                    break;
-                                }
                                 default:
                                     testOutputDict[testCase.TestName] =
                                         $"Invalid Management Type {testMgmtType}. Valid types are 'Add' or 'Remove'.";

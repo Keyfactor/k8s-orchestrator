@@ -837,7 +837,7 @@ public abstract class JobBase
                 Logger.LogDebug("KubeSecretKey not found in store properties");
                 CertificateDataFieldName = "";
             }
-            
+
             if (storeProperties.ContainsKey("SeparateChain"))
             {
                 SeparateChain = storeProperties["SeparateChain"];
@@ -1503,7 +1503,7 @@ public abstract class JobBase
         Logger.LogTrace("Password length (before trimming): {Length}", storePassword.Length);
 
         // remove any trailing new line characters from the string
-        storePassword = storePassword.TrimEnd('\r','\n');
+        storePassword = storePassword.TrimEnd('\r', '\n');
         Logger.LogDebug("Store password loaded and trimmed");
         Logger.LogTrace("Password (after trimming): {Password}", LoggingUtilities.RedactPassword(storePassword));
         Logger.LogTrace("Password length (after trimming): {Length}", storePassword.Length);

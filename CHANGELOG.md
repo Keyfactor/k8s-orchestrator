@@ -1,3 +1,19 @@
+# 1.4.0
+
+## Refactoring
+- refactor(jobs): Implement store-type-based job separation pattern with dedicated job classes per store type.
+- refactor(jobs): Extract base classes (`K8SJobBase`, `InventoryBase`, `ManagementBase`, `DiscoveryBase`, `ReenrollmentBase`) to `Jobs/Base/`.
+- refactor(jobs): Move store-type-specific jobs to `Jobs/StoreTypes/<StoreType>/` directories.
+- refactor(handlers): Add `ISecretHandler` interface and `SecretHandlerFactory` for secret operation delegation.
+- refactor(services): Extract `JobConfigurationParser`, `CredentialResolver`, `CertificateProcessor`, and `InventorySubmitter` services.
+- refactor(models): Add `SecretOperationContext` and `InventoryResult` models for cleaner data flow.
+
+## Chores
+- chore(cleanup): Remove obsolete monolithic job classes (`Jobs/Inventory.cs`, `Jobs/Management.cs`, `Jobs/Discovery.cs`, `Jobs/Reenrollment.cs`).
+- chore(cleanup): Remove duplicate exception classes and unused model classes from `JobBase.cs`.
+- chore(cleanup): Remove obsolete `GetKeyBytes(X509Certificate2)` method.
+- chore(docs): Update CLAUDE.md with new architecture documentation and Makefile test targets.
+
 # 1.3.0
 
 ## Features
