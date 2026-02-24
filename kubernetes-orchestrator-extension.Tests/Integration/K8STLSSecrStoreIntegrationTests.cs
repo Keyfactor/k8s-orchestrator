@@ -7,10 +7,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
@@ -19,7 +16,7 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
-using Moq;
+using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 
@@ -30,164 +27,13 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 /// K8STLSSecr manages kubernetes.io/tls secrets with strict field names (tls.crt, tls.key, ca.crt).
 /// Tests are gated by RUN_INTEGRATION_TESTS=true environment variable.
 /// </summary>
-[Collection("Integration Tests")]
-public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
+[Collection("K8STLSSecr Integration Tests")]
+public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
 {
-    private const string TestNamespace = "keyfactor-k8stlssecr-integration-tests";
-    private static readonly string KubeconfigPath = (Environment.GetEnvironmentVariable("INTEGRATION_TEST_KUBECONFIG") ?? "~/.kube/config").Replace("~", Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-    private static readonly string ClusterContext = Environment.GetEnvironmentVariable("INTEGRATION_TEST_CONTEXT") ?? "kf-integrations";
+    protected override string TestNamespace => "keyfactor-k8stlssecr-integration-tests";
 
-    private Kubernetes _k8sClient;
-    private string _kubeconfigJson;
-    private readonly List<string> _createdSecrets = new List<string>();
-    private Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver> _mockPamResolver;
-
-    public async Task InitializeAsync()
+    public K8STLSSecrStoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        if (!File.Exists(kubeconfigPath))
-        {
-            throw new FileNotFoundException($"Kubeconfig not found at {kubeconfigPath}");
-        }
-
-        var kubeconfigContent = await File.ReadAllTextAsync(kubeconfigPath);
-        _kubeconfigJson = ConvertKubeconfigToJson(kubeconfigContent);
-
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath, currentContext: ClusterContext);
-        _k8sClient = new Kubernetes(config);
-
-        _mockPamResolver = new Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver>();
-        _mockPamResolver.Setup(x => x.Resolve(It.IsAny<string>())).Returns((string)null);
-
-        await CreateNamespaceIfNotExists();
-    }
-
-    public async Task DisposeAsync()
-    {
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        var skipCleanup = Environment.GetEnvironmentVariable("SKIP_INTEGRATION_TEST_CLEANUP");
-        if (!string.IsNullOrEmpty(skipCleanup) &&
-            skipCleanup.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        foreach (var secretName in _createdSecrets)
-        {
-            try
-            {
-                await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, TestNamespace);
-            }
-            catch (Exception)
-            {
-                // Ignore cleanup errors
-            }
-        }
-
-        _k8sClient?.Dispose();
-    }
-
-    private async Task CreateNamespaceIfNotExists()
-    {
-        try
-        {
-            await _k8sClient.CoreV1.ReadNamespaceAsync(TestNamespace);
-        }
-        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            var ns = new V1Namespace
-            {
-                Metadata = new V1ObjectMeta
-                {
-                    Name = TestNamespace,
-                    Labels = new Dictionary<string, string>
-                    {
-                        { "purpose", "integration-tests" },
-                        { "managed-by", "keyfactor-k8s-orchestrator-tests" }
-                    }
-                }
-            };
-            await _k8sClient.CoreV1.CreateNamespaceAsync(ns);
-        }
-    }
-
-    private string ConvertKubeconfigToJson(string kubeconfigContent)
-    {
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var fileContent = File.ReadAllText(kubeconfigPath);
-
-        // Detect if the file is already JSON (starts with '{')
-        if (fileContent.TrimStart().StartsWith("{"))
-        {
-            // File is already JSON, return as-is
-            return fileContent;
-        }
-
-        // File is YAML, convert using KubernetesClientConfiguration
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-            kubeconfigPath,
-            currentContext: ClusterContext);
-
-        var kubeconfigObj = new Dictionary<string, object>
-        {
-            ["kind"] = "Config",
-            ["apiVersion"] = "v1",
-            ["current-context"] = ClusterContext,
-            ["clusters"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["cluster"] = new Dictionary<string, object>
-                    {
-                        ["server"] = config.Host,
-                        ["certificate-authority-data"] = config.SslCaCerts?.Any() == true ?
-                            Convert.ToBase64String(config.SslCaCerts.First().Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert)) : null
-                    }
-                }
-            },
-            ["users"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["user"] = new Dictionary<string, object>
-                    {
-                        ["token"] = config.AccessToken,
-                        ["client-certificate-data"] = config.ClientCertificateData,
-                        ["client-key-data"] = config.ClientCertificateKeyData
-                    }
-                }
-            },
-            ["contexts"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["context"] = new Dictionary<string, object>
-                    {
-                        ["cluster"] = ClusterContext,
-                        ["user"] = ClusterContext,
-                        ["namespace"] = TestNamespace
-                    }
-                }
-            }
-        };
-
-        return JsonSerializer.Serialize(kubeconfigObj);
     }
 
     private async Task<V1Secret> CreateTestTlsSecret(string name, KeyType keyType = KeyType.Rsa2048, bool includeChain = false)
@@ -212,17 +58,13 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = name,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(name),
             Type = "kubernetes.io/tls",
             Data = data
         };
 
-        var created = await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
-        _createdSecrets.Add(name);
+        var created = await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        TrackSecret(name);
         return created;
     }
 
@@ -245,11 +87,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -276,11 +118,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -307,11 +149,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -330,7 +172,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-add-new-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Management Test Add");
         var pfxPassword = "testpassword";
@@ -353,12 +195,12 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             Overwrite = false
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -368,11 +210,19 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify secret was created with correct type
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.Equal("kubernetes.io/tls", secret.Type);
-        Assert.True(secret.Data.ContainsKey("tls.crt"));
-        Assert.True(secret.Data.ContainsKey("tls.key"));
+
+        // Verify required fields exist for TLS secrets
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "TLS secret should contain tls.crt");
+        Assert.True(secret.Data.ContainsKey("tls.key"), "TLS secret should contain tls.key");
+
+        // Verify field contents are valid PEM format
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var tlsKeyData = Encoding.UTF8.GetString(secret.Data["tls.key"]);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", tlsCrtData);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", tlsKeyData);
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
@@ -397,11 +247,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -416,7 +266,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
     {
         // Arrange - Test that when SeparateChain=false, the chain is bundled into tls.crt
         var secretName = $"test-bundled-chain-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
         var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
@@ -449,12 +299,12 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\",\"IncludeCertChain\":true,\"SeparateChain\":false}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             Overwrite = false
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -464,7 +314,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify secret was created with bundled chain in tls.crt
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.Equal("kubernetes.io/tls", secret.Type);
 
@@ -486,7 +336,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
     {
         // Arrange - Test that when SeparateChain=true (default), the chain goes to ca.crt
         var secretName = $"test-separate-chain-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
         var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
@@ -519,12 +369,12 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\",\"IncludeCertChain\":true,\"SeparateChain\":true}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             Overwrite = false
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -534,7 +384,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify secret was created with separate ca.crt
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.Equal("kubernetes.io/tls", secret.Type);
 
@@ -572,7 +422,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
             Capability = "K8STLSSecr",
             ClientMachine = TestNamespace,
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             JobProperties = new Dictionary<string, object>
             {
@@ -582,7 +432,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        var discovery = new Discovery(_mockPamResolver.Object);
+        var discovery = new Discovery(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
@@ -612,11 +462,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = "{\"KubeSecretType\":\"tls_secret\"}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -642,7 +492,7 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
         await CreateTestTlsSecret(secretName, KeyType.Rsa2048);
 
         // Act - Read back the secret
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
 
         // Assert - Verify it matches native K8S TLS secret format
         Assert.Equal("kubernetes.io/tls", secret.Type);
@@ -660,52 +510,13 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
 
     #region Key Type Coverage Tests
 
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_Rsa2048Certificate_AddAndInventory_Success()
+    [SkipUnlessTheory(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    [MemberData(nameof(KeyTypeTestData.AllKeyTypes), MemberType = typeof(KeyTypeTestData))]
+    public async Task Management_Certificate_AddAndInventory_Success(KeyType keyType)
     {
-        var secretName = $"test-rsa2048-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.Rsa2048);
-    }
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_Rsa4096Certificate_AddAndInventory_Success()
-    {
-        var secretName = $"test-rsa4096-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.Rsa4096);
-    }
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_EcP256Certificate_AddAndInventory_Success()
-    {
-        var secretName = $"test-ecp256-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.EcP256);
-    }
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_EcP384Certificate_AddAndInventory_Success()
-    {
-        var secretName = $"test-ecp384-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.EcP384);
-    }
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_EcP521Certificate_AddAndInventory_Success()
-    {
-        var secretName = $"test-ecp521-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.EcP521);
-    }
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_Ed25519Certificate_AddAndInventory_Success()
-    {
-        var secretName = $"test-ed25519-tls-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
-        await AddAndInventoryCertificate(secretName, KeyType.Ed25519);
+        var secretName = $"test-{keyType.ToString().ToLowerInvariant()}-tls-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        await AddAndInventoryCertificate(secretName, keyType);
     }
 
     private async Task AddAndInventoryCertificate(string secretName, KeyType keyType)
@@ -733,19 +544,19 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             Overwrite = false
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
         var addResult = await Task.Run(() => management.ProcessJob(addJobConfig));
 
         Assert.True(addResult.Result == OrchestratorJobStatusJobResult.Success,
             $"Add {keyType} certificate expected Success but got {addResult.Result}. FailureMessage: {addResult.FailureMessage}");
 
         // Verify secret was created
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.Equal("kubernetes.io/tls", secret.Type);
 
@@ -760,11 +571,11 @@ public class K8STLSSecrStoreIntegrationTests : IAsyncLifetime
                 Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
         var invResult = await Task.Run(() => inventory.ProcessJob(invJobConfig, (inventoryItems) => true));
 
         Assert.True(invResult.Result == OrchestratorJobStatusJobResult.Success,

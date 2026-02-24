@@ -7,20 +7,17 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
-using System.Text.Json;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
-using Moq;
+using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 
@@ -32,180 +29,13 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 /// Uses ~/.kube/config with kf-integrations context.
 /// All resources are cleaned up after tests.
 /// </summary>
-[Collection("Integration Tests")]
-public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
+[Collection("K8SPKCS12 Integration Tests")]
+public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
 {
-    private const string TestNamespace = "keyfactor-k8spkcs12-integration-tests";
-    private static readonly string KubeconfigPath = (Environment.GetEnvironmentVariable("INTEGRATION_TEST_KUBECONFIG") ?? "~/.kube/config").Replace("~", Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-    private static readonly string ClusterContext = Environment.GetEnvironmentVariable("INTEGRATION_TEST_CONTEXT") ?? "kf-integrations";
+    protected override string TestNamespace => "keyfactor-k8spkcs12-integration-tests";
 
-    private Kubernetes _k8sClient;
-    private KubeCertificateManagerClient _kubeClientWrapper;
-    private string _kubeconfigJson;
-    private readonly List<string> _createdSecrets = new List<string>();
-    private Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver> _mockPamResolver;
-
-    public async Task InitializeAsync()
+    public K8SPKCS12StoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
-        // Skip initialization if not running integration tests
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        // Load kubeconfig from standard location
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        if (!File.Exists(kubeconfigPath))
-        {
-            throw new FileNotFoundException($"Kubeconfig not found at {kubeconfigPath}");
-        }
-
-        var kubeconfigContent = await File.ReadAllTextAsync(kubeconfigPath);
-        _kubeconfigJson = ConvertKubeconfigToJson(kubeconfigContent);
-
-        // Initialize Kubernetes client
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath, currentContext: ClusterContext);
-        _k8sClient = new Kubernetes(config);
-
-        // Initialize wrapper client
-        _kubeClientWrapper = new KubeCertificateManagerClient(_kubeconfigJson);
-
-        // Initialize mock PAM resolver (returns null for all password lookups, meaning use provided passwords)
-        _mockPamResolver = new Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver>();
-        _mockPamResolver.Setup(x => x.Resolve(It.IsAny<string>())).Returns((string)null);
-
-        // Create test namespace if it doesn't exist
-        await CreateNamespaceIfNotExists();
-    }
-
-    public async Task DisposeAsync()
-    {
-        // Skip cleanup if not running integration tests
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        // Skip cleanup if user wants to manually inspect secrets
-        var skipCleanup = Environment.GetEnvironmentVariable("SKIP_INTEGRATION_TEST_CLEANUP");
-        if (!string.IsNullOrEmpty(skipCleanup) &&
-            skipCleanup.Equals("true", StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        // Clean up all created secrets
-        foreach (var secretName in _createdSecrets)
-        {
-            try
-            {
-                await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, TestNamespace);
-            }
-            catch (Exception)
-            {
-                // Ignore cleanup errors
-            }
-        }
-
-        // Optionally delete the test namespace (commented out to preserve for inspection)
-        // await _k8sClient.CoreV1.DeleteNamespaceAsync(TestNamespace);
-
-        _k8sClient?.Dispose();
-    }
-
-    private async Task CreateNamespaceIfNotExists()
-    {
-        try
-        {
-            await _k8sClient.CoreV1.ReadNamespaceAsync(TestNamespace);
-        }
-        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            var ns = new V1Namespace
-            {
-                Metadata = new V1ObjectMeta
-                {
-                    Name = TestNamespace,
-                    Labels = new Dictionary<string, string>
-                    {
-                        { "purpose", "integration-tests" },
-                        { "managed-by", "keyfactor-k8s-orchestrator-tests" }
-                    }
-                }
-            };
-            await _k8sClient.CoreV1.CreateNamespaceAsync(ns);
-        }
-    }
-
-    private string ConvertKubeconfigToJson(string kubeconfigContent)
-    {
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var fileContent = File.ReadAllText(kubeconfigPath);
-
-        // Detect if the file is already JSON (starts with '{')
-        if (fileContent.TrimStart().StartsWith("{"))
-        {
-            // File is already JSON, return as-is
-            return fileContent;
-        }
-
-        // File is YAML, convert using KubernetesClientConfiguration
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-            kubeconfigPath,
-            currentContext: ClusterContext);
-
-        // Build a minimal kubeconfig JSON structure using Dictionary to support hyphenated property names
-        var kubeconfigObj = new Dictionary<string, object>
-        {
-            ["kind"] = "Config",
-            ["apiVersion"] = "v1",
-            ["current-context"] = ClusterContext,  // FIXED: Use hyphenated property name
-            ["clusters"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["cluster"] = new Dictionary<string, object>
-                    {
-                        ["server"] = config.Host,
-                        ["certificate-authority-data"] = config.SslCaCerts?.Any() == true ?
-                            Convert.ToBase64String(config.SslCaCerts.First().Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert)) : null
-                    }
-                }
-            },
-            ["users"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["user"] = new Dictionary<string, object>
-                    {
-                        ["token"] = config.AccessToken,
-                        ["client-certificate-data"] = config.ClientCertificateData,
-                        ["client-key-data"] = config.ClientCertificateKeyData
-                    }
-                }
-            },
-            ["contexts"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["context"] = new Dictionary<string, object>
-                    {
-                        ["cluster"] = ClusterContext,
-                        ["user"] = ClusterContext,
-                        ["namespace"] = TestNamespace
-                    }
-                }
-            }
-        };
-
-        return JsonSerializer.Serialize(kubeconfigObj);
     }
 
     #region Inventory Tests
@@ -215,18 +45,14 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-empty-pkcs12-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Integration Test Cert");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "testpassword", "testcert");
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = secretName,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(secretName),
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
@@ -234,7 +60,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Create Inventory job config
         var jobConfig = new InventoryJobConfiguration
@@ -248,11 +74,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\",\"StoreFileName\":\"keystore.pfx\"}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -268,7 +94,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-multi-pkcs12-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
         var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
@@ -285,11 +111,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = secretName,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(secretName),
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
@@ -297,7 +119,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Create Inventory job config
         var jobConfig = new InventoryJobConfiguration
@@ -311,11 +133,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\",\"StoreFileName\":\"keystore.pfx\"}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
@@ -337,7 +159,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-add-new-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "certpassword", "newcert");
@@ -363,11 +185,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Contents = pfxBase64
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -377,7 +199,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify secret was created
-        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.True(secret.Data.ContainsKey("keystore.pfx"));
         Assert.NotEmpty(secret.Data["keystore.pfx"]);
@@ -388,7 +210,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-add-existing-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         // Create existing secret with one certificate
         var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
@@ -396,11 +218,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = secretName,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(secretName),
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
@@ -408,7 +226,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Prepare new certificate to add
         var newCert = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "New Cert");
@@ -435,11 +253,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Contents = pfxBase64
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -449,7 +267,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify secret was updated
-        var updatedSecret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(updatedSecret);
         Assert.True(updatedSecret.Data.ContainsKey("keystore.pfx"));
 
@@ -471,7 +289,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-remove-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         // Create secret with two certificates
         var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
@@ -487,11 +305,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = secretName,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(secretName),
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
@@ -499,7 +313,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Create Management Remove job config
         var jobConfig = new ManagementJobConfiguration
@@ -519,11 +333,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Alias = "cert1"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -533,7 +347,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
         // Verify cert1 was removed and cert2 remains
-        var updatedSecret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         var serializer = new Pkcs12CertificateStoreSerializer(null);
         var store = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["keystore.pfx"], "/test", "storepassword");
         var aliases = store.Aliases.ToList();
@@ -552,8 +366,8 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
         // Arrange - Create multiple PKCS12 secrets
         var secret1Name = $"test-discover-1-{Guid.NewGuid():N}";
         var secret2Name = $"test-discover-2-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secret1Name);
-        _createdSecrets.Add(secret2Name);
+        TrackSecret(secret1Name);
+        TrackSecret(secret2Name);
 
         var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Discovery Test");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "testpassword");
@@ -578,7 +392,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 }
             };
 
-            await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+            await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
         }
 
         // Create Discovery job config
@@ -587,7 +401,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             Capability = "K8SPKCS12",
             ClientMachine = TestNamespace,
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true,
             JobProperties = new Dictionary<string, object>
             {
@@ -597,7 +411,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        var discovery = new Discovery(_mockPamResolver.Object);
+        var discovery = new Discovery(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
@@ -617,7 +431,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
     {
         // Arrange
         var secretName = $"test-wrong-password-{Guid.NewGuid():N}";
-        _createdSecrets.Add(secretName);
+        TrackSecret(secretName);
 
         // Create existing secret with one password
         var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing");
@@ -625,11 +439,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
 
         var secret = new V1Secret
         {
-            Metadata = new V1ObjectMeta
-            {
-                Name = secretName,
-                NamespaceProperty = TestNamespace
-            },
+            Metadata = CreateTestSecretMetadata(secretName),
             Type = "Opaque",
             Data = new Dictionary<string, byte[]>
             {
@@ -637,7 +447,7 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
             }
         };
 
-        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Try to add with wrong password
         var newCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New");
@@ -661,11 +471,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Contents = Convert.ToBase64String(pfxBytes)
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var management = new Management(_mockPamResolver.Object);
+        var management = new Management(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => management.ProcessJob(jobConfig));
@@ -694,11 +504,11 @@ public class K8SPKCS12StoreIntegrationTests : IAsyncLifetime
                 Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"password\",\"StoreFileName\":\"keystore.pfx\"}"
             },
             ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
+            ServerPassword = KubeconfigJson,
             UseSSL = true
         };
 
-        var inventory = new Inventory(_mockPamResolver.Object);
+        var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));

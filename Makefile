@@ -128,13 +128,44 @@ test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=
 
 .PHONY: test-integration-fast
 test-integration-fast: ## Run integration tests on single framework (net8.0 only, ~50% faster)
-	@source .env; \
-	source .test.env; \
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
 	dotnet test -f net8.0 --filter "FullyQualifiedName~Integration"
+
+.PHONY: test-integration-full
+test-integration-full: ## Run integration tests on all frameworks (net8.0 + net10.0)
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
+		export INTEGRATION_TEST_KUBECONFIG; \
+	fi; \
+	dotnet test --filter "FullyQualifiedName~Integration"
+
+.PHONY: test-integration-smoke-net10
+test-integration-smoke-net10: ## Run smoke tests on net10.0 only (Inventory tests)
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
+		export INTEGRATION_TEST_KUBECONFIG; \
+	fi; \
+	dotnet test -f net10.0 --filter "FullyQualifiedName~Integration&FullyQualifiedName~Inventory_"
+
+.PHONY: test-ci
+test-ci: ## Run CI-optimized tests (fast on PRs, full on main branch)
+	@if [ "$$CI_BRANCH" = "main" ] || [ "$$GITHUB_REF" = "refs/heads/main" ]; then \
+		echo "Running full test suite (main branch)..."; \
+		$(MAKE) test-integration-full; \
+	else \
+		echo "Running fast test suite (PR branch)..."; \
+		$(MAKE) test-integration-fast; \
+		$(MAKE) test-integration-smoke-net10; \
+	fi
 
 .PHONY: test-coverage
 test-coverage: ## Run tests with code coverage and generate HTML report

@@ -28,4 +28,8 @@
     <ProjectReference Include="..\kubernetes-orchestrator-extension\Keyfactor.Orchestrators.K8S.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

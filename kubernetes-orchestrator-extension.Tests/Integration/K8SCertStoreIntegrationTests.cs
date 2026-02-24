@@ -7,17 +7,17 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
+using System.Net;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
+using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
 using Moq;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
@@ -29,71 +29,57 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 /// K8SCert is READ-ONLY - only Inventory and Discovery operations are tested.
 /// No Management operations are supported for CSRs.
 /// Tests are gated by RUN_INTEGRATION_TESTS=true environment variable.
+/// Note: This test class tracks CSRs instead of secrets for cleanup.
 /// </summary>
-[Collection("Integration Tests")]
+[Collection("K8SCert Integration Tests")]
 public class K8SCertStoreIntegrationTests : IAsyncLifetime
 {
     private const string TestNamespace = "keyfactor-k8scert-integration-tests";
-    private static readonly string KubeconfigPath = (Environment.GetEnvironmentVariable("INTEGRATION_TEST_KUBECONFIG") ?? "~/.kube/config").Replace("~", Environment.GetEnvironmentVariable("HOME") ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-    private static readonly string ClusterContext = Environment.GetEnvironmentVariable("INTEGRATION_TEST_CONTEXT") ?? "kf-integrations";
 
-    private Kubernetes _k8sClient;
-    private string _kubeconfigJson;
-    private readonly List<string> _createdCsrs = new List<string>();
-    private Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver> _mockPamResolver;
+    private readonly IntegrationTestFixture _fixture;
+    private Kubernetes _k8sClient = null!;
+    private string _kubeconfigJson = string.Empty;
+    private readonly List<string> _createdCsrs = new();
+    private Mock<IPAMSecretResolver> _mockPamResolver = null!;
+
+    public K8SCertStoreIntegrationTests(IntegrationTestFixture fixture)
+    {
+        _fixture = fixture;
+    }
 
     public async Task InitializeAsync()
     {
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
+        if (!_fixture.IsEnabled)
         {
             return;
         }
 
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        if (!File.Exists(kubeconfigPath))
-        {
-            throw new FileNotFoundException($"Kubeconfig not found at {kubeconfigPath}");
-        }
-
-        var kubeconfigContent = await File.ReadAllTextAsync(kubeconfigPath);
-        _kubeconfigJson = ConvertKubeconfigToJson(kubeconfigContent);
-
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath, currentContext: ClusterContext);
-        _k8sClient = new Kubernetes(config);
-
-        _mockPamResolver = new Mock<Keyfactor.Orchestrators.Extensions.Interfaces.IPAMSecretResolver>();
-        _mockPamResolver.Setup(x => x.Resolve(It.IsAny<string>())).Returns((string)null);
+        _kubeconfigJson = _fixture.KubeconfigJson;
+        _k8sClient = _fixture.CreateK8sClient();
+        _mockPamResolver = _fixture.CreateMockPamResolver();
 
         await CreateNamespaceIfNotExists();
     }
 
     public async Task DisposeAsync()
     {
-        var runIntegrationTests = Environment.GetEnvironmentVariable("RUN_INTEGRATION_TESTS");
-        if (string.IsNullOrEmpty(runIntegrationTests) ||
-            !runIntegrationTests.Equals("true", StringComparison.OrdinalIgnoreCase))
+        if (!_fixture.IsEnabled)
         {
             return;
         }
 
-        var skipCleanup = Environment.GetEnvironmentVariable("SKIP_INTEGRATION_TEST_CLEANUP");
-        if (!string.IsNullOrEmpty(skipCleanup) &&
-            skipCleanup.Equals("true", StringComparison.OrdinalIgnoreCase))
+        if (!_fixture.SkipCleanup)
         {
-            return;
-        }
-
-        foreach (var csrName in _createdCsrs)
-        {
-            try
+            foreach (var csrName in _createdCsrs)
             {
-                await _k8sClient.CertificatesV1.DeleteCertificateSigningRequestAsync(csrName);
-            }
-            catch (Exception)
-            {
-                // Ignore cleanup errors
+                try
+                {
+                    await _k8sClient.CertificatesV1.DeleteCertificateSigningRequestAsync(csrName);
+                }
+                catch (Exception)
+                {
+                    // Ignore cleanup errors
+                }
             }
         }
 
@@ -106,7 +92,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         {
             await _k8sClient.CoreV1.ReadNamespaceAsync(TestNamespace);
         }
-        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
+        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == HttpStatusCode.NotFound)
         {
             var ns = new V1Namespace
             {
@@ -122,72 +108,6 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             };
             await _k8sClient.CoreV1.CreateNamespaceAsync(ns);
         }
-    }
-
-    private string ConvertKubeconfigToJson(string kubeconfigContent)
-    {
-        var kubeconfigPath = KubeconfigPath.Replace("~", Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
-        var fileContent = File.ReadAllText(kubeconfigPath);
-
-        // Detect if the file is already JSON (starts with '{')
-        if (fileContent.TrimStart().StartsWith("{"))
-        {
-            // File is already JSON, return as-is
-            return fileContent;
-        }
-
-        // File is YAML, convert using KubernetesClientConfiguration
-        var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-            kubeconfigPath,
-            currentContext: ClusterContext);
-
-        var kubeconfigObj = new Dictionary<string, object>
-        {
-            ["kind"] = "Config",
-            ["apiVersion"] = "v1",
-            ["current-context"] = ClusterContext,
-            ["clusters"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["cluster"] = new Dictionary<string, object>
-                    {
-                        ["server"] = config.Host,
-                        ["certificate-authority-data"] = config.SslCaCerts?.Any() == true ?
-                            Convert.ToBase64String(config.SslCaCerts.First().Export(System.Security.Cryptography.X509Certificates.X509ContentType.Cert)) : null
-                    }
-                }
-            },
-            ["users"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["user"] = new Dictionary<string, object>
-                    {
-                        ["token"] = config.AccessToken,
-                        ["client-certificate-data"] = config.ClientCertificateData,
-                        ["client-key-data"] = config.ClientCertificateKeyData
-                    }
-                }
-            },
-            ["contexts"] = new[]
-            {
-                new Dictionary<string, object>
-                {
-                    ["name"] = ClusterContext,
-                    ["context"] = new Dictionary<string, object>
-                    {
-                        ["cluster"] = ClusterContext,
-                        ["user"] = ClusterContext,
-                        ["namespace"] = TestNamespace
-                    }
-                }
-            }
-        };
-
-        return JsonSerializer.Serialize(kubeconfigObj);
     }
 
     private async Task<V1CertificateSigningRequest> CreateTestCsr(string name, bool approve = false)
