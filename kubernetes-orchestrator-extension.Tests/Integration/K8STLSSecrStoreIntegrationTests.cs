@@ -19,6 +19,7 @@ using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
+using CertificateUtilities = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities;
 
 namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 
@@ -447,6 +448,93 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     #region Error Handling Tests
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_EmptyTlsSecret_ReturnsSuccessWithEmptyInventory()
+    {
+        // Arrange - Create an empty TLS secret (exists but has no certificate data)
+        var secretName = $"test-empty-tls-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Array.Empty<byte>() },
+                { "tls.key", Array.Empty<byte>() }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Empty secrets should return success, not fail
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success for empty secret but got {result.Result}. FailureMessage: {result.FailureMessage}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_TlsSecretWithMissingTlsCrt_ReturnsSuccessWithEmptyInventory()
+    {
+        // Arrange - Create a TLS secret without tls.crt field
+        var secretName = $"test-notlscrt-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.key", Encoding.UTF8.GetBytes("-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----") }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Missing tls.crt should return success with empty inventory
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success for secret without tls.crt but got {result.Result}. FailureMessage: {result.FailureMessage}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_NonExistentTlsSecret_ReturnsFailure()
     {
         // Arrange
@@ -508,6 +596,252 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
 
     #endregion
 
+    #region Certificate Chain Inventory Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_TlsSecretWithMultipleCertsInCaCrt_ReturnsAllCertificates()
+    {
+        // Arrange - Create a TLS secret with leaf cert in tls.crt and multiple CA certs in ca.crt
+        var secretName = $"test-chain-multi-ca-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain: Root -> Sub-CA -> Leaf
+        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var leafKeyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // ca.crt contains both Sub-CA and Root-CA
+        var caCrtContent = subCaPem + rootCaPem;
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafCertPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(leafKeyPem) },
+                { "ca.crt", Encoding.UTF8.GetBytes(caCrtContent) }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        var inventoriedCerts = new List<CurrentInventoryItem>();
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoriedCerts.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Should have 3 certificates: Leaf + Sub-CA + Root-CA
+        Assert.Equal(3, inventoriedCerts.Count);
+
+        // Verify we have all three certificates by checking subjects
+        var certSubjects = inventoriedCerts.Select(c =>
+        {
+            var certBytes = Convert.FromBase64String(c.Certificates.First());
+            var parser = new Org.BouncyCastle.X509.X509CertificateParser();
+            var cert = parser.ReadCertificate(certBytes);
+            return cert.SubjectDN.ToString();
+        }).ToList();
+
+        Assert.Contains(certSubjects, s => s.Contains("Leaf"));
+        Assert.Contains(certSubjects, s => s.Contains("Intermediate") || s.Contains("Sub"));
+        Assert.Contains(certSubjects, s => s.Contains("Root"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_TlsSecretWithChainInTlsCrt_ReturnsAllCertificates()
+    {
+        // Arrange - Create a TLS secret with full chain in tls.crt (no separate ca.crt)
+        var secretName = $"test-chain-in-tlscrt-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain
+        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var leafKeyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // tls.crt contains full chain: Leaf + Sub-CA + Root
+        var tlsCrtContent = leafCertPem + subCaPem + rootCaPem;
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(tlsCrtContent) },
+                { "tls.key", Encoding.UTF8.GetBytes(leafKeyPem) }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        var inventoriedCerts = new List<CurrentInventoryItem>();
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoriedCerts.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Should have 3 certificates from the chain in tls.crt
+        Assert.Equal(3, inventoriedCerts.Count);
+    }
+
+    #endregion
+
+    #region Certificate Without Private Key Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithoutPrivateKey_DerFormat_ReturnsSuccess()
+    {
+        // Arrange - Test adding a certificate in DER format (no private key)
+        // This simulates when Command sends a certificate without private key
+        var secretName = $"test-der-nopk-tls-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate DER-encoded certificate (no private key)
+        var derCertBase64 = CertificateTestHelper.GenerateBase64DerCertificate(KeyType.Rsa2048, "DER No Private Key Test");
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "testcert-nopk",
+                PrivateKeyPassword = "", // No password since no private key
+                Contents = derCertBase64
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Should succeed even without private key (with warning)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should contain tls.crt");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithoutPrivateKey_PemFormat_ReturnsSuccess()
+    {
+        // Arrange - Test adding a certificate in PEM format (no private key)
+        var secretName = $"test-pem-nopk-tls-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate PEM-encoded certificate (no private key)
+        var pemCert = CertificateTestHelper.GeneratePemCertificateOnly(KeyType.Rsa2048, "PEM No Private Key Test");
+        var pemCertBase64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(pemCert));
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "testcert-pem-nopk",
+                PrivateKeyPassword = "", // No password since no private key
+                Contents = pemCertBase64
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Should succeed even without private key (with warning)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should contain tls.crt");
+    }
+
+    #endregion
+
     #region Key Type Coverage Tests
 
     [SkipUnlessTheory(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
@@ -524,6 +858,10 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         // Generate certificate with specified key type
         var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"KeyType Test {keyType}");
         var pfxPassword = "testpassword";
+
+        // Calculate expected thumbprint BEFORE deployment
+        var expectedThumbprint = CertificateUtilities.GetThumbprint(certInfo.Certificate);
+        var expectedSubject = certInfo.Certificate.SubjectDN.ToString();
 
         // Add certificate
         var addJobConfig = new ManagementJobConfiguration
@@ -555,10 +893,26 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         Assert.True(addResult.Result == OrchestratorJobStatusJobResult.Success,
             $"Add {keyType} certificate expected Success but got {addResult.Result}. FailureMessage: {addResult.FailureMessage}");
 
-        // Verify secret was created
+        // Verify secret was created with correct certificate
         var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.NotNull(secret);
         Assert.Equal("kubernetes.io/tls", secret.Type);
+
+        // Verify the deployed certificate matches the input certificate
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should have tls.crt field");
+        var deployedCertPem = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
+        using var reader = new System.IO.StringReader(deployedCertPem);
+        var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+        var deployedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+
+        var deployedThumbprint = CertificateUtilities.GetThumbprint(deployedCert);
+        var deployedSubject = deployedCert.SubjectDN.ToString();
+
+        Assert.True(expectedThumbprint == deployedThumbprint,
+            $"Deployed certificate thumbprint doesn't match. Expected: {expectedThumbprint}, Got: {deployedThumbprint}");
+        Assert.True(expectedSubject == deployedSubject,
+            $"Deployed certificate subject doesn't match. Expected: {expectedSubject}, Got: {deployedSubject}");
 
         // Inventory the certificate
         var invJobConfig = new InventoryJobConfiguration
@@ -576,10 +930,24 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         };
 
         var inventory = new Inventory(MockPamResolver.Object);
-        var invResult = await Task.Run(() => inventory.ProcessJob(invJobConfig, (inventoryItems) => true));
+        var inventoriedCerts = new List<CurrentInventoryItem>();
+        var invResult = await Task.Run(() => inventory.ProcessJob(invJobConfig, (inventoryItems) =>
+        {
+            inventoriedCerts.AddRange(inventoryItems);
+            return true;
+        }));
 
         Assert.True(invResult.Result == OrchestratorJobStatusJobResult.Success,
             $"Inventory {keyType} certificate expected Success but got {invResult.Result}. FailureMessage: {invResult.FailureMessage}");
+
+        // Verify inventoried certificate matches the input certificate
+        Assert.NotEmpty(inventoriedCerts);
+        var inventoriedCertBytes = Convert.FromBase64String(inventoriedCerts[0].Certificates.First());
+        var inventoriedCert = parser.ReadCertificate(inventoriedCertBytes);
+        var inventoriedThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
+
+        Assert.True(expectedThumbprint == inventoriedThumbprint,
+            $"Inventoried certificate thumbprint doesn't match. Expected: {expectedThumbprint}, Got: {inventoriedThumbprint}");
     }
 
     #endregion

@@ -592,4 +592,46 @@ public static class CertificateTestHelper
     }
 
     #endregion
+
+    #region DER/PEM Certificate Generation (No Private Key)
+
+    /// <summary>
+    /// Generates a DER-encoded certificate (no private key).
+    /// Used for testing certificate-only scenarios where Command sends certificates without private keys.
+    /// </summary>
+    /// <param name="keyType">Key type for the certificate</param>
+    /// <param name="subjectCN">Subject common name</param>
+    /// <returns>DER-encoded certificate bytes</returns>
+    public static byte[] GenerateDerCertificate(KeyType keyType = KeyType.Rsa2048, string subjectCN = "Test Certificate")
+    {
+        var certInfo = GenerateCertificate(keyType, subjectCN);
+        return certInfo.Certificate.GetEncoded();
+    }
+
+    /// <summary>
+    /// Generates a PEM-encoded certificate string (no private key).
+    /// Used for testing certificate-only scenarios.
+    /// </summary>
+    /// <param name="keyType">Key type for the certificate</param>
+    /// <param name="subjectCN">Subject common name</param>
+    /// <returns>PEM-encoded certificate string</returns>
+    public static string GeneratePemCertificateOnly(KeyType keyType = KeyType.Rsa2048, string subjectCN = "Test Certificate")
+    {
+        var certInfo = GenerateCertificate(keyType, subjectCN);
+        return ConvertCertificateToPem(certInfo.Certificate);
+    }
+
+    /// <summary>
+    /// Generates a Base64-encoded DER certificate (how Command might send it).
+    /// </summary>
+    /// <param name="keyType">Key type for the certificate</param>
+    /// <param name="subjectCN">Subject common name</param>
+    /// <returns>Base64-encoded DER certificate</returns>
+    public static string GenerateBase64DerCertificate(KeyType keyType = KeyType.Rsa2048, string subjectCN = "Test Certificate")
+    {
+        var derBytes = GenerateDerCertificate(keyType, subjectCN);
+        return Convert.ToBase64String(derBytes);
+    }
+
+    #endregion
 }

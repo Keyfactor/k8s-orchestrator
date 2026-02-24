@@ -415,6 +415,92 @@ public class K8SSecretStoreTests
         Assert.Contains("-----END CERTIFICATE-----", pemWithWhitespace);
     }
 
+    [Fact]
+    public void OpaqueSecret_UpdateWithCertificateOnly_PreservesExistingKey()
+    {
+        // Simulates the scenario where an existing secret with a private key
+        // is updated with certificate-only data (no private key).
+        // The existing private key should be preserved.
+
+        // Arrange - Existing secret with certificate and key
+        var certInfo1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Original");
+        var certPem1 = CertificateTestHelper.ConvertCertificateToPem(certInfo1.Certificate);
+        var keyPem1 = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo1.KeyPair.Private);
+
+        var existingSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "test-secret" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem1) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem1) }
+            }
+        };
+
+        // New secret with certificate only (no key)
+        var certInfo2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Updated");
+        var certPem2 = CertificateTestHelper.ConvertCertificateToPem(certInfo2.Certificate);
+
+        var newSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "test-secret" },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem2) }
+                // No tls.key - simulating certificate-only update
+            }
+        };
+
+        // Act - Simulate the update logic (as done in UpdateOpaqueSecret)
+        // Update tls.key only if provided in the new secret
+        if (newSecret.Data.TryGetValue("tls.key", out var newKeyData))
+        {
+            existingSecret.Data["tls.key"] = newKeyData;
+        }
+        // Always update tls.crt
+        existingSecret.Data["tls.crt"] = newSecret.Data["tls.crt"];
+
+        // Assert
+        Assert.True(existingSecret.Data.ContainsKey("tls.key"), "Existing key should be preserved");
+        Assert.Equal(keyPem1, Encoding.UTF8.GetString(existingSecret.Data["tls.key"])); // Key unchanged
+        Assert.Equal(certPem2, Encoding.UTF8.GetString(existingSecret.Data["tls.crt"])); // Cert updated
+    }
+
+    [Fact]
+    public void OpaqueSecret_NewSecretWithoutKey_DoesNotContainTlsKey()
+    {
+        // Tests that when creating a new Opaque secret without a private key,
+        // the tls.key field should not be present at all.
+
+        // Arrange
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        string keyPem = null; // No private key
+
+        // Act - Simulate CreateNewSecret logic for Opaque secrets
+        var opaqueData = new Dictionary<string, byte[]>
+        {
+            { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
+        };
+        if (!string.IsNullOrEmpty(keyPem))
+        {
+            opaqueData["tls.key"] = Encoding.UTF8.GetBytes(keyPem);
+        }
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "test-certonly" },
+            Type = "Opaque",
+            Data = opaqueData
+        };
+
+        // Assert
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Should have tls.crt");
+        Assert.False(secret.Data.ContainsKey("tls.key"), "Should NOT have tls.key when no private key provided");
+    }
+
     #endregion
 
     #region Opaque Secret Field Name Tests

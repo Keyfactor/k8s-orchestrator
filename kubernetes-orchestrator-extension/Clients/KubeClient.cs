@@ -21,6 +21,7 @@ using k8s.Autorest;
 using k8s.Exceptions;
 using k8s.KubeConfigModels;
 using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
@@ -1609,6 +1610,19 @@ public class KubeCertificateManagerClient
         switch (secretType)
         {
             case "secret":
+                // Opaque secrets can store certificate-only (no private key)
+                var opaqueData = new Dictionary<string, byte[]>
+                {
+                    { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
+                };
+                if (!string.IsNullOrEmpty(keyPem))
+                {
+                    opaqueData["tls.key"] = Encoding.UTF8.GetBytes(keyPem);
+                }
+                else
+                {
+                    _logger.LogDebug("No private key provided for Opaque secret - storing certificate only");
+                }
                 k8SSecretData = new V1Secret
                 {
                     Metadata = new V1ObjectMeta
@@ -1616,15 +1630,15 @@ public class KubeCertificateManagerClient
                         Name = secretName,
                         NamespaceProperty = namespaceName
                     },
-
-                    Data = new Dictionary<string, byte[]>
-                    {
-                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
-                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
-                    }
+                    Data = opaqueData
                 };
                 break;
             case "tls_secret":
+                // TLS secrets require both tls.crt and tls.key per Kubernetes specification
+                if (string.IsNullOrEmpty(keyPem))
+                {
+                    _logger.LogWarning("TLS secrets require a private key. Certificate was provided without private key - creating with empty tls.key field");
+                }
                 k8SSecretData = new V1Secret
                 {
                     Metadata = new V1ObjectMeta
@@ -1637,8 +1651,8 @@ public class KubeCertificateManagerClient
 
                     Data = new Dictionary<string, byte[]>
                     {
-                        { "tls.key", Encoding.UTF8.GetBytes(keyPem) },
-                        { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
+                        { "tls.key", Encoding.UTF8.GetBytes(keyPem ?? "") },
+                        { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
                     }
                 };
                 break;
@@ -1666,7 +1680,17 @@ public class KubeCertificateManagerClient
     {
         _logger.LogTrace("Entered UpdateOpaqueSecret()");
 
-        existingSecret.Data["tls.key"] = newSecret.Data["tls.key"];
+        // Update tls.key only if provided in the new secret (certificate-only updates don't have tls.key)
+        if (newSecret.Data.TryGetValue("tls.key", out var newKeyData))
+        {
+            existingSecret.Data["tls.key"] = newKeyData;
+        }
+        else
+        {
+            _logger.LogDebug("No private key provided in update - keeping existing tls.key if present");
+        }
+
+        // Always update tls.crt
         existingSecret.Data["tls.crt"] = newSecret.Data["tls.crt"];
 
         //check if existing secret has ca.crt and if new secret has ca.crt
@@ -2162,13 +2186,14 @@ public class KubeCertificateManagerClient
 
     /// <summary>
     /// Extracts a private key from a PKCS12 store and converts it to PEM format.
-    /// Supports RSA and EC private keys.
+    /// Supports RSA, EC, Ed25519, and Ed448 private keys.
     /// </summary>
     /// <param name="store">The PKCS12 store containing the private key.</param>
     /// <param name="password">Password for the store (currently unused, key is already decrypted).</param>
+    /// <param name="format">The desired PEM format (PKCS1 or PKCS8). Defaults to PKCS8.</param>
     /// <returns>PEM-formatted private key string.</returns>
     /// <exception cref="Exception">Thrown when no private key is found or key type is unsupported.</exception>
-    public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password)
+    public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password, PrivateKeyFormat format = PrivateKeyFormat.Pkcs8)
     {
         _logger.MethodEntry(LogLevel.Debug);
         // Get the first private key entry
@@ -2185,32 +2210,16 @@ public class KubeCertificateManagerClient
         var keyEntry = store.GetKey(alias);
         var privateKeyParams = keyEntry.Key;
 
-        // Determine key type for logging. For PKCS#8 format, we use "PRIVATE KEY" for all types.
-        var keyTypeName = privateKeyParams switch
-        {
-            RsaPrivateCrtKeyParameters => "RSA",
-            ECPrivateKeyParameters => "EC",
-            Ed25519PrivateKeyParameters => "Ed25519",
-            Ed448PrivateKeyParameters => "Ed448",
-            _ => "Unknown"
-        };
-        _logger.LogDebug("Private key type: {KeyType}", keyTypeName);
+        var keyTypeName = PrivateKeyFormatUtilities.GetAlgorithmName(privateKeyParams);
+        _logger.LogDebug("Private key type: {KeyType}, requested format: {Format}", keyTypeName, format);
 
-        // Use PKCS#8 format ("PRIVATE KEY") which supports all key types including Ed25519/Ed448
-        const string pemType = "PRIVATE KEY";
+        // Use PrivateKeyFormatUtilities to export in the requested format
+        // It will automatically fall back to PKCS8 if PKCS1 is not supported for the key type
+        var pem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(privateKeyParams, format);
 
-        // Convert the private key to PEM format
-        var sw = new StringWriter();
-        var pemWriter = new PemWriter(sw);
-        var privateKeyInfo = PrivateKeyInfoFactory.CreatePrivateKeyInfo(privateKeyParams);
-        var privateKeyBytes = privateKeyInfo.ToAsn1Object().GetEncoded();
-        var pemObject = new PemObject(pemType, privateKeyBytes);
-        pemWriter.WriteObject(pemObject);
-        pemWriter.Writer.Flush();
-
-        _logger.LogTrace("Private key: {Key}", LoggingUtilities.RedactPrivateKeyPem(sw.ToString()));
+        _logger.LogTrace("Private key: {Key}", LoggingUtilities.RedactPrivateKeyPem(pem));
         _logger.MethodExit(LogLevel.Debug);
-        return sw.ToString();
+        return pem;
     }
 
     /// <summary>

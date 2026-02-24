@@ -9,7 +9,9 @@ using System;
 using System.Collections.Generic;
 using k8s.Autorest;
 using k8s.Models;
+using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
@@ -232,9 +234,16 @@ public class Management : JobBase, IManagementJobExtension
             }
         }
 
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,
@@ -259,6 +268,64 @@ public class Management : JobBase, IManagementJobExtension
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
+    }
+
+    /// <summary>
+    /// Preserves the private key format when updating an existing secret.
+    /// Detects the existing key format and re-exports the new key in the same format.
+    /// If the new key algorithm doesn't support the existing format (e.g., Ed25519 with PKCS1),
+    /// falls back to PKCS8.
+    /// </summary>
+    /// <param name="certObj">Certificate object containing the new private key.</param>
+    /// <param name="keyFieldName">Name of the field containing the private key in the secret (e.g., "tls.key").</param>
+    /// <returns>PEM-encoded private key in the preserved format.</returns>
+    private string PreservePrivateKeyFormat(K8SJobCertificate certObj, string keyFieldName)
+    {
+        Logger.LogTrace("PreservePrivateKeyFormat called for field: {FieldName}", keyFieldName);
+
+        // Default format if we can't detect existing
+        var targetFormat = PrivateKeyFormat.Pkcs8;
+
+        try
+        {
+            // Try to read the existing secret to detect format
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue(keyFieldName, out var existingKeyBytes))
+            {
+                var existingKeyPem = Encoding.UTF8.GetString(existingKeyBytes);
+                targetFormat = PrivateKeyFormatUtilities.DetectFormat(existingKeyPem);
+                Logger.LogDebug("Detected existing private key format: {Format}", targetFormat);
+            }
+            else
+            {
+                Logger.LogDebug("No existing private key found, using default format: {Format}", targetFormat);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug("Could not read existing secret for format detection: {Message}. Using default format.", ex.Message);
+        }
+
+        // Re-export the new key in the detected/target format
+        // PrivateKeyFormatUtilities.ExportPrivateKeyAsPem handles fallback to PKCS8
+        // if the key algorithm doesn't support PKCS1 (e.g., Ed25519, Ed448)
+        var newKeyPem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(certObj.PrivateKeyParameter, targetFormat);
+
+        var newAlgorithm = PrivateKeyFormatUtilities.GetAlgorithmName(certObj.PrivateKeyParameter);
+        var actualFormat = PrivateKeyFormatUtilities.DetectFormat(newKeyPem);
+
+        if (actualFormat != targetFormat)
+        {
+            Logger.LogInformation(
+                "Private key format changed from {OldFormat} to {NewFormat} because {Algorithm} does not support {OldFormat}",
+                targetFormat, actualFormat, newAlgorithm, targetFormat);
+        }
+        else
+        {
+            Logger.LogDebug("Private key format preserved: {Format}", actualFormat);
+        }
+
+        return newKeyPem;
     }
 
     /// <summary>
@@ -608,10 +675,17 @@ public class Management : JobBase, IManagementJobExtension
 
         var keyPem = certObj.PrivateKeyPem;
         if (!string.IsNullOrEmpty(keyPem)) keyPems = new[] { keyPem };
-        
+
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,
