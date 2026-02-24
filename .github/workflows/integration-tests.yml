@@ -202,14 +202,16 @@ jobs:
           if [ "${{ needs.integration-test.result }}" == "success" ]; then
             echo "✅ All integration tests passed" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### Store Types Tested" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SJKS (Java Keystores) - 9 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SPKCS12 (PKCS12/PFX) - 9 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SCert (CSRs) - 4 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SSecret (Opaque PEM) - 8 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8STLSSecr (TLS Secrets) - 9 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SCluster (Cluster-wide) - 8 tests" >> $GITHUB_STEP_SUMMARY
-            echo "- K8SNS (Namespace) - 8 tests" >> $GITHUB_STEP_SUMMARY
+            echo "### Store Types Tested (86 total test cases)" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SJKS (Java Keystores)" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SPKCS12 (PKCS12/PFX)" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SCert (CSRs) - read-only" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SSecret (Opaque PEM) - includes all key types" >> $GITHUB_STEP_SUMMARY
+            echo "- K8STLSSecr (TLS Secrets) - includes all key types" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SCluster (Cluster-wide) - includes TLS chain tests" >> $GITHUB_STEP_SUMMARY
+            echo "- K8SNS (Namespace) - includes all key types" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Key types covered:** RSA-2048, RSA-4096, EC P-256, EC P-384, EC P-521, Ed25519" >> $GITHUB_STEP_SUMMARY
           else
             echo "❌ Integration tests failed or were cancelled" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
