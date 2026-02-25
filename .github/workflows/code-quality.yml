@@ -1,0 +1,61 @@
+name: "Code Quality Analysis"
+
+on:
+  push:
+    branches: [ "main", "release-*" ]
+  pull_request:
+    branches: [ "main", "release-*" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  packages: read
+
+jobs:
+  code-quality:
+    name: Code Quality Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Shallow clones should be disabled for better analysis
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Authenticate NuGet with GitHub Packages
+        run: dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json --name keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution
+        run: dotnet build --configuration Release --no-restore
+
+      # Run .NET Format to check code style
+      - name: Check code formatting
+        run: |
+          dotnet format --verify-no-changes --verbosity diagnostic
+        continue-on-error: true
+
+      # Run .NET Code Analysis
+      - name: Run code analysis
+        run: |
+          dotnet build --configuration Release /p:EnableNETAnalyzers=true /p:AnalysisLevel=latest /p:TreatWarningsAsErrors=false
+        continue-on-error: true
+
+      # Add summary
+      - name: Add quality summary
+        if: always()
+        run: |
+          echo "## Code Quality Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Code formatting check completed" >> $GITHUB_STEP_SUMMARY
+          echo "- Code analysis completed" >> $GITHUB_STEP_SUMMARY
