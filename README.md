@@ -107,10 +107,9 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 <details><summary>Click to expand details</summary>
 
 
-The `K8SCert` store type is used to manage Kubernetes certificates of type `certificates.k8s.io/v1`. 
+The `K8SCert` store type is used to manage Kubernetes Certificate Signing Requests (CSRs) of type `certificates.k8s.io/v1`.
 
-**NOTE**: only `inventory` and `discovery` of these resources is supported with this extension. To provision these certs use the 
-[k8s-csr-signer](https://github.com/Keyfactor/k8s-csr-signer).
+**NOTE**: Only `inventory` and `discovery` of these resources is supported with this extension. CSRs are read-only - to provision certificates through CSRs, use the [k8s-csr-signer](https://github.com/Keyfactor/k8s-csr-signer).
 
 
 
@@ -197,9 +196,7 @@ the Keyfactor Command Portal
    | ---- | ------------ | ---- | --------------------- | -------- | ----------- |
    | ServerUsername | Server Username | This should be no value or `kubeconfig` | Secret | None | 🔲 Unchecked |
    | ServerPassword | Server Password | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json | Secret | None | ✅ Checked |
-   | KubeNamespace | KubeNamespace | The K8S namespace to use to manage the K8S secret object. | String | default | 🔲 Unchecked |
-   | KubeSecretName | KubeSecretName | The name of the K8S secret object. | String |  | 🔲 Unchecked |
-   | KubeSecretType | KubeSecretType | This defaults to and must be `csr` | String | cert | ✅ Checked |
+   | KubeSecretName | KubeSecretName | The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster. | String |  | 🔲 Unchecked |
 
    The Custom Fields tab should look like this:
 
@@ -226,27 +223,11 @@ the Keyfactor Command Portal
 
 
 
-   ###### KubeNamespace
-   The K8S namespace to use to manage the K8S secret object.
-
-   ![K8SCert Custom Field - KubeNamespace](docsource/images/K8SCert-custom-field-KubeNamespace-dialog.png)
-   ![K8SCert Custom Field - KubeNamespace](docsource/images/K8SCert-custom-field-KubeNamespace-validation-options-dialog.png)
-
-
-
    ###### KubeSecretName
-   The name of the K8S secret object.
+   The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster.
 
    ![K8SCert Custom Field - KubeSecretName](docsource/images/K8SCert-custom-field-KubeSecretName-dialog.png)
    ![K8SCert Custom Field - KubeSecretName](docsource/images/K8SCert-custom-field-KubeSecretName-validation-options-dialog.png)
-
-
-
-   ###### KubeSecretType
-   This defaults to and must be `csr`
-
-   ![K8SCert Custom Field - KubeSecretType](docsource/images/K8SCert-custom-field-KubeSecretType-dialog.png)
-   ![K8SCert Custom Field - KubeSecretType](docsource/images/K8SCert-custom-field-KubeSecretType-validation-options-dialog.png)
 
 
 
@@ -1352,14 +1333,12 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
    | --------- |---------------------------------------------------------|
    | Category | Select "K8SCert" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
+   | Client Machine | The Kubernetes cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
    | ServerUsername | This should be no value or `kubeconfig` |
    | ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
-   | KubeSecretName | The name of the K8S secret object. |
-   | KubeSecretType | This defaults to and must be `csr` |
+   | KubeSecretName | The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster. |
 
 </details>
 
@@ -1382,14 +1361,12 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
    | --------- | ----------- |
    | Category | Select "K8SCert" or the customized certificate store name from the previous step. |
    | Container | Optional container to associate certificate store with. |
-   | Client Machine | This can be anything useful, recommend using the k8s cluster name or identifier. |
+   | Client Machine | The Kubernetes cluster name or identifier. |
    | Store Path |  |
    | Orchestrator | Select an approved orchestrator capable of managing `K8SCert` certificates. Specifically, one with the `K8SCert` capability. |
    | Properties.ServerUsername | This should be no value or `kubeconfig` |
    | Properties.ServerPassword | The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json |
-   | Properties.KubeNamespace | The K8S namespace to use to manage the K8S secret object. |
-   | Properties.KubeSecretName | The name of the K8S secret object. |
-   | Properties.KubeSecretType | This defaults to and must be `csr` |
+   | Properties.KubeSecretName | The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster. |
 
 3. **Import the CSV file to create the certificate stores**
 
@@ -1418,6 +1395,66 @@ Please refer to the **Universal Orchestrator (remote)** usage section ([PAM prov
 
 > The content in this section can be supplemented by the [official Command documentation](https://software.keyfactor.com/Core-OnPrem/Current/Content/ReferenceGuide/Certificate%20Stores.htm?Highlight=certificate%20store).
 
+
+### Inventory Modes
+
+K8SCert supports two inventory modes:
+
+#### Single CSR Mode (Legacy)
+
+When `KubeSecretName` is set to a specific CSR name, the store inventories only that single CSR. This is useful when you want to track a specific certificate issued through a CSR.
+
+**Configuration:**
+- `KubeSecretName`: The name of the specific CSR to inventory (e.g., `my-app-csr`)
+
+#### Cluster-Wide Mode
+
+When `KubeSecretName` is left empty or set to `*`, the store inventories ALL issued CSRs in the cluster. This provides a single-pane view of all certificates issued through Kubernetes CSRs.
+
+**Configuration:**
+- `KubeSecretName`: Leave empty or set to `*`
+
+**Note:** Only CSRs that have been approved AND have an issued certificate are included in the inventory. Pending or denied CSRs are skipped.
+
+### Store Configuration
+
+| Property | Description | Required |
+|----------|-------------|----------|
+| **Client Machine** | A descriptive name for the Kubernetes cluster | Yes |
+| **Store Path** | Can be any value (not used for CSR inventory) | Yes |
+| **Server Username** | Leave empty or set to `kubeconfig` | No |
+| **Server Password** | The kubeconfig JSON for connecting to the cluster | Yes |
+| **KubeSecretName** | CSR name for single mode, or empty/`*` for cluster-wide mode | No |
+
+### Discovery
+
+Discovery will find all CSRs in the cluster that have issued certificates and return them as potential store locations. Each discovered CSR can be added as a separate K8SCert store (single CSR mode).
+
+### Example Use Cases
+
+#### Track All Cluster Certificates
+
+Create a single K8SCert store with `KubeSecretName` empty to get visibility into all certificates issued through Kubernetes CSRs:
+
+1. Create a K8SCert store
+2. Set `Client Machine` to your cluster name
+3. Leave `KubeSecretName` empty
+4. Run inventory to see all issued CSR certificates
+
+#### Track a Specific Application Certificate
+
+Create a K8SCert store for a specific CSR:
+
+1. Create a K8SCert store
+2. Set `Client Machine` to your cluster name
+3. Set `KubeSecretName` to the CSR name (e.g., `my-app-client-cert`)
+4. Run inventory to track that specific certificate
+
+### Limitations
+
+- **Read-Only**: K8SCert does not support Add or Remove operations. CSRs must be created and approved through Kubernetes APIs or kubectl.
+- **No Private Keys**: CSR certificates do not include private keys in Kubernetes (the private key stays with the requestor).
+- **Cluster-Scoped**: CSRs are cluster-scoped resources (not namespaced).
 
 </details>
 
