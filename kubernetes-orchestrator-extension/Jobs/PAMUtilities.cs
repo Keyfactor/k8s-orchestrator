@@ -5,16 +5,38 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
+/// <summary>
+/// Utility class for Privileged Access Management (PAM) integration.
+/// Provides methods to resolve PAM-protected field values.
+/// </summary>
 internal class PAMUtilities
 {
+    /// <summary>
+    /// Attempts to resolve a PAM-protected field value using the configured PAM resolver.
+    /// PAM fields are identified by being valid JSON strings (starting with '{' and ending with '}').
+    /// </summary>
+    /// <param name="resolver">The PAM secret resolver from the orchestrator framework.</param>
+    /// <param name="logger">Logger for diagnostic output.</param>
+    /// <param name="name">Friendly name of the field being resolved (for logging).</param>
+    /// <param name="key">The field value to resolve (may be a PAM reference or plain value).</param>
+    /// <returns>
+    /// The resolved value if successful, or the original value if:
+    /// - The value is empty
+    /// - The value is not a JSON string (not PAM-protected)
+    /// - PAM resolution fails
+    /// </returns>
     internal static string ResolvePAMField(IPAMSecretResolver resolver, ILogger logger, string name, string key)
     {
         logger.LogDebug("Attempting to resolve PAM eligible field '{Name}'", name);
+        logger.LogTrace("Resolver is null: {IsNull}", resolver == null);
+        logger.LogTrace("Key is null: {IsNull}", key == null);
+
         if (string.IsNullOrEmpty(key))
         {
             logger.LogWarning("PAM field is empty, skipping PAM resolution");
@@ -24,9 +46,18 @@ internal class PAMUtilities
         // test if field is JSON string
         if (key.StartsWith("{") && key.EndsWith("}"))
         {
-            var resolved = resolver.Resolve(key);
-            if (string.IsNullOrEmpty(resolved)) logger.LogWarning("Failed to resolve PAM field {Name}", name);
-            return resolved;
+            try
+            {
+                logger.LogTrace("Calling resolver.Resolve() for field '{Name}'", name);
+                var resolved = resolver.Resolve(key);
+                logger.LogTrace("Resolver returned: {HasValue}", !string.IsNullOrEmpty(resolved));
+                if (string.IsNullOrEmpty(resolved)) logger.LogWarning("Failed to resolve PAM field {Name}", name);
+                return resolved;
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "PAM resolution failed for field '{Name}': {Message}", name, ex.Message);
+            }
         }
 
         logger.LogDebug("Field '{Name}' is not a JSON string, skipping PAM resolution", name);
