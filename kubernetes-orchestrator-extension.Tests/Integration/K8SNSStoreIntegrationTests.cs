@@ -352,6 +352,296 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
             $"Expected Success (lenient behavior for missing stores) but got {result.Result}. FailureMessage: {result.FailureMessage}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_Namespace_ReturnsCorrectPrivateKeyStatus()
+    {
+        // Arrange - Create one secret with private key and one without
+        var secretWithKey = $"test-ns-withkey-{Guid.NewGuid():N}";
+        var secretWithoutKey = $"test-ns-nokey-{Guid.NewGuid():N}";
+
+        // Create secret WITH private key
+        await CreateTestSecret(secretWithKey);
+
+        // Create secret WITHOUT private key (cert only)
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "NS No Key Test");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var secretNoKey = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretWithoutKey,
+                NamespaceProperty = TestNamespace,
+                Labels = new Dictionary<string, string>
+                {
+                    { "app.kubernetes.io/managed-by", "keyfactor-integration-tests" }
+                }
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
+                // No tls.key field
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secretNoKey, TestNamespace);
+        TrackSecret(secretWithoutKey);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace,
+                Properties = "{\"KubeSecretType\":\"namespace\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our test secrets and verify private key status
+        var withKeyItem = inventoryItems.Find(i => i.Alias.Contains(secretWithKey));
+        var noKeyItem = inventoryItems.Find(i => i.Alias.Contains(secretWithoutKey));
+
+        Assert.NotNull(withKeyItem);
+        Assert.NotNull(noKeyItem);
+        Assert.True(withKeyItem.PrivateKeyEntry, $"Secret {secretWithKey} should have PrivateKeyEntry=true");
+        Assert.False(noKeyItem.PrivateKeyEntry, $"Secret {secretWithoutKey} should have PrivateKeyEntry=false");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_Namespace_ReturnsFullCertificateChains()
+    {
+        // Arrange - Create a secret with a certificate chain
+        var secretName = $"test-ns-chain-{Guid.NewGuid():N}";
+
+        // Create secret with certificate chain (leaf + intermediate + root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Bundle all certs in tls.crt field
+        var bundledCertPem = leafCertPem + intermediatePem + rootPem;
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretName,
+                NamespaceProperty = TestNamespace,
+                Labels = new Dictionary<string, string>
+                {
+                    { "app.kubernetes.io/managed-by", "keyfactor-integration-tests" }
+                }
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(bundledCertPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+        TrackSecret(secretName);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace,
+                Properties = "{\"KubeSecretType\":\"namespace\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our chain secret
+        var chainItem = inventoryItems.Find(i => i.Alias.Contains(secretName));
+        Assert.NotNull(chainItem);
+
+        // Should have 3 certificates (leaf + intermediate + root)
+        Assert.True(chainItem.Certificates.Count() >= 3,
+            $"Expected at least 3 certificates in chain but got {chainItem.Certificates.Count()}");
+        Assert.True(chainItem.UseChainLevel,
+            "UseChainLevel should be true for secrets with certificate chains");
+    }
+
+    #endregion
+
+    #region KubeNamespace Property Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_KubeNamespaceProperty_TakesPriorityOverStorePath()
+    {
+        // This test verifies that when KubeNamespace is set in store properties,
+        // it takes priority over the StorePath value for determining which namespace
+        // to inventory. This was a bug where StorePath "default" would overwrite
+        // the configured KubeNamespace.
+
+        // Arrange - Create a secret in our test namespace
+        var secretName = $"test-ns-priority-{Guid.NewGuid():N}";
+        await CreateTestSecret(secretName);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Configure with StorePath="default" but KubeNamespace=TestNamespace
+        // The inventory should use KubeNamespace (TestNamespace), NOT StorePath (default)
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = "default", // This should be ignored when KubeNamespace is set
+                Properties = $"{{\"KubeSecretType\":\"namespace\",\"KubeNamespace\":\"{TestNamespace}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify we got secrets from the configured KubeNamespace (TestNamespace), not "default"
+        var ourSecret = inventoryItems.Find(i => i.Alias.Contains(secretName));
+        Assert.NotNull(ourSecret);
+
+        // The secret should be found in TestNamespace, proving KubeNamespace was used
+        Assert.Contains(TestNamespace, ourSecret.Alias);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_KubeNamespacePropertyWithWhitespace_IsTrimmed()
+    {
+        // Verify that leading/trailing whitespace in KubeNamespace property is trimmed
+
+        // Arrange
+        var secretName = $"test-ns-whitespace-{Guid.NewGuid():N}";
+        await CreateTestSecret(secretName);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Add whitespace around the namespace value - this should be trimmed
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace,
+                Properties = $"{{\"KubeSecretType\":\"namespace\",\"KubeNamespace\":\" {TestNamespace} \"}}" // Note the spaces
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert - Should succeed despite whitespace
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our test secret to verify correct namespace was used
+        var ourSecret = inventoryItems.Find(i => i.Alias.Contains(secretName));
+        Assert.NotNull(ourSecret);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_EmptyKubeNamespaceProperty_FallsBackToStorePath()
+    {
+        // When KubeNamespace property is empty, StorePath should be used as namespace
+
+        // Arrange
+        var secretName = $"test-ns-fallback-{Guid.NewGuid():N}";
+        await CreateTestSecret(secretName);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // KubeNamespace is empty, so StorePath (TestNamespace) should be used
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace, // This should be used when KubeNamespace is empty
+                Properties = "{\"KubeSecretType\":\"namespace\",\"KubeNamespace\":\"\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our test secret
+        var ourSecret = inventoryItems.Find(i => i.Alias.Contains(secretName));
+        Assert.NotNull(ourSecret);
+    }
+
     #endregion
 
     #region Multiple Secret Type Tests

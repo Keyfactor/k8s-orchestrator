@@ -871,6 +871,55 @@ csr-create-batch: ## Create multiple test CSRs (usage: make csr-create-batch [CO
 	done; \
 	echo "=== Created $$COUNT CSRs ==="
 
+.PHONY: csr-create-with-chain
+csr-create-with-chain: ## Create a CSR with a certificate chain (for testing chain handling)
+	@NAME=$${NAME:-test-chain-csr-$$(date +%s)}; \
+	TMPDIR=$$(mktemp -d); \
+	echo "=== Creating CSR with certificate chain: $$NAME ==="; \
+	echo "Generating test CA chain (root -> intermediate -> leaf)..."; \
+	openssl genrsa -out $$TMPDIR/root-ca.key 2048 2>/dev/null; \
+	openssl req -x509 -new -nodes -key $$TMPDIR/root-ca.key -sha256 -days 365 \
+		-out $$TMPDIR/root-ca.pem -subj "/CN=Test Root CA" 2>/dev/null; \
+	openssl genrsa -out $$TMPDIR/intermediate-ca.key 2048 2>/dev/null; \
+	openssl req -new -key $$TMPDIR/intermediate-ca.key \
+		-out $$TMPDIR/intermediate-ca.csr -subj "/CN=Test Intermediate CA" 2>/dev/null; \
+	openssl x509 -req -in $$TMPDIR/intermediate-ca.csr -CA $$TMPDIR/root-ca.pem \
+		-CAkey $$TMPDIR/root-ca.key -CAcreateserial -out $$TMPDIR/intermediate-ca.pem \
+		-days 365 -sha256 2>/dev/null; \
+	openssl genrsa -out $$TMPDIR/leaf.key 2048 2>/dev/null; \
+	openssl req -new -key $$TMPDIR/leaf.key \
+		-out $$TMPDIR/leaf.csr -subj "/CN=Test Leaf Certificate" 2>/dev/null; \
+	openssl x509 -req -in $$TMPDIR/leaf.csr -CA $$TMPDIR/intermediate-ca.pem \
+		-CAkey $$TMPDIR/intermediate-ca.key -CAcreateserial -out $$TMPDIR/leaf.pem \
+		-days 365 -sha256 2>/dev/null; \
+	cat $$TMPDIR/leaf.pem $$TMPDIR/intermediate-ca.pem $$TMPDIR/root-ca.pem > $$TMPDIR/chain.pem; \
+	echo "Creating K8S CSR with custom signer (to allow manual certificate injection)..."; \
+	CSR_BASE64=$$(cat $$TMPDIR/leaf.csr | base64 | tr -d '\n'); \
+	printf 'apiVersion: certificates.k8s.io/v1\nkind: CertificateSigningRequest\nmetadata:\n  name: %s\nspec:\n  request: %s\n  signerName: keyfactor.com/test-signer\n  usages:\n  - client auth\n' "$$NAME" "$$CSR_BASE64" | kubectl apply -f -; \
+	echo "Approving CSR..."; \
+	kubectl certificate approve $$NAME; \
+	sleep 1; \
+	echo "Injecting certificate chain (3 certs: leaf + intermediate + root)..."; \
+	CHAIN_BASE64=$$(cat $$TMPDIR/chain.pem | base64 | tr -d '\n'); \
+	kubectl patch csr $$NAME --type=json --subresource=status \
+		-p "[{\"op\": \"add\", \"path\": \"/status/certificate\", \"value\": \"$$CHAIN_BASE64\"}]"; \
+	rm -rf $$TMPDIR; \
+	echo ""; \
+	echo "=== CSR created with 3-certificate chain: $$NAME ==="; \
+	kubectl get csr $$NAME -o jsonpath='{.status.certificate}' | base64 -d | grep -c "BEGIN CERTIFICATE" | xargs -I{} echo "Certificate count: {}"; \
+	echo "To view chain: kubectl get csr $$NAME -o jsonpath='{.status.certificate}' | base64 -d"
+
+.PHONY: csr-create-batch-with-chain
+csr-create-batch-with-chain: ## Create multiple CSRs with certificate chains (usage: make csr-create-batch-with-chain [COUNT=3])
+	@COUNT=$${COUNT:-3}; \
+	echo "=== Creating $$COUNT CSRs with certificate chains ==="; \
+	for i in $$(seq 1 $$COUNT); do \
+		NAME="test-chain-csr-$$i-$$(date +%s)"; \
+		$(MAKE) csr-create-with-chain NAME=$$NAME; \
+		echo ""; \
+	done; \
+	echo "=== Created $$COUNT CSRs with chains ==="
+
 ##@ Build
 
 .PHONY: build

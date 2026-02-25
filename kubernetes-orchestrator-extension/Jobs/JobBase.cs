@@ -866,11 +866,20 @@ public abstract class JobBase
         switch (sPathParts.Length)
         {
             case 1 when IsNamespaceStore(Capability):
-                Logger.LogInformation(
-                    "Store is of type `K8SNS` and `StorePath` is length 1; setting `KubeSecretName` to empty and `KubeNamespace` to `StorePath`");
-
                 KubeSecretName = "";
-                KubeNamespace = sPathParts[0];
+                if (string.IsNullOrEmpty(KubeNamespace))
+                {
+                    Logger.LogInformation(
+                        "Store is of type `K8SNS` and `StorePath` is length 1; `KubeNamespace` is empty, setting `KubeNamespace` to `StorePath` value `{StorePath}`",
+                        sPathParts[0]);
+                    KubeNamespace = sPathParts[0];
+                }
+                else
+                {
+                    Logger.LogInformation(
+                        "Store is of type `K8SNS` and `StorePath` is length 1; `KubeNamespace` is already set to `{KubeNamespace}`, ignoring `StorePath` value `{StorePath}`",
+                        KubeNamespace, sPathParts[0]);
+                }
                 break;
             case 1 when IsClusterStore(Capability):
                 Logger.LogInformation(
@@ -1090,15 +1099,15 @@ public abstract class JobBase
         {
             Logger.LogDebug("Setting K8S values from store properties");
             Logger.LogTrace("Attempting to get KubeNamespace from storeProperties");
-            KubeNamespace = storeProperties["KubeNamespace"];
-            Logger.LogTrace("KubeNamespace retrieved: {Value}", KubeNamespace ?? "null");
+            KubeNamespace = (storeProperties["KubeNamespace"]?.ToString())?.Trim();
+            Logger.LogDebug("KubeNamespace from store properties: '{Value}'", KubeNamespace ?? "(null)");
 
             Logger.LogTrace("Attempting to get KubeSecretName from storeProperties");
-            KubeSecretName = storeProperties["KubeSecretName"];
+            KubeSecretName = (storeProperties["KubeSecretName"]?.ToString())?.Trim();
             Logger.LogTrace("KubeSecretName retrieved: {Value}", KubeSecretName ?? "null");
 
             Logger.LogTrace("Attempting to get KubeSecretType from storeProperties");
-            KubeSecretType = storeProperties["KubeSecretType"];
+            KubeSecretType = (storeProperties["KubeSecretType"]?.ToString())?.Trim();
             Logger.LogTrace("KubeSecretType retrieved: {Value}", KubeSecretType ?? "null");
 
             Logger.LogTrace("Attempting to get KubeSvcCreds from storeProperties");

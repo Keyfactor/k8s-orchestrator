@@ -46,6 +46,29 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 public class Inventory : JobBase, IInventoryJobExtension
 {
     /// <summary>
+    /// Represents a single inventory entry with per-item private key status and certificate chain.
+    /// Used for K8SNS and K8SCluster inventory where each secret may have different private key status.
+    /// </summary>
+    private class InventoryEntry
+    {
+        /// <summary>The alias/identifier for this inventory item.</summary>
+        public string Alias { get; set; } = string.Empty;
+
+        /// <summary>The certificate chain (leaf cert first, then intermediates, then root).</summary>
+        public List<string> Certificates { get; set; } = new();
+
+        /// <summary>Whether this entry has a private key in the store.</summary>
+        public bool HasPrivateKey { get; set; }
+    }
+
+    /// <summary>
+    /// Stores the original KubeSecretName value from the job config properties.
+    /// This is needed for K8SCert cluster-wide mode detection because InitializeStore
+    /// may modify KubeSecretName by setting it from StorePath if empty.
+    /// </summary>
+    private string _originalKubeSecretName;
+
+    /// <summary>
     /// Initializes a new instance of the Inventory job with the specified PAM resolver.
     /// </summary>
     /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
@@ -75,9 +98,32 @@ public class Inventory : JobBase, IInventoryJobExtension
 
         try
         {
+            // For K8SCert cluster-wide mode detection, we need to capture the original KubeSecretName
+            // BEFORE InitializeStore modifies it (it may get set from StorePath if empty)
+            string originalKubeSecretName = null;
+            if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
+            {
+                try
+                {
+                    var props = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, object>>(
+                        config.CertificateStoreDetails.Properties);
+                    if (props != null && props.TryGetValue("KubeSecretName", out var val))
+                    {
+                        originalKubeSecretName = val?.ToString();
+                    }
+                }
+                catch
+                {
+                    // Ignore JSON parsing errors - will use default behavior
+                }
+            }
+
             Logger.LogDebug("Initializing store for inventory job {JobId}", config.JobId);
             InitializeStore(config);
             Logger.LogTrace("Returned from InitializeStore()");
+
+            // Store the original KubeSecretName for K8SCert cluster-wide mode detection
+            _originalKubeSecretName = originalKubeSecretName;
 
             Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
             Logger.LogInformation($"Inventory for store type: {config.Capability}");
@@ -191,7 +237,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                     var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all");
                     var errors = new List<string>();
 
-                    var clusterInventoryDict = new Dictionary<string, List<string>>();
+                    // Use List<InventoryEntry> to track per-secret private key status and full certificate chains
+                    var clusterInventoryEntries = new List<InventoryEntry>();
                     foreach (var opaqueSecret in clusterOpaqueSecrets)
                     {
                         KubeSecretName = "";
@@ -199,17 +246,38 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "secret";
                         try
                         {
-                            ResolveStorePath(opaqueSecret);
+                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
+                            // Parse the path directly since ResolveStorePath doesn't handle cluster stores with 4 parts
+                            var pathParts = opaqueSecret.Split('/');
+                            if (pathParts.Length >= 4)
+                            {
+                                // Format: cluster/namespace/secrets/secretname
+                                KubeNamespace = pathParts[1];
+                                KubeSecretName = pathParts[pathParts.Length - 1];
+                                Logger.LogDebug("Cluster inventory: Parsed namespace={Namespace}, secretName={SecretName} from path {Path}",
+                                    KubeNamespace, KubeSecretName, opaqueSecret);
+                            }
+                            else
+                            {
+                                // Fallback to ResolveStorePath for other formats
+                                ResolveStorePath(opaqueSecret);
+                            }
                             StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
                             //Split storepath by / and remove first 1 elements
                             var storePathSplit = StorePath.Split('/');
                             var storePathSplitList = storePathSplit.ToList();
                             storePathSplitList.RemoveAt(0);
-                            StorePath = string.Join("/", storePathSplitList);
+                            var alias = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleOpaqueSecretAsList(config.JobHistoryId);
-                            if (opaqueObj.Count > 0)
-                                clusterInventoryDict[StorePath] = opaqueObj;
+                            var entry = HandleOpaqueSecretAsEntry(config.JobHistoryId, alias);
+                            if (entry.Certificates.Count > 0)
+                            {
+                                clusterInventoryEntries.Add(entry);
+                                Logger.LogDebug("Cluster inventory: Added opaque secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
+                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
+                                Logger.LogTrace("Cluster inventory: Alias '{Alias}' certificate chain:\n{Chain}",
+                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -226,16 +294,38 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "tls_secret";
                         try
                         {
-                            ResolveStorePath(tlsSecret);
+                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
+                            // Parse the path directly since ResolveStorePath doesn't handle cluster stores with 4 parts
+                            var pathParts = tlsSecret.Split('/');
+                            if (pathParts.Length >= 4)
+                            {
+                                // Format: cluster/namespace/secrets/secretname
+                                KubeNamespace = pathParts[1];
+                                KubeSecretName = pathParts[pathParts.Length - 1];
+                                Logger.LogDebug("Cluster inventory: Parsed namespace={Namespace}, secretName={SecretName} from path {Path}",
+                                    KubeNamespace, KubeSecretName, tlsSecret);
+                            }
+                            else
+                            {
+                                // Fallback to ResolveStorePath for other formats
+                                ResolveStorePath(tlsSecret);
+                            }
                             StorePath = tlsSecret.Replace("secrets", "secrets/tls");
                             //Split storepath by / and remove first 1 elements
                             var storePathSplit = StorePath.Split('/');
                             var storePathSplitList = storePathSplit.ToList();
                             storePathSplitList.RemoveAt(0);
-                            StorePath = string.Join("/", storePathSplitList);
+                            var alias = string.Join("/", storePathSplitList);
 
-                            var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            clusterInventoryDict[StorePath] = tlsObj;
+                            var entry = HandleTlsSecretAsEntry(config.JobHistoryId, alias);
+                            if (entry.Certificates.Count > 0)
+                            {
+                                clusterInventoryEntries.Add(entry);
+                                Logger.LogDebug("Cluster inventory: Added TLS secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
+                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
+                                Logger.LogTrace("Cluster inventory: Alias '{Alias}' certificate chain:\n{Chain}",
+                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -245,13 +335,15 @@ public class Inventory : JobBase, IInventoryJobExtension
                         }
                     }
 
-                    return PushInventory(clusterInventoryDict, config.JobHistoryId, submitInventory, true);
+                    Logger.LogDebug("Cluster inventory complete: {Count} secrets with per-item private key status", clusterInventoryEntries.Count);
+                    return PushInventory(clusterInventoryEntries, config.JobHistoryId, submitInventory);
                 case "namespace":
                     var namespaceOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", KubeNamespace);
                     var namespaceTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", KubeNamespace);
                     var namespaceErrors = new List<string>();
 
-                    var namespaceInventoryDict = new Dictionary<string, string>();
+                    // Use List<InventoryEntry> to track per-secret private key status and full certificate chains
+                    var namespaceInventoryEntries = new List<InventoryEntry>();
                     foreach (var opaqueSecret in namespaceOpaqueSecrets)
                     {
                         KubeSecretName = "";
@@ -259,18 +351,39 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "secret";
                         try
                         {
-                            ResolveStorePath(opaqueSecret);
+                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
+                            // Parse the path directly since ResolveStorePath doesn't handle NS stores with 4 parts
+                            var pathParts = opaqueSecret.Split('/');
+                            if (pathParts.Length >= 4)
+                            {
+                                // Format: cluster/namespace/secrets/secretname
+                                // KubeNamespace is already set from store config, just need secret name
+                                KubeSecretName = pathParts[pathParts.Length - 1];
+                                Logger.LogDebug("Namespace inventory: Parsed secretName={SecretName} from path {Path}",
+                                    KubeSecretName, opaqueSecret);
+                            }
+                            else
+                            {
+                                // Fallback to ResolveStorePath for other formats
+                                ResolveStorePath(opaqueSecret);
+                            }
                             StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
                             //Split storepath by / and remove first 2 elements
                             var storePathSplit = StorePath.Split('/');
                             var storePathSplitList = storePathSplit.ToList();
                             storePathSplitList.RemoveAt(0);
                             storePathSplitList.RemoveAt(0);
-                            StorePath = string.Join("/", storePathSplitList);
+                            var alias = string.Join("/", storePathSplitList);
 
-                            var opaqueObj = HandleOpaqueSecretAsList(config.JobHistoryId);
-                            if (opaqueObj.Count > 0)
-                                namespaceInventoryDict[StorePath] = opaqueObj[0];
+                            var entry = HandleOpaqueSecretAsEntry(config.JobHistoryId, alias);
+                            if (entry.Certificates.Count > 0)
+                            {
+                                namespaceInventoryEntries.Add(entry);
+                                Logger.LogDebug("Namespace inventory: Added opaque secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
+                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
+                                Logger.LogTrace("Namespace inventory: Alias '{Alias}' certificate chain:\n{Chain}",
+                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -287,7 +400,22 @@ public class Inventory : JobBase, IInventoryJobExtension
                         KubeSecretType = "tls_secret";
                         try
                         {
-                            ResolveStorePath(tlsSecret);
+                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
+                            // Parse the path directly since ResolveStorePath doesn't handle NS stores with 4 parts
+                            var pathParts = tlsSecret.Split('/');
+                            if (pathParts.Length >= 4)
+                            {
+                                // Format: cluster/namespace/secrets/secretname
+                                // KubeNamespace is already set from store config, just need secret name
+                                KubeSecretName = pathParts[pathParts.Length - 1];
+                                Logger.LogDebug("Namespace inventory: Parsed secretName={SecretName} from path {Path}",
+                                    KubeSecretName, tlsSecret);
+                            }
+                            else
+                            {
+                                // Fallback to ResolveStorePath for other formats
+                                ResolveStorePath(tlsSecret);
+                            }
                             StorePath = tlsSecret.Replace("secrets", "secrets/tls");
 
                             //Split storepath by / and remove first 2 elements
@@ -295,11 +423,17 @@ public class Inventory : JobBase, IInventoryJobExtension
                             var storePathSplitList = storePathSplit.ToList();
                             storePathSplitList.RemoveAt(0);
                             storePathSplitList.RemoveAt(0);
-                            StorePath = string.Join("/", storePathSplitList);
+                            var alias = string.Join("/", storePathSplitList);
 
-
-                            var tlsObj = HandleTlsSecret(config.JobHistoryId);
-                            namespaceInventoryDict[StorePath] = tlsObj[0];
+                            var entry = HandleTlsSecretAsEntry(config.JobHistoryId, alias);
+                            if (entry.Certificates.Count > 0)
+                            {
+                                namespaceInventoryEntries.Add(entry);
+                                Logger.LogDebug("Namespace inventory: Added TLS secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
+                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
+                                Logger.LogTrace("Namespace inventory: Alias '{Alias}' certificate chain:\n{Chain}",
+                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
+                            }
                         }
                         catch (Exception ex)
                         {
@@ -309,7 +443,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                         }
                     }
 
-                    return PushInventory(namespaceInventoryDict, config.JobHistoryId, submitInventory, true);
+                    Logger.LogDebug("Namespace inventory complete: {Count} secrets with per-item private key status", namespaceInventoryEntries.Count);
+                    return PushInventory(namespaceInventoryEntries, config.JobHistoryId, submitInventory);
 
                 default:
                     Logger.LogError("Inventory failed with exception: " + KubeSecretType + " not supported.");
@@ -504,7 +639,13 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogTrace("submitInventory: " + submitInventory);
 
         // Determine mode: single CSR or cluster-wide
-        var isClusterWideMode = string.IsNullOrWhiteSpace(KubeSecretName) || KubeSecretName == "*";
+        // Use the ORIGINAL KubeSecretName value from job config, not the potentially modified one
+        // (InitializeStore may set KubeSecretName from StorePath if it was empty)
+        var secretNameToCheck = _originalKubeSecretName ?? KubeSecretName;
+        var isClusterWideMode = string.IsNullOrWhiteSpace(secretNameToCheck) || secretNameToCheck == "*";
+
+        Logger.LogDebug("K8SCert mode detection: originalKubeSecretName='{Original}', KubeSecretName='{Current}', isClusterWideMode={IsClusterWide}",
+            _originalKubeSecretName ?? "(null)", KubeSecretName, isClusterWideMode);
 
         if (isClusterWideMode)
         {
@@ -513,22 +654,27 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
         else
         {
-            Logger.LogDebug("Processing CSR inventory for job {JobId} - single CSR mode (name: {CsrName})", jobId, KubeSecretName);
-            return HandleCertificateSingle(jobId, submitInventory);
+            // For single CSR mode, use the original KubeSecretName if it was explicitly set
+            var csrName = !string.IsNullOrWhiteSpace(_originalKubeSecretName) ? _originalKubeSecretName : KubeSecretName;
+            Logger.LogDebug("Processing CSR inventory for job {JobId} - single CSR mode (name: {CsrName})", jobId, csrName);
+            return HandleCertificateSingle(jobId, submitInventory, csrName);
         }
     }
 
     /// <summary>
     /// Handles inventory of a single CSR by name (legacy behavior).
     /// </summary>
-    private JobResult HandleCertificateSingle(long jobId, SubmitInventoryUpdate submitInventory)
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit discovered certificates.</param>
+    /// <param name="csrName">The name of the CSR to inventory.</param>
+    private JobResult HandleCertificateSingle(long jobId, SubmitInventoryUpdate submitInventory, string csrName)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogTrace("Calling GetCertificateSigningRequestStatus for CSR '{CsrName}'...", KubeSecretName);
+        Logger.LogTrace("Calling GetCertificateSigningRequestStatus for CSR '{CsrName}'...", csrName);
 
         try
         {
-            var certificates = KubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
+            var certificates = KubeClient.GetCertificateSigningRequestStatus(csrName);
             Logger.LogDebug("GetCertificateSigningRequestStatus returned {Count} certificates.", certificates.Count());
             Logger.LogTrace(string.Join(",", certificates));
             Logger.LogDebug("Pushing {Count} certificates to inventory", certificates.Count());
@@ -542,7 +688,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace(e.ToString());
             Logger.LogTrace(e.StackTrace);
             var certDataErrorMsg =
-                $"Kubernetes CSR '{KubeSecretName}' was not found on host '{KubeClient.GetHost()}'.";
+                $"Kubernetes CSR '{csrName}' was not found on host '{KubeClient.GetHost()}'.";
             Logger.LogError(certDataErrorMsg);
             var inventoryItems = new List<CurrentInventoryItem>();
             submitInventory.Invoke(inventoryItems);
@@ -602,26 +748,37 @@ public class Inventory : JobBase, IInventoryJobExtension
 
                 try
                 {
-                    // Parse the certificate to validate it
-                    var x509Cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(certPem);
-                    if (x509Cert == null)
+                    // Parse the certificate chain - CSRs can contain multiple certificates if signed by a CA with intermediates
+                    var certChain = KubeClient.LoadCertificateChain(certPem);
+                    if (certChain == null || certChain.Count == 0)
                     {
-                        Logger.LogWarning("Failed to parse certificate from CSR {CsrName}, skipping", csrName);
+                        Logger.LogWarning("Failed to parse certificate chain from CSR {CsrName}, skipping", csrName);
                         continue;
                     }
+
+                    // Convert each certificate in the chain to PEM format
+                    var certPemList = new List<string>();
+                    foreach (var cert in certChain)
+                    {
+                        var pem = KubeClient.ConvertToPem(cert);
+                        certPemList.Add(pem);
+                    }
+
+                    Logger.LogDebug("CSR {CsrName} has {Count} certificate(s) in chain", csrName, certPemList.Count);
+                    Logger.LogTrace("CSR {CsrName} certificate chain:\n{Chain}", csrName, string.Join("\n---\n", certPemList));
 
                     // Use CSR name as the alias for easy identification
                     var inventoryItem = new CurrentInventoryItem
                     {
                         Alias = csrName,
                         PrivateKeyEntry = false, // CSRs never have private keys in K8s
-                        UseChainLevel = false,
+                        UseChainLevel = certPemList.Count > 1,
                         ItemStatus = OrchestratorInventoryItemStatus.Unknown,
-                        Certificates = new[] { certPem }
+                        Certificates = certPemList.ToArray()
                     };
 
                     inventoryItems.Add(inventoryItem);
-                    Logger.LogDebug("Added CSR {CsrName} to inventory", csrName);
+                    Logger.LogDebug("Added CSR {CsrName} to inventory with {CertCount} certificates", csrName, certPemList.Count);
                 }
                 catch (Exception ex)
                 {
@@ -896,6 +1053,56 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
     /// <summary>
+    /// Submits discovered certificates with per-item private key status to Keyfactor Command.
+    /// Used for K8SNS and K8SCluster inventory where each secret may have different private key status.
+    /// </summary>
+    /// <param name="entries">List of inventory entries with per-item private key status and certificate chains.</param>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback delegate to submit certificates to Keyfactor Command.</param>
+    /// <returns>JobResult indicating success or failure of the submission.</returns>
+    private JobResult PushInventory(List<InventoryEntry> entries, long jobId, SubmitInventoryUpdate submitInventory)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing {Count} inventory entries with per-item private key status for job {JobId}", entries.Count, jobId);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        foreach (var entry in entries)
+        {
+            if (entry.Certificates == null || entry.Certificates.Count == 0)
+            {
+                Logger.LogWarning("Skipping entry '{Alias}' - no certificates", entry.Alias);
+                continue;
+            }
+
+            Logger.LogDebug("Adding entry '{Alias}' with {CertCount} certificates, HasPrivateKey={HasPrivateKey}",
+                entry.Alias, entry.Certificates.Count, entry.HasPrivateKey);
+
+            inventoryItems.Add(new CurrentInventoryItem
+            {
+                ItemStatus = OrchestratorInventoryItemStatus.Unknown,
+                Alias = entry.Alias,
+                PrivateKeyEntry = entry.HasPrivateKey,
+                UseChainLevel = entry.Certificates.Count > 1,
+                Certificates = entry.Certificates.ToArray()
+            });
+        }
+
+        try
+        {
+            Logger.LogDebug("Submitting {Count} inventory items to Keyfactor Command...", inventoryItems.Count);
+            submitInventory.Invoke(inventoryItems);
+            Logger.LogInformation("End INVENTORY completed successfully for job id {JobId}.", jobId);
+            return SuccessJob(jobId);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unable to submit inventory to Keyfactor Command for job id {JobId}.", jobId);
+            return FailJob(ex.Message, jobId);
+        }
+    }
+
+    /// <summary>
     /// Handles inventory of Kubernetes Opaque secrets and returns certificate list.
     /// Extracts certificates from the secret's data fields using OpaqueAllowedKeys.
     /// </summary>
@@ -1149,6 +1356,450 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
     }
 
+
+    /// <summary>
+    /// Handles inventory of a TLS secret and returns an InventoryEntry with certificate chain and private key status.
+    /// Used for K8SNS and K8SCluster inventory where per-item private key status is needed.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="alias">The alias to use for the inventory entry.</param>
+    /// <returns>InventoryEntry with certificates and private key status.</returns>
+    private InventoryEntry HandleTlsSecretAsEntry(long jobId, string alias)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing TLS secret as inventory entry for job {JobId}, alias {Alias}", jobId, alias);
+
+        var certs = HandleTlsSecretWithPrivateKeyStatus(jobId, out var hasPrivateKey);
+
+        var entry = new InventoryEntry
+        {
+            Alias = alias,
+            Certificates = certs,
+            HasPrivateKey = hasPrivateKey
+        };
+
+        Logger.LogDebug("Created inventory entry for alias '{Alias}' with {CertCount} certificates, HasPrivateKey={HasPrivateKey}",
+            alias, certs.Count, hasPrivateKey);
+        Logger.MethodExit(MsLogLevel.Debug);
+        return entry;
+    }
+
+    /// <summary>
+    /// Handles inventory of an opaque secret and returns an InventoryEntry with certificate chain and private key status.
+    /// Used for K8SNS and K8SCluster inventory where per-item private key status is needed.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="alias">The alias to use for the inventory entry.</param>
+    /// <returns>InventoryEntry with certificates and private key status.</returns>
+    private InventoryEntry HandleOpaqueSecretAsEntry(long jobId, string alias)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing opaque secret as inventory entry for job {JobId}, alias {Alias}", jobId, alias);
+
+        var certs = HandleOpaqueSecretWithPrivateKeyStatus(jobId, out var hasPrivateKey);
+
+        var entry = new InventoryEntry
+        {
+            Alias = alias,
+            Certificates = certs,
+            HasPrivateKey = hasPrivateKey
+        };
+
+        Logger.LogDebug("Created inventory entry for alias '{Alias}' with {CertCount} certificates, HasPrivateKey={HasPrivateKey}",
+            alias, certs.Count, hasPrivateKey);
+        Logger.MethodExit(MsLogLevel.Debug);
+        return entry;
+    }
+
+    /// <summary>
+    /// Handles inventory of Kubernetes TLS secrets with private key status detection.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="hasPrivateKey">Output parameter indicating whether the secret has a private key.</param>
+    /// <returns>List of PEM-formatted certificates (chain if present).</returns>
+    private List<string> HandleTlsSecretWithPrivateKeyStatus(long jobId, out bool hasPrivateKey)
+    {
+        hasPrivateKey = false;
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing TLS secret inventory with private key status for job {JobId}", jobId);
+        Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+        Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        Logger.LogTrace("StorePath: " + StorePath);
+
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogWarning("KubeNamespace is null or empty.  Attempting to parse from StorePath...");
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                Logger.LogTrace("StorePath was not null or empty.  Parsing KubeNamespace from StorePath...");
+                KubeNamespace = StorePath.Split("/").First();
+                Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+                if (KubeNamespace == KubeSecretName)
+                {
+                    Logger.LogWarning(
+                        "KubeNamespace was equal to KubeSecretName.  Setting KubeNamespace to 'default' for job id " +
+                        jobId + "...");
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                Logger.LogWarning("StorePath was null or empty.  Setting KubeNamespace to 'default' for job id " +
+                                  jobId + "...");
+                KubeNamespace = "default";
+            }
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogWarning("KubeSecretName is null or empty.  Attempting to parse from StorePath...");
+            KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        }
+
+        Logger.LogDebug(
+            $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}...");
+        Logger.LogTrace("Entering try block for HandleTlsSecretWithPrivateKeyStatus...");
+        try
+        {
+            Logger.LogTrace("Calling KubeClient.GetCertificateStoreSecret()...");
+            var certData = KubeClient.GetCertificateStoreSecret(
+                KubeSecretName,
+                KubeNamespace
+            );
+            Logger.LogDebug("KubeClient.GetCertificateStoreSecret() returned successfully.");
+            Logger.LogTrace("certData: " + certData);
+
+            // Check if tls.crt exists and has data
+            if (!certData.Data.TryGetValue("tls.crt", out var certificatesBytes) ||
+                certificatesBytes == null || certificatesBytes.Length == 0)
+            {
+                Logger.LogWarning("Secret '{SecretName}' in namespace '{Namespace}' has no certificate data (tls.crt is empty or missing). Returning empty inventory.",
+                    KubeSecretName, KubeNamespace);
+                return new List<string>();
+            }
+
+            Logger.LogTrace("certificatesBytes: " + certificatesBytes);
+
+            // Check if tls.key exists and has actual content (not empty/whitespace)
+            if (certData.Data.TryGetValue("tls.key", out var privateKeyBytes) &&
+                privateKeyBytes != null && privateKeyBytes.Length > 0)
+            {
+                var privateKeyContent = Encoding.UTF8.GetString(privateKeyBytes);
+                // Check if it's not just whitespace or empty
+                hasPrivateKey = !string.IsNullOrWhiteSpace(privateKeyContent);
+                Logger.LogDebug("tls.key exists with content: {HasContent}, HasPrivateKey={HasPrivateKey}",
+                    !string.IsNullOrWhiteSpace(privateKeyContent), hasPrivateKey);
+            }
+            else
+            {
+                Logger.LogDebug("tls.key is missing or empty. HasPrivateKey=false");
+                hasPrivateKey = false;
+            }
+
+            byte[] caBytes = null;
+            var certsList = new List<string>();
+
+            var certPem = Encoding.UTF8.GetString(certificatesBytes);
+
+            // Check if the certificate data is empty or whitespace-only
+            if (string.IsNullOrWhiteSpace(certPem))
+            {
+                Logger.LogWarning("Secret '{SecretName}' in namespace '{Namespace}' has empty certificate data. Returning empty inventory.",
+                    KubeSecretName, KubeNamespace);
+                return new List<string>();
+            }
+
+            Logger.LogTrace("certPem: " + certPem);
+            var certObj = KubeClient.ReadPemCertificate(certPem);
+            if (certObj == null)
+            {
+                Logger.LogDebug(
+                    "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
+                // Attempt to read data as DER
+                certObj = KubeClient.ReadDerCertificate(certPem);
+                if (certObj != null)
+                {
+                    certPem = KubeClient.ConvertToPem(certObj);
+                    Logger.LogTrace("certPem: " + certPem);
+                }
+                else
+                {
+                    // Both PEM and DER parsing failed - throw a meaningful error
+                    throw new InvalidOperationException(
+                        $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
+                        "The certificate data could not be parsed as PEM or DER format.");
+                }
+
+                Logger.LogTrace("certPem: " + certPem);
+            }
+            else
+            {
+                certPem = KubeClient.ConvertToPem(certObj);
+                Logger.LogTrace("certPem: " + certPem);
+            }
+
+            if (!string.IsNullOrEmpty(certPem)) certsList.Add(certPem);
+
+            if (certData.Data.TryGetValue("ca.crt", out var value))
+            {
+                caBytes = value;
+                Logger.LogTrace("caBytes length: {Length}", caBytes?.Length ?? 0);
+
+                // ca.crt can contain multiple certificates (e.g., intermediate + root)
+                // Use LoadCertificateChain to parse all certificates
+                var caCertChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(caBytes));
+                if (caCertChain != null && caCertChain.Count > 0)
+                {
+                    Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
+                    foreach (var caCert in caCertChain)
+                    {
+                        var caPem = KubeClient.ConvertToPem(caCert);
+                        Logger.LogTrace("Adding CA certificate to inventory: {Subject}", caCert.SubjectDN);
+                        certsList.Add(caPem);
+                    }
+                }
+                else
+                {
+                    Logger.LogDebug("Failed to parse certificate chain from ca.crt as PEM. Attempting to parse as single DER certificate");
+                    // Fallback: try to read as a single DER certificate
+                    var caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(caBytes));
+                    if (caObj != null)
+                    {
+                        var caPem = KubeClient.ConvertToPem(caObj);
+                        Logger.LogTrace("caPem: " + caPem);
+                        certsList.Add(caPem);
+                    }
+                }
+            }
+            else
+            {
+                // Determine if chain is present in tls.crt
+                var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(certificatesBytes));
+                if (certChain != null && certChain.Count > 1)
+                {
+                    certsList.Clear();
+                    Logger.LogDebug("Certificate chain detected in tls.crt.  Attempting to parse chain...");
+                    foreach (var cert in certChain)
+                    {
+                        Logger.LogTrace("cert: " + cert);
+                        certsList.Add(KubeClient.ConvertToPem(cert));
+                    }
+                }
+            }
+
+            Logger.LogTrace("certsList: " + certsList);
+            Logger.LogDebug("Returning certificate list with {Count} certificates and HasPrivateKey={HasPrivateKey}", certsList.Count, hasPrivateKey);
+            return certsList.ToList();
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            var certDataErrorMsg =
+                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
+            Logger.LogError(certDataErrorMsg);
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
+            throw new StoreNotFoundException(certDataErrorMsg);
+        }
+        catch (Exception e)
+        {
+            Logger.LogError(e.Message);
+            Logger.LogTrace(e.ToString());
+            Logger.LogTrace(e.StackTrace);
+            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+            Logger.LogError(certDataErrorMsg);
+            Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + jobId + " with failure.");
+            throw new Exception(certDataErrorMsg);
+        }
+    }
+
+    /// <summary>
+    /// Handles inventory of Kubernetes Opaque secrets with private key status detection.
+    /// </summary>
+    /// <param name="jobId">The job history ID for tracking.</param>
+    /// <param name="hasPrivateKey">Output parameter indicating whether the secret has a private key.</param>
+    /// <returns>List of PEM-formatted certificates found in the opaque secret.</returns>
+    private List<string> HandleOpaqueSecretWithPrivateKeyStatus(long jobId, out bool hasPrivateKey)
+    {
+        hasPrivateKey = false;
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing opaque secret inventory with private key status for job {JobId}", jobId);
+        Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+        Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        Logger.LogTrace("StorePath: " + StorePath);
+
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogWarning("KubeNamespace is null or empty. Attempting to parse from StorePath...");
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                KubeNamespace = StorePath.Split("/").First();
+                Logger.LogTrace("KubeNamespace: " + KubeNamespace);
+                if (KubeNamespace == KubeSecretName)
+                {
+                    Logger.LogWarning("KubeNamespace was equal to KubeSecretName. Setting KubeNamespace to 'default'...");
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                Logger.LogWarning("StorePath was null or empty. Setting KubeNamespace to 'default'...");
+                KubeNamespace = "default";
+            }
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            Logger.LogWarning("KubeSecretName is null or empty. Attempting to parse from StorePath...");
+            KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogTrace("KubeSecretName: " + KubeSecretName);
+        }
+
+        Logger.LogDebug($"Querying Kubernetes opaque secret API for {KubeSecretName} in namespace {KubeNamespace}...");
+        try
+        {
+            var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            var certsList = new List<string>();
+
+            // Check for private key in common key field names
+            var privateKeyFields = new[] { "tls.key", "key", "private.key", "privateKey", "key.pem" };
+            foreach (var keyField in privateKeyFields)
+            {
+                if (certData.Data.TryGetValue(keyField, out var keyBytes) &&
+                    keyBytes != null && keyBytes.Length > 0)
+                {
+                    var keyContent = Encoding.UTF8.GetString(keyBytes);
+                    if (!string.IsNullOrWhiteSpace(keyContent))
+                    {
+                        hasPrivateKey = true;
+                        Logger.LogDebug("Found private key in field '{KeyField}'", keyField);
+                        break;
+                    }
+                }
+            }
+
+            // First, process the primary certificate field (tls.crt, cert, etc.) - excludes ca.crt
+            var primaryCertKeys = OpaqueAllowedKeys.Where(k => k != "ca.crt").ToArray();
+            foreach (var allowedKey in primaryCertKeys)
+            {
+                if (!certData.Data.ContainsKey(allowedKey)) continue;
+
+                Logger.LogDebug("Found certificate data in key: {Key}", allowedKey);
+                var certificatesBytes = certData.Data[allowedKey];
+
+                // Skip empty certificate data
+                if (certificatesBytes == null || certificatesBytes.Length == 0)
+                {
+                    Logger.LogDebug("Certificate data in key '{Key}' is empty, skipping", allowedKey);
+                    continue;
+                }
+
+                var certPemData = Encoding.UTF8.GetString(certificatesBytes);
+
+                // Skip empty or whitespace-only certificate data
+                if (string.IsNullOrWhiteSpace(certPemData))
+                {
+                    Logger.LogDebug("Certificate data in key '{Key}' is empty or whitespace, skipping", allowedKey);
+                    continue;
+                }
+
+                // Use LoadCertificateChain to handle multiple certificates in the field
+                var certChain = KubeClient.LoadCertificateChain(certPemData);
+                if (certChain != null && certChain.Count > 0)
+                {
+                    Logger.LogDebug("Found {Count} certificate(s) in key '{Key}'", certChain.Count, allowedKey);
+                    foreach (var cert in certChain)
+                    {
+                        var certPem = KubeClient.ConvertToPem(cert);
+                        Logger.LogTrace("Adding certificate from '{Key}': {Subject}", allowedKey, cert.SubjectDN);
+                        certsList.Add(certPem);
+                    }
+                    // Found certificates in this key, don't process other primary keys
+                    break;
+                }
+                else
+                {
+                    // Try to parse as single DER certificate
+                    Logger.LogDebug("Failed to parse as PEM chain. Attempting to parse as DER...");
+                    var certObj = KubeClient.ReadDerCertificate(certPemData);
+                    if (certObj != null)
+                    {
+                        var certPem = KubeClient.ConvertToPem(certObj);
+                        certsList.Add(certPem);
+                        break;
+                    }
+                    else
+                    {
+                        Logger.LogWarning(
+                            "Failed to parse certificate from secret '{SecretName}' key '{Key}' in namespace '{Namespace}'. " +
+                            "The certificate data could not be parsed as PEM or DER format. Skipping this key.",
+                            KubeSecretName, allowedKey, KubeNamespace);
+                    }
+                }
+            }
+
+            // Then, process ca.crt separately to add chain certificates
+            if (certData.Data.TryGetValue("ca.crt", out var caBytes))
+            {
+                if (caBytes != null && caBytes.Length > 0)
+                {
+                    var caCertPemData = Encoding.UTF8.GetString(caBytes);
+                    if (!string.IsNullOrWhiteSpace(caCertPemData))
+                    {
+                        // ca.crt can contain multiple certificates (intermediate + root)
+                        var caCertChain = KubeClient.LoadCertificateChain(caCertPemData);
+                        if (caCertChain != null && caCertChain.Count > 0)
+                        {
+                            Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
+                            foreach (var caCert in caCertChain)
+                            {
+                                var caPem = KubeClient.ConvertToPem(caCert);
+                                // Avoid duplicates - check if certificate is already in the list
+                                if (!certsList.Contains(caPem))
+                                {
+                                    Logger.LogTrace("Adding CA certificate from ca.crt: {Subject}", caCert.SubjectDN);
+                                    certsList.Add(caPem);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Fallback: try to read as a single DER certificate
+                            var caObj = KubeClient.ReadDerCertificate(caCertPemData);
+                            if (caObj != null)
+                            {
+                                var caPem = KubeClient.ConvertToPem(caObj);
+                                if (!certsList.Contains(caPem))
+                                {
+                                    certsList.Add(caPem);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Logger.LogTrace("certsList count: " + certsList.Count);
+            Logger.LogDebug("Returning certificate list with {Count} certificates and HasPrivateKey={HasPrivateKey}", certsList.Count, hasPrivateKey);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return certsList;
+        }
+        catch (HttpOperationException e)
+        {
+            Logger.LogError(e.Message);
+            var certDataErrorMsg = $"Kubernetes opaque secret '{KubeSecretName}' was not found in namespace '{KubeNamespace}'.";
+            Logger.LogError(certDataErrorMsg);
+            throw new StoreNotFoundException(certDataErrorMsg);
+        }
+        catch (Exception e) when (e is not StoreNotFoundException && e is not InvalidOperationException)
+        {
+            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+            Logger.LogError(certDataErrorMsg);
+            throw new Exception(certDataErrorMsg);
+        }
+    }
 
     /// <summary>
     /// Handles inventory of Kubernetes TLS secrets (kubernetes.io/tls type).
