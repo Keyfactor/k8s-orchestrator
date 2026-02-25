@@ -9,7 +9,9 @@ using System;
 using System.Collections.Generic;
 using k8s.Autorest;
 using k8s.Models;
+using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
@@ -214,6 +216,13 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Certificate metadata - SeparateChain: {SeparateChain}, IncludeCertChain: {IncludeCertChain}",
             SeparateChain, IncludeCertChain);
 
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("Opaque");
+        }
+
         // Log certificate information
         if (!string.IsNullOrEmpty(certObj.CertPem))
         {
@@ -232,9 +241,16 @@ public class Management : JobBase, IManagementJobExtension
             }
         }
 
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,
@@ -259,6 +275,117 @@ public class Management : JobBase, IManagementJobExtension
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
+    }
+
+    /// <summary>
+    /// Validates that a certificate-only update is not being applied to a secret that has an existing private key.
+    /// This prevents creating an invalid state where tls.crt has a new certificate but tls.key has the old
+    /// (mismatched) private key.
+    /// </summary>
+    /// <param name="secretType">Type of secret for error message (e.g., "TLS", "Opaque").</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when attempting to deploy a certificate without a private key to an existing secret that has a private key.
+    /// </exception>
+    private void ValidateNoMismatchedKeyUpdate(string secretType)
+    {
+        Logger.LogDebug("Validating cert-only update for {SecretType} secret '{SecretName}' in namespace '{Namespace}'",
+            secretType, KubeSecretName, KubeNamespace);
+
+        try
+        {
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue("tls.key", out var existingKeyBytes))
+            {
+                // Check if the existing key has actual content (not empty)
+                if (existingKeyBytes != null && existingKeyBytes.Length > 0)
+                {
+                    var existingKeyPem = System.Text.Encoding.UTF8.GetString(existingKeyBytes).Trim();
+                    if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
+                    {
+                        var errorMsg = $"Cannot update {secretType} secret '{KubeSecretName}' in namespace '{KubeNamespace}' " +
+                            $"with a certificate that has no private key. The existing secret contains a private key (tls.key) " +
+                            $"which would become mismatched with the new certificate. " +
+                            $"Either include the private key with the certificate, or delete the existing secret first.";
+                        Logger.LogError(errorMsg);
+                        throw new InvalidOperationException(errorMsg);
+                    }
+                }
+            }
+            Logger.LogDebug("Validation passed: existing secret either doesn't exist or has no private key");
+        }
+        catch (StoreNotFoundException)
+        {
+            // Secret doesn't exist yet, no validation needed
+            Logger.LogDebug("Secret '{SecretName}' does not exist yet, no validation needed", KubeSecretName);
+        }
+        catch (InvalidOperationException)
+        {
+            // Re-throw our validation exception
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail on other errors - the actual create/update will handle them
+            Logger.LogWarning(ex, "Could not validate existing secret state, proceeding with update");
+        }
+    }
+
+    /// <summary>
+    /// Preserves the private key format when updating an existing secret.
+    /// Detects the existing key format and re-exports the new key in the same format.
+    /// If the new key algorithm doesn't support the existing format (e.g., Ed25519 with PKCS1),
+    /// falls back to PKCS8.
+    /// </summary>
+    /// <param name="certObj">Certificate object containing the new private key.</param>
+    /// <param name="keyFieldName">Name of the field containing the private key in the secret (e.g., "tls.key").</param>
+    /// <returns>PEM-encoded private key in the preserved format.</returns>
+    private string PreservePrivateKeyFormat(K8SJobCertificate certObj, string keyFieldName)
+    {
+        Logger.LogTrace("PreservePrivateKeyFormat called for field: {FieldName}", keyFieldName);
+
+        // Default format if we can't detect existing
+        var targetFormat = PrivateKeyFormat.Pkcs8;
+
+        try
+        {
+            // Try to read the existing secret to detect format
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue(keyFieldName, out var existingKeyBytes))
+            {
+                var existingKeyPem = Encoding.UTF8.GetString(existingKeyBytes);
+                targetFormat = PrivateKeyFormatUtilities.DetectFormat(existingKeyPem);
+                Logger.LogDebug("Detected existing private key format: {Format}", targetFormat);
+            }
+            else
+            {
+                Logger.LogDebug("No existing private key found, using default format: {Format}", targetFormat);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug("Could not read existing secret for format detection: {Message}. Using default format.", ex.Message);
+        }
+
+        // Re-export the new key in the detected/target format
+        // PrivateKeyFormatUtilities.ExportPrivateKeyAsPem handles fallback to PKCS8
+        // if the key algorithm doesn't support PKCS1 (e.g., Ed25519, Ed448)
+        var newKeyPem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(certObj.PrivateKeyParameter, targetFormat);
+
+        var newAlgorithm = PrivateKeyFormatUtilities.GetAlgorithmName(certObj.PrivateKeyParameter);
+        var actualFormat = PrivateKeyFormatUtilities.DetectFormat(newKeyPem);
+
+        if (actualFormat != targetFormat)
+        {
+            Logger.LogInformation(
+                "Private key format changed from {OldFormat} to {NewFormat} because {Algorithm} does not support {OldFormat}",
+                targetFormat, actualFormat, newAlgorithm, targetFormat);
+        }
+        else
+        {
+            Logger.LogDebug("Private key format preserved: {Format}", actualFormat);
+        }
+
+        return newKeyPem;
     }
 
     /// <summary>
@@ -565,6 +692,13 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
 
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("TLS");
+        }
+
         try
         {
             //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
@@ -608,10 +742,17 @@ public class Management : JobBase, IManagementJobExtension
 
         var keyPem = certObj.PrivateKeyPem;
         if (!string.IsNullOrEmpty(keyPem)) keyPems = new[] { keyPem };
-        
+
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,

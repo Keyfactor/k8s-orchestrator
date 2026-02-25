@@ -210,6 +210,11 @@ Manages Kubernetes Opaque secrets with PEM-formatted certificates and keys.
 | `Management_AddCertificateWithChainSeparate_CreatesSeparateChainSecret` | Add with SeparateChain=true creates ca.crt |
 | **Discovery** | |
 | `Discovery_FindsOpaqueSecrets_ReturnsSuccess` | Discovery finds Opaque secrets |
+| **Certificate Without Private Key** | |
+| `Management_AddCertificateWithoutPrivateKey_DerFormat_ReturnsSuccess` | DER cert-only to new secret succeeds |
+| `Management_AddCertificateWithoutPrivateKey_PemFormat_ReturnsSuccess` | PEM cert-only to new secret succeeds |
+| `Inventory_OpaqueSecretWithCertificateOnly_ReturnsSuccess` | Inventory cert-only secret succeeds |
+| `Management_UpdateExistingSecretWithCertificateOnly_FailsWhenExistingKeyPresent` | Cert-only update to secret with key fails (prevents mismatched key) |
 | **Key Type Coverage** | |
 | `Management_Rsa2048Certificate_AddAndInventory_Success` | RSA 2048 add and inventory |
 | `Management_Rsa4096Certificate_AddAndInventory_Success` | RSA 4096 add and inventory |
@@ -271,6 +276,10 @@ Manages Kubernetes `kubernetes.io/tls` secrets with strict field names (tls.crt,
 | `Discovery_FindsTlsSecrets_ReturnsSuccess` | Discovery finds TLS secrets |
 | **Native Kubernetes Compatibility** | |
 | `TlsSecret_CompatibleWithK8sIngress_CorrectFormat` | TLS secrets are Ingress-compatible |
+| **Certificate Without Private Key** | |
+| `Management_AddCertificateWithoutPrivateKey_DerFormat_ReturnsSuccess` | DER cert-only to new TLS secret succeeds |
+| `Management_AddCertificateWithoutPrivateKey_PemFormat_ReturnsSuccess` | PEM cert-only to new TLS secret succeeds |
+| `Management_UpdateExistingTlsSecretWithCertificateOnly_FailsWhenExistingKeyPresent` | Cert-only update to TLS secret with key fails (prevents mismatched key) |
 | **Key Type Coverage** | |
 | `Management_Rsa2048Certificate_AddAndInventory_Success` | RSA 2048 add and inventory |
 | `Management_Rsa4096Certificate_AddAndInventory_Success` | RSA 4096 add and inventory |
@@ -499,6 +508,37 @@ Manages Kubernetes Certificate Signing Requests (CSRs). **READ-ONLY** - only Inv
 | `Inventory_NonExistentCSR_ReturnsFailure` | Non-existent CSR handled gracefully |
 | **Discovery** | |
 | `Discovery_FindsMultipleCSRs_ReturnsSuccess` | Discovery finds multiple CSRs |
+
+---
+
+## Certificate Format Detection Tests
+
+Tests for DER and PEM certificate format detection and parsing. These tests validate the ability to handle certificates without private keys from Command.
+
+### Unit Tests (`CertificateFormatTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **DER Format Detection** | |
+| `IsDerFormat_ValidDerCertificate_ReturnsTrue` | Valid DER certificate is detected |
+| `IsDerFormat_VariousKeyTypes_ReturnsTrue` | DER detection works for RSA, EC, Ed25519 keys |
+| `IsDerFormat_Pkcs12Data_ReturnsFalse` | PKCS12 data is not detected as DER |
+| `IsDerFormat_RandomBytes_ReturnsFalse` | Random bytes are not detected as DER |
+| `IsDerFormat_EmptyBytes_ReturnsFalse` | Empty bytes return false |
+| `IsDerFormat_NullBytes_ReturnsFalse` | Null bytes return false |
+| **Certificate Generation Without Private Key** | |
+| `GenerateDerCertificate_ReturnsValidDerBytes` | DER certificate generation works |
+| `GeneratePemCertificateOnly_ReturnsPemWithoutPrivateKey` | PEM without private key is generated |
+| `GenerateBase64DerCertificate_ReturnsValidBase64` | Base64 DER certificate is valid |
+| **Certificate Thumbprint** | |
+| `GetThumbprint_DerCertificate_ReturnsValidThumbprint` | DER certificate thumbprint extraction |
+| **PEM/DER Round-Trip** | |
+| `DerToPem_RoundTrip_PreservesData` | Round-trip conversion preserves data |
+| **Certificate Chain Parsing** | |
+| `CertificateChain_MultiplePemCertificates_ParsesAllCerts` | Multiple PEM certs parsed correctly |
+| `CertificateChain_FullChainInSingleField_ParsesAllThreeCerts` | Full chain (leaf+intermediate+root) parsed |
+| `CertificateChain_SingleCertificate_ParsesOneCert` | Single certificate parsed |
+| `CertificateChain_EmptyString_ReturnsEmptyList` | Empty string returns empty list |
 
 ---
 
