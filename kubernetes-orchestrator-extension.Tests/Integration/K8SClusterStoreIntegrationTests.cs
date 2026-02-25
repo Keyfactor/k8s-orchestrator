@@ -363,6 +363,147 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWide_ReturnsCorrectPrivateKeyStatus()
+    {
+        // Arrange - Create one secret with private key and one without
+        var secretWithKey = $"test-cluster-withkey-{Guid.NewGuid():N}";
+        var secretWithoutKey = $"test-cluster-nokey-{Guid.NewGuid():N}";
+
+        // Create secret WITH private key
+        await CreateTestSecret(secretWithKey, TestNamespace1);
+
+        // Create secret WITHOUT private key (cert only)
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster No Key Test");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var secretNoKey = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretWithoutKey,
+                NamespaceProperty = TestNamespace2,
+                Labels = GetTestSecretLabels()
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) }
+                // No tls.key field
+            }
+        };
+        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secretNoKey, TestNamespace2);
+        _createdSecrets.Add((secretWithoutKey, TestNamespace2));
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCluster",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster",
+                Properties = "{\"KubeSecretType\":\"cluster\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our test secrets and verify private key status
+        var withKeyItem = inventoryItems.Find(i => i.Alias.Contains(secretWithKey));
+        var noKeyItem = inventoryItems.Find(i => i.Alias.Contains(secretWithoutKey));
+
+        Assert.NotNull(withKeyItem);
+        Assert.NotNull(noKeyItem);
+        Assert.True(withKeyItem.PrivateKeyEntry, $"Secret {secretWithKey} should have PrivateKeyEntry=true");
+        Assert.False(noKeyItem.PrivateKeyEntry, $"Secret {secretWithoutKey} should have PrivateKeyEntry=false");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWide_ReturnsFullCertificateChains()
+    {
+        // Arrange - Create a secret with a certificate chain
+        var secretName = $"test-cluster-chain-{Guid.NewGuid():N}";
+
+        // Create secret with certificate chain (leaf + intermediate + root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Bundle all certs in tls.crt field
+        var bundledCertPem = leafCertPem + intermediatePem + rootPem;
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = secretName,
+                NamespaceProperty = TestNamespace1,
+                Labels = GetTestSecretLabels()
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(bundledCertPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace1);
+        _createdSecrets.Add((secretName, TestNamespace1));
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCluster",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster",
+                Properties = "{\"KubeSecretType\":\"cluster\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Find our chain secret
+        var chainItem = inventoryItems.Find(i => i.Alias.Contains(secretName));
+        Assert.NotNull(chainItem);
+
+        // Should have 3 certificates (leaf + intermediate + root)
+        Assert.True(chainItem.Certificates.Count() >= 3,
+            $"Expected at least 3 certificates in chain but got {chainItem.Certificates.Count()}");
+        Assert.True(chainItem.UseChainLevel,
+            "UseChainLevel should be true for secrets with certificate chains");
+    }
+
     #endregion
 
     #region Management Tests
