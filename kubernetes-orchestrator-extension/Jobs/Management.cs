@@ -216,6 +216,13 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogDebug("Certificate metadata - SeparateChain: {SeparateChain}, IncludeCertChain: {IncludeCertChain}",
             SeparateChain, IncludeCertChain);
 
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("Opaque");
+        }
+
         // Log certificate information
         if (!string.IsNullOrEmpty(certObj.CertPem))
         {
@@ -268,6 +275,59 @@ public class Management : JobBase, IManagementJobExtension
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
         Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
+    }
+
+    /// <summary>
+    /// Validates that a certificate-only update is not being applied to a secret that has an existing private key.
+    /// This prevents creating an invalid state where tls.crt has a new certificate but tls.key has the old
+    /// (mismatched) private key.
+    /// </summary>
+    /// <param name="secretType">Type of secret for error message (e.g., "TLS", "Opaque").</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when attempting to deploy a certificate without a private key to an existing secret that has a private key.
+    /// </exception>
+    private void ValidateNoMismatchedKeyUpdate(string secretType)
+    {
+        Logger.LogDebug("Validating cert-only update for {SecretType} secret '{SecretName}' in namespace '{Namespace}'",
+            secretType, KubeSecretName, KubeNamespace);
+
+        try
+        {
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue("tls.key", out var existingKeyBytes))
+            {
+                // Check if the existing key has actual content (not empty)
+                if (existingKeyBytes != null && existingKeyBytes.Length > 0)
+                {
+                    var existingKeyPem = System.Text.Encoding.UTF8.GetString(existingKeyBytes).Trim();
+                    if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
+                    {
+                        var errorMsg = $"Cannot update {secretType} secret '{KubeSecretName}' in namespace '{KubeNamespace}' " +
+                            $"with a certificate that has no private key. The existing secret contains a private key (tls.key) " +
+                            $"which would become mismatched with the new certificate. " +
+                            $"Either include the private key with the certificate, or delete the existing secret first.";
+                        Logger.LogError(errorMsg);
+                        throw new InvalidOperationException(errorMsg);
+                    }
+                }
+            }
+            Logger.LogDebug("Validation passed: existing secret either doesn't exist or has no private key");
+        }
+        catch (StoreNotFoundException)
+        {
+            // Secret doesn't exist yet, no validation needed
+            Logger.LogDebug("Secret '{SecretName}' does not exist yet, no validation needed", KubeSecretName);
+        }
+        catch (InvalidOperationException)
+        {
+            // Re-throw our validation exception
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail on other errors - the actual create/update will handle them
+            Logger.LogWarning(ex, "Could not validate existing secret state, proceeding with update");
+        }
     }
 
     /// <summary>
@@ -631,6 +691,13 @@ public class Management : JobBase, IManagementJobExtension
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
+
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("TLS");
+        }
 
         try
         {

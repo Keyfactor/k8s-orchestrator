@@ -352,6 +352,8 @@ DEBUG_COMPOSE_FILE ?= docker-compose-ses.yml
 DEBUG_SERVICE_NAME ?= ses_2541_uo_25_4_oauth
 DEBUG_TLS_STORE_ID ?= e523b800-fe18-4e68-b7be-8f2034ffdc16
 DEBUG_OPAQUE_STORE_ID ?= 27b16153-742c-4b4c-9b2d-02ec9cc90fa5
+# PfxPassword must be 12+ alphanumeric characters per Command policy
+DEBUG_PFX_PASSWORD ?= 3ceZRxdQffny
 DEBUG_CERT_ID ?= 44
 DEBUG_CERT_THUMBPRINT ?= FA3BFCD6966AC297B1A3AA9FA43EB1C55EE1048B
 
@@ -404,21 +406,18 @@ debug-logs-follow: ## Follow container logs in real-time
 	docker logs -f $$CONTAINER_ID
 
 .PHONY: debug-get-token
-debug-get-token: ## Get OAuth token from Keyfactor (outputs token to stdout)
-	@source $(DEBUG_ENV_FILE); \
-	curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-H "Content-Type: application/x-www-form-urlencoded" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
-		jq -r '.access_token'
+debug-get-token: ## Get OAuth token from Keyfactor (uses cache, outputs token to stdout)
+	@$(MAKE) -s token-get
 
 .PHONY: debug-schedule-tls
 debug-schedule-tls: ## Schedule a management job for TLS secret store
 	@echo "=== Scheduling TLS secret management job ==="
-	@source $(DEBUG_ENV_FILE); \
-	TOKEN=$$(curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-H "Content-Type: application/x-www-form-urlencoded" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
-		jq -r '.access_token'); \
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
 	RESULT=$$(curl -s --insecure -X POST "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/CertificateStores/Certificates/Add" \
 		-H "Authorization: Bearer $$TOKEN" \
 		-H "x-keyfactor-requested-with: APIClient" \
@@ -429,11 +428,12 @@ debug-schedule-tls: ## Schedule a management job for TLS secret store
 .PHONY: debug-schedule-opaque
 debug-schedule-opaque: ## Schedule a management job for Opaque secret store
 	@echo "=== Scheduling Opaque secret management job ==="
-	@source $(DEBUG_ENV_FILE); \
-	TOKEN=$$(curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-H "Content-Type: application/x-www-form-urlencoded" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
-		jq -r '.access_token'); \
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
 	RESULT=$$(curl -s --insecure -X POST "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/CertificateStores/Certificates/Add" \
 		-H "Authorization: Bearer $$TOKEN" \
 		-H "x-keyfactor-requested-with: APIClient" \
@@ -543,16 +543,14 @@ debug-schedule-tls-cert: ## Schedule TLS job with specific cert (usage: make deb
 		exit 1; \
 	fi
 	@echo "=== Scheduling TLS job for cert $(CERT_ID) (IncludePrivateKey=true) ==="
-	@source $(DEBUG_ENV_FILE); \
-	TOKEN=$$(curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
-		-H "Content-Type: application/x-www-form-urlencoded" \
-		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
-		jq -r '.access_token'); \
-	if [ -n "$(PFX_PASSWORD)" ]; then \
-		BODY='{"CertificateId": $(CERT_ID), "IncludePrivateKey": true, "PfxPassword": "$(PFX_PASSWORD)", "CertificateStores": [{"CertificateStoreId": "$(DEBUG_TLS_STORE_ID)", "JobFields": {}}], "Schedule": {"Immediate": true}}'; \
-	else \
-		BODY='{"CertificateId": $(CERT_ID), "IncludePrivateKey": true, "CertificateStores": [{"CertificateStoreId": "$(DEBUG_TLS_STORE_ID)", "JobFields": {}}], "Schedule": {"Immediate": true}}'; \
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
 	fi; \
+	source $(DEBUG_ENV_FILE); \
+	PFX_PASS="$(if $(PFX_PASSWORD),$(PFX_PASSWORD),$(DEBUG_PFX_PASSWORD))"; \
+	BODY='{"CertificateId": $(CERT_ID), "CertificateStores": [{"CertificateStoreId": "$(DEBUG_TLS_STORE_ID)", "IncludePrivateKey": true, "PfxPassword": "'$$PFX_PASS'", "JobFields": {}}], "Schedule": {"Immediate": true}}'; \
 	RESULT=$$(curl -s --insecure -X POST "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/CertificateStores/Certificates/Add" \
 		-H "Authorization: Bearer $$TOKEN" \
 		-H "x-keyfactor-requested-with: APIClient" \
@@ -617,15 +615,159 @@ debug-get-cert-info: ## Get certificate info from Command (usage: make debug-get
 		echo "Usage: make debug-get-cert-info CERT_ID=43"; \
 		exit 1; \
 	fi
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
+	curl -s --insecure "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/Certificates/$(CERT_ID)" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-H "x-keyfactor-requested-with: APIClient" | \
+		jq '{Id, Thumbprint, IssuedCN, HasPrivateKey, IssuerDN, KeyType: .KeyTypeString}'
+
+##@ OAuth Token Management
+
+# Token cache file and expiry (tokens valid for 55 minutes, refresh at 50 min)
+TOKEN_FILE := .oauth_token
+TOKEN_EXPIRY_FILE := .oauth_token_expiry
+TOKEN_VALIDITY_SECONDS := 3000
+
+.PHONY: token
+token: ## Get OAuth token (uses cache if valid, otherwise fetches new)
+	@if [ -f "$(TOKEN_FILE)" ] && [ -f "$(TOKEN_EXPIRY_FILE)" ]; then \
+		EXPIRY=$$(cat $(TOKEN_EXPIRY_FILE)); \
+		NOW=$$(date +%s); \
+		if [ "$$NOW" -lt "$$EXPIRY" ]; then \
+			echo "Using cached token (expires in $$(( ($$EXPIRY - $$NOW) / 60 )) minutes)"; \
+			cat $(TOKEN_FILE); \
+			exit 0; \
+		fi; \
+	fi; \
+	$(MAKE) token-refresh
+
+.PHONY: token-refresh
+token-refresh: ## Force refresh OAuth token and cache to disk
+	@echo "Fetching new OAuth token..."
 	@source $(DEBUG_ENV_FILE); \
 	TOKEN=$$(curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
 		-H "Content-Type: application/x-www-form-urlencoded" \
 		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
 		jq -r '.access_token'); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get OAuth token" >&2; \
+		exit 1; \
+	fi; \
+	echo "$$TOKEN" > $(TOKEN_FILE); \
+	echo $$(( $$(date +%s) + $(TOKEN_VALIDITY_SECONDS) )) > $(TOKEN_EXPIRY_FILE); \
+	echo "Token cached to $(TOKEN_FILE) (valid for $(TOKEN_VALIDITY_SECONDS) seconds)"; \
+	echo "$$TOKEN"
+
+.PHONY: token-show
+token-show: ## Show cached token info (without exposing full token)
+	@if [ -f "$(TOKEN_FILE)" ] && [ -f "$(TOKEN_EXPIRY_FILE)" ]; then \
+		TOKEN=$$(cat $(TOKEN_FILE)); \
+		EXPIRY=$$(cat $(TOKEN_EXPIRY_FILE)); \
+		NOW=$$(date +%s); \
+		if [ "$$NOW" -lt "$$EXPIRY" ]; then \
+			echo "Token status: VALID"; \
+			echo "Expires in: $$(( ($$EXPIRY - $$NOW) / 60 )) minutes"; \
+			echo "Token preview: $${TOKEN:0:20}..."; \
+		else \
+			echo "Token status: EXPIRED"; \
+			echo "Expired: $$(( ($$NOW - $$EXPIRY) / 60 )) minutes ago"; \
+		fi; \
+	else \
+		echo "Token status: NOT CACHED"; \
+		echo "Run 'make token' to fetch a new token"; \
+	fi
+
+.PHONY: token-clear
+token-clear: ## Clear cached OAuth token
+	@rm -f $(TOKEN_FILE) $(TOKEN_EXPIRY_FILE)
+	@echo "Token cache cleared"
+
+# Helper function to get token (for use in other targets)
+# Usage: TOKEN=$$($(MAKE) -s token-get)
+.PHONY: token-get
+token-get: ## Get token silently (for use in scripts)
+	@if [ -f "$(TOKEN_FILE)" ] && [ -f "$(TOKEN_EXPIRY_FILE)" ]; then \
+		EXPIRY=$$(cat $(TOKEN_EXPIRY_FILE)); \
+		NOW=$$(date +%s); \
+		if [ "$$NOW" -lt "$$EXPIRY" ]; then \
+			cat $(TOKEN_FILE); \
+			exit 0; \
+		fi; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
+	TOKEN=$$(curl -s --insecure -X POST "$$KEYFACTOR_AUTH_TOKEN_URL" \
+		-H "Content-Type: application/x-www-form-urlencoded" \
+		-d "grant_type=client_credentials&client_id=$$KEYFACTOR_AUTH_CLIENT_ID&client_secret=$$KEYFACTOR_AUTH_CLIENT_SECRET&scope=openid" | \
+		jq -r '.access_token'); \
+	if [ "$$TOKEN" != "null" ] && [ -n "$$TOKEN" ]; then \
+		echo "$$TOKEN" > $(TOKEN_FILE); \
+		echo $$(( $$(date +%s) + $(TOKEN_VALIDITY_SECONDS) )) > $(TOKEN_EXPIRY_FILE); \
+	fi; \
+	echo "$$TOKEN"
+
+##@ Keyfactor Command API
+
+.PHONY: api-list-stores
+api-list-stores: ## List certificate stores from Command
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
+	curl -s --insecure "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/CertificateStores" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-H "x-keyfactor-requested-with: APIClient" | \
+		jq -r '.[] | "\(.Id) | \(.ClientMachine) | \(.StorePath)"'
+
+.PHONY: api-list-certs
+api-list-certs: ## List certificates from Command (first 20)
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
+	curl -s --insecure "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/Certificates?pq.pageReturned=1&pq.returnLimit=20" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-H "x-keyfactor-requested-with: APIClient" | \
+		jq -r '.[] | "\(.Id) | \(.IssuedCN) | \(.Thumbprint) | HasKey=\(.HasPrivateKey)"'
+
+.PHONY: api-get-cert
+api-get-cert: ## Get certificate details (usage: make api-get-cert CERT_ID=43)
+	@if [ -z "$(CERT_ID)" ]; then \
+		echo "ERROR: CERT_ID required"; \
+		echo "Usage: make api-get-cert CERT_ID=43"; \
+		exit 1; \
+	fi; \
+	TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
 	curl -s --insecure "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/Certificates/$(CERT_ID)" \
 		-H "Authorization: Bearer $$TOKEN" \
 		-H "x-keyfactor-requested-with: APIClient" | \
-		jq '{Id, Thumbprint, IssuedCN, HasPrivateKey, IssuerDN, KeyType: .KeyTypeString}'
+		jq '{Id, Thumbprint, IssuedCN, HasPrivateKey, IssuerDN, KeyType: .KeyTypeString, NotBefore, NotAfter}'
+
+.PHONY: api-get-jobs
+api-get-jobs: ## Get recent orchestrator jobs (last 10)
+	@TOKEN=$$($(MAKE) -s token-get); \
+	if [ "$$TOKEN" = "null" ] || [ -z "$$TOKEN" ]; then \
+		echo "ERROR: Failed to get token" >&2; \
+		exit 1; \
+	fi; \
+	source $(DEBUG_ENV_FILE); \
+	curl -s --insecure "https://$$KEYFACTOR_HOSTNAME/$$KEYFACTOR_API_PATH/OrchestratorJobs/ScheduledJobs?pq.pageReturned=1&pq.returnLimit=10&pq.sortAscending=0" \
+		-H "Authorization: Bearer $$TOKEN" \
+		-H "x-keyfactor-requested-with: APIClient" | \
+		jq -r '.[] | "\(.JobId) | \(.JobTypeName) | \(.Status) | \(.Requested)"'
 
 ##@ Build
 

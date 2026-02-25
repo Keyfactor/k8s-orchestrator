@@ -635,15 +635,17 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
-        // Should have 3 certificates: Leaf + Sub-CA + Root-CA
-        Assert.Equal(3, inventoriedCerts.Count);
+        // Chain certificates are returned as ONE inventory item with multiple certificates in the Certificates array
+        Assert.Single(inventoriedCerts);
+        // The single inventory item should contain all 3 certificates from the chain
+        Assert.Equal(3, inventoriedCerts[0].Certificates.Count());
 
         // Verify we have all three certificates by checking subjects
-        var certSubjects = inventoriedCerts.Select(c =>
+        var certSubjects = inventoriedCerts[0].Certificates.Select(certPem =>
         {
-            var certBytes = Convert.FromBase64String(c.Certificates.First());
-            var parser = new Org.BouncyCastle.X509.X509CertificateParser();
-            var cert = parser.ReadCertificate(certBytes);
+            using var reader = new System.IO.StringReader(certPem);
+            var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+            var cert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
             return cert.SubjectDN.ToString();
         }).ToList();
 
@@ -711,8 +713,10 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
-        // Should have 3 certificates from the chain in tls.crt
-        Assert.Equal(3, inventoriedCerts.Count);
+        // Chain certificates are returned as ONE inventory item with multiple certificates in the Certificates array
+        Assert.Single(inventoriedCerts);
+        // The single inventory item should contain all 3 certificates from the chain
+        Assert.Equal(3, inventoriedCerts[0].Certificates.Count());
     }
 
     #endregion
@@ -867,7 +871,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Management_UpdateExistingSecretWithCertificateOnly_PreservesExistingKey()
+    public async Task Management_UpdateExistingSecretWithCertificateOnly_FailsWhenExistingKeyPresent()
     {
         // Arrange - First create a secret WITH a private key
         var secretName = $"test-update-certonly-{Guid.NewGuid():N}";
@@ -908,9 +912,8 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         // Verify initial secret has tls.key
         var initialSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
         Assert.True(initialSecret.Data.ContainsKey("tls.key"), "Initial secret should have tls.key");
-        var originalKey = initialSecret.Data["tls.key"];
 
-        // Now update with certificate-only (no private key) - using DER format
+        // Now try to update with certificate-only (no private key) - using DER format
         var newCertDer = CertificateTestHelper.GenerateBase64DerCertificate(KeyType.Rsa2048, "Updated Cert No Key");
 
         var updateJobConfig = new ManagementJobConfiguration
@@ -938,15 +941,15 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         // Act
         var updateResult = await Task.Run(() => management.ProcessJob(updateJobConfig));
 
-        // Assert - Should succeed
-        Assert.True(updateResult.Result == OrchestratorJobStatusJobResult.Success,
-            $"Expected Success but got {updateResult.Result}. FailureMessage: {updateResult.FailureMessage}");
+        // Assert - Should FAIL because we're trying to update a secret that has a private key
+        // with a certificate-only (no private key), which would leave a mismatched key
+        Assert.True(updateResult.Result == OrchestratorJobStatusJobResult.Failure,
+            $"Expected Failure but got {updateResult.Result}. " +
+            "Deploying cert-only to a secret with existing private key should fail to prevent key mismatch.");
 
-        // Verify secret still has tls.key (preserved from original)
-        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
-        Assert.True(updatedSecret.Data.ContainsKey("tls.key"), "Updated secret should preserve existing tls.key");
-        Assert.Equal(originalKey, updatedSecret.Data["tls.key"]); // Key should be unchanged
-        Assert.True(updatedSecret.Data.ContainsKey("tls.crt"), "Updated secret should have updated tls.crt");
+        // Verify the failure message explains the issue
+        Assert.Contains("private key", updateResult.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("mismatched", updateResult.FailureMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     #endregion
@@ -1051,8 +1054,10 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
 
         // Verify inventoried certificate matches the input certificate
         Assert.NotEmpty(inventoriedCerts);
-        var inventoriedCertBytes = Convert.FromBase64String(inventoriedCerts[0].Certificates.First());
-        var inventoriedCert = parser.ReadCertificate(inventoriedCertBytes);
+        var inventoriedCertPem = inventoriedCerts[0].Certificates.First();
+        using var invReader = new System.IO.StringReader(inventoriedCertPem);
+        var invPemReader = new Org.BouncyCastle.OpenSsl.PemReader(invReader);
+        var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)invPemReader.ReadObject();
         var inventoriedThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
 
         Assert.True(expectedThumbprint == inventoriedThumbprint,

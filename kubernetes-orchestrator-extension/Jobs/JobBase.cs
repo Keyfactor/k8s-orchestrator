@@ -467,66 +467,64 @@ public abstract class JobBase
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogInformation("=== InitJobCertificate v2.0 - DER/PEM detection enabled ===");
+        Logger.LogDebug("=== InitJobCertificate - DER/PEM detection enabled ===");
 
         var jobCertObject = new K8SJobCertificate();
 
         // Diagnostic logging - cast dynamic results to concrete types first to avoid CS1973
         bool jobCertIsNull = config.JobCertificate == null;
-        Logger.LogInformation("JobCertificate is null: {IsNull}", jobCertIsNull);
+        Logger.LogTrace("JobCertificate is null: {IsNull}", jobCertIsNull);
         if (!jobCertIsNull)
         {
             string contents = (string)config.JobCertificate.Contents;
             string password = (string)config.JobCertificate.PrivateKeyPassword;
             bool contentsEmpty = string.IsNullOrEmpty(contents);
             bool passwordEmpty = string.IsNullOrEmpty(password);
-            Logger.LogInformation("JobCertificate.Contents is null/empty: {IsEmpty}", contentsEmpty);
-            Logger.LogInformation("JobCertificate.PrivateKeyPassword is null/empty: {IsEmpty}", passwordEmpty);
+            Logger.LogTrace("JobCertificate.Contents is null/empty: {IsEmpty}", contentsEmpty);
+            Logger.LogDebug("JobCertificate.PrivateKeyPassword is null/empty: {IsEmpty}", passwordEmpty);
 
             // Log all available properties on JobCertificate to discover chain field
             try
             {
                 var certType = ((object)config.JobCertificate).GetType();
                 var props = certType.GetProperties();
-                Logger.LogInformation("JobCertificate has {Count} properties: {Names}",
+                Logger.LogTrace("JobCertificate has {Count} properties: {Names}",
                     props.Length,
                     string.Join(", ", props.Select(p => p.Name)));
 
                 // Log ContentsFormat
                 string contentsFormat = (string)config.JobCertificate.ContentsFormat;
-                Logger.LogInformation("JobCertificate.ContentsFormat: {Format}", contentsFormat ?? "(null)");
+                Logger.LogTrace("JobCertificate.ContentsFormat: {Format}", contentsFormat ?? "(null)");
 
-                // Log first 100 chars of decoded content to see the format
+                // Log first bytes of decoded content to see the format
                 if (!string.IsNullOrEmpty(contents))
                 {
                     try
                     {
                         byte[] decoded = Convert.FromBase64String(contents);
                         string decodedStr = System.Text.Encoding.UTF8.GetString(decoded);
-                        string preview = decodedStr.Length > 200 ? decodedStr.Substring(0, 200) : decodedStr;
                         // Check if it starts with PEM header or is binary (DER)
                         if (decodedStr.StartsWith("-----BEGIN"))
                         {
-                            Logger.LogInformation("Contents is PEM format, preview: {Preview}", preview.Replace("\n", "\\n"));
-                            // Count certificates in the PEM
+                            Logger.LogTrace("Contents is PEM format");
                             int certCount = System.Text.RegularExpressions.Regex.Matches(decodedStr, "-----BEGIN CERTIFICATE-----").Count;
-                            Logger.LogInformation("PEM contains {Count} certificate(s)", certCount);
+                            Logger.LogTrace("PEM contains {Count} certificate(s)", certCount);
                         }
                         else
                         {
-                            Logger.LogInformation("Contents is binary (DER) format, first bytes: {Bytes}",
+                            Logger.LogTrace("Contents is binary (DER) format, first bytes: {Bytes}",
                                 BitConverter.ToString(decoded.Take(20).ToArray()));
                         }
                     }
                     catch (Exception decodeEx)
                     {
-                        Logger.LogWarning("Could not decode contents: {Error}", decodeEx.Message);
+                        Logger.LogDebug("Could not decode contents for format detection: {Error}", decodeEx.Message);
                     }
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("Could not enumerate JobCertificate properties: {Error}", ex.Message);
+                Logger.LogDebug("Could not enumerate JobCertificate properties: {Error}", ex.Message);
             }
         }
 
@@ -542,35 +540,35 @@ public abstract class JobBase
             try
             {
                 byte[] certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-                Logger.LogInformation("Certificate data length: {Length} bytes", certBytes.Length);
+                Logger.LogDebug("Certificate data length: {Length} bytes", certBytes.Length);
 
                 // Try PKCS12 parsing FIRST (with password) - this is the expected format for certs with keys
-                Logger.LogInformation("Attempting to parse as PKCS12 format with password...");
+                Logger.LogTrace("Attempting to parse as PKCS12 format with password...");
                 Pkcs12Store pkcs12Store = null;
                 string alias = null;
                 bool isPkcs12 = false;
                 try
                 {
-                    Logger.LogDebug("PKCS12 data: {Data}", LoggingUtilities.RedactPkcs12Bytes(certBytes));
-                    Logger.LogDebug("Calling LoadPkcs12Store()");
+                    Logger.LogTrace("PKCS12 data: {Data}", LoggingUtilities.RedactPkcs12Bytes(certBytes));
+                    Logger.LogTrace("Calling LoadPkcs12Store()");
                     pkcs12Store = LoadPkcs12Store(certBytes, pKeyPassword);
-                    Logger.LogDebug("Returned from LoadPkcs12Store()");
+                    Logger.LogTrace("Returned from LoadPkcs12Store()");
 
-                    Logger.LogDebug("Attempting to get alias from pkcs12Store");
+                    Logger.LogTrace("Attempting to get alias from pkcs12Store");
                     alias = pkcs12Store.Aliases.FirstOrDefault(pkcs12Store.IsKeyEntry);
                     if (alias != null)
                     {
                         isPkcs12 = true;
-                        Logger.LogInformation("Successfully parsed as PKCS12 format with key entry, alias: {Alias}", alias);
+                        Logger.LogDebug("Successfully parsed as PKCS12 format with key entry, alias: {Alias}", alias);
                     }
                     else
                     {
-                        Logger.LogInformation("PKCS12 parsed but no key entry found, will try other formats");
+                        Logger.LogDebug("PKCS12 parsed but no key entry found, will try other formats");
                     }
                 }
                 catch (Exception pkcs12Ex)
                 {
-                    Logger.LogInformation("Not PKCS12 format or wrong password: {Error}", pkcs12Ex.Message);
+                    Logger.LogDebug("Not PKCS12 format or wrong password: {Error}", pkcs12Ex.Message);
                 }
 
                 // If not valid PKCS12 with key, try DER/PEM formats (cert-only, no private key)
@@ -579,7 +577,7 @@ public abstract class JobBase
                     // Check if it's DER format (certificate only, no private key)
                     if (Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.IsDerFormat(certBytes))
                     {
-                        Logger.LogInformation("Certificate data is in DER format (certificate only, no private key)");
+                        Logger.LogDebug("Certificate data is in DER format (certificate only, no private key)");
                         return ParseDerCertificate(certBytes, jobCertObject);
                     }
 
@@ -587,7 +585,7 @@ public abstract class JobBase
                     var dataStr = System.Text.Encoding.UTF8.GetString(certBytes);
                     if (dataStr.Contains("-----BEGIN CERTIFICATE-----") && !dataStr.Contains("PRIVATE KEY"))
                     {
-                        Logger.LogInformation("Certificate data is in PEM format (certificate only, no private key)");
+                        Logger.LogDebug("Certificate data is in PEM format (certificate only, no private key)");
                         return ParsePemCertificate(dataStr, jobCertObject);
                     }
 
@@ -649,7 +647,7 @@ public abstract class JobBase
         else
         {
             pKeyPassword = "";
-            Logger.LogInformation("=== NO PASSWORD BRANCH - Certificate does NOT have a password ===");
+            Logger.LogDebug("Certificate does NOT have a password, trying auto-detection of format");
 
             if (config.JobCertificate == null ||
                 string.IsNullOrEmpty(config.JobCertificate.Contents))
@@ -658,9 +656,9 @@ public abstract class JobBase
                 return jobCertObject;
             }
 
-            Logger.LogInformation("Calling Convert.FromBase64String()...");
+            Logger.LogTrace("Calling Convert.FromBase64String()...");
             byte[] certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
-            Logger.LogInformation("Certificate data length: {Length} bytes", certBytes.Length);
+            Logger.LogDebug("Certificate data length: {Length} bytes", certBytes.Length);
 
             if (certBytes.Length == 0)
             {
@@ -670,7 +668,7 @@ public abstract class JobBase
             }
 
             // Try PKCS12 parsing FIRST (this is the most common format for certs with keys)
-            Logger.LogInformation("Attempting to parse as PKCS12 format first...");
+            Logger.LogTrace("Attempting to parse as PKCS12 format first...");
             Pkcs12Store pkcs12Store = null;
             bool isPkcs12 = false;
             try
@@ -683,16 +681,16 @@ public abstract class JobBase
                 if (testAlias != null)
                 {
                     isPkcs12 = true;
-                    Logger.LogInformation("Successfully parsed as PKCS12 format with key entry");
+                    Logger.LogDebug("Successfully parsed as PKCS12 format with key entry");
                 }
                 else
                 {
-                    Logger.LogInformation("PKCS12 parsed but no key entry found, will try other formats");
+                    Logger.LogDebug("PKCS12 parsed but no key entry found, will try other formats");
                 }
             }
             catch (Exception ex)
             {
-                Logger.LogInformation("Not PKCS12 format: {Error}", ex.Message);
+                Logger.LogDebug("Not PKCS12 format: {Error}", ex.Message);
             }
 
             // If not valid PKCS12 with key, try DER/PEM formats
@@ -701,7 +699,7 @@ public abstract class JobBase
                 // Check if it's DER format (certificate only, no private key)
                 if (Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.IsDerFormat(certBytes))
                 {
-                    Logger.LogInformation("Certificate data is in DER format (certificate only, no private key)");
+                    Logger.LogDebug("Certificate data is in DER format (certificate only, no private key)");
                     return ParseDerCertificate(certBytes, jobCertObject);
                 }
 
@@ -709,7 +707,7 @@ public abstract class JobBase
                 var dataStr = System.Text.Encoding.UTF8.GetString(certBytes);
                 if (dataStr.Contains("-----BEGIN CERTIFICATE-----"))
                 {
-                    Logger.LogInformation("Certificate data is in PEM format");
+                    Logger.LogDebug("Certificate data is in PEM format");
                     return ParsePemCertificate(dataStr, jobCertObject);
                 }
 
