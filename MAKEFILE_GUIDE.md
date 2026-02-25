@@ -369,6 +369,73 @@ make build
 
 ---
 
+## Kubernetes CSR Management (K8SCert Testing)
+
+These targets help create and manage Kubernetes Certificate Signing Requests for testing the K8SCert store type.
+
+### Creating CSRs
+
+#### `make csr-create [NAME=my-csr] [CN=test-cert]`
+Create a single test CSR:
+```bash
+make csr-create                    # Creates test-csr-<timestamp>
+make csr-create NAME=my-test-csr   # Creates my-test-csr
+make csr-create NAME=my-csr CN=myapp.example.com
+```
+
+#### `make csr-create-approved [NAME=my-csr]`
+Create a CSR and immediately approve it:
+```bash
+make csr-create-approved NAME=my-approved-csr
+```
+
+#### `make csr-create-batch [COUNT=10] [APPROVE=true]`
+Create multiple test CSRs at once:
+```bash
+make csr-create-batch              # Creates 10 pending CSRs
+make csr-create-batch COUNT=5      # Creates 5 pending CSRs
+make csr-create-batch APPROVE=true # Creates 10 approved CSRs
+make csr-create-batch COUNT=3 APPROVE=true
+```
+
+### Managing CSRs
+
+#### `make csr-approve NAME=my-csr`
+Approve a pending CSR:
+```bash
+make csr-approve NAME=test-csr-123456
+```
+
+#### `make csr-deny NAME=my-csr`
+Deny a pending CSR:
+```bash
+make csr-deny NAME=test-csr-123456
+```
+
+#### `make csr-delete NAME=my-csr`
+Delete a specific CSR:
+```bash
+make csr-delete NAME=test-csr-123456
+```
+
+### Viewing CSRs
+
+#### `make csr-list`
+List all CSRs in the cluster.
+
+#### `make csr-list-test`
+List only test CSRs (those prefixed with `test-`).
+
+#### `make csr-describe NAME=my-csr`
+Show detailed information about a specific CSR.
+
+### Cleanup
+
+#### `make csr-cleanup`
+Delete all test CSRs (those prefixed with `test-`).
+
+---
+
 ## Common Workflows
 
 ### Running Tests for Development

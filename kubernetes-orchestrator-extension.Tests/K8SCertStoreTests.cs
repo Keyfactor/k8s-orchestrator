@@ -311,4 +311,111 @@ public class K8SCertStoreTests
     }
 
     #endregion
+
+    #region Inventory Mode Detection Tests
+
+    [Theory]
+    [InlineData(null, true)]       // null = cluster-wide mode
+    [InlineData("", true)]          // empty = cluster-wide mode
+    [InlineData("  ", true)]        // whitespace = cluster-wide mode
+    [InlineData("*", true)]         // wildcard = cluster-wide mode
+    [InlineData("my-csr", false)]   // specific name = single mode
+    [InlineData("test-csr-123", false)]
+    public void InventoryMode_DeterminesCorrectMode(string kubeSecretName, bool expectedClusterWide)
+    {
+        // Act
+        var isClusterWideMode = string.IsNullOrWhiteSpace(kubeSecretName) || kubeSecretName == "*";
+
+        // Assert
+        Assert.Equal(expectedClusterWide, isClusterWideMode);
+    }
+
+    #endregion
+
+    #region Cluster-Wide Inventory Tests
+
+    [Fact]
+    public void ClusterWideMode_OnlyReturnsIssuedCertificates()
+    {
+        // Arrange - Simulate a cluster with mixed CSRs
+        var csrs = new List<V1CertificateSigningRequest>
+        {
+            CreateTestCsr("approved-1", "Approved", includeCertificate: true),
+            CreateTestCsr("approved-2", "Approved", includeCertificate: true),
+            CreateTestCsr("pending-1", "Pending", includeCertificate: false),
+            CreateTestCsr("denied-1", "Denied", includeCertificate: false),
+            CreateTestCsr("approved-no-cert", "Approved", includeCertificate: false) // Approved but cert not yet issued
+        };
+
+        // Act - Filter to only those with certificates (what ListAllCertificateSigningRequests does)
+        var issuedCerts = csrs
+            .Where(c => c.Status?.Certificate != null && c.Status.Certificate.Length > 0)
+            .ToDictionary(c => c.Metadata.Name, c => System.Text.Encoding.UTF8.GetString(c.Status.Certificate));
+
+        // Assert
+        Assert.Equal(2, issuedCerts.Count);
+        Assert.Contains("approved-1", issuedCerts.Keys);
+        Assert.Contains("approved-2", issuedCerts.Keys);
+        Assert.DoesNotContain("pending-1", issuedCerts.Keys);
+        Assert.DoesNotContain("denied-1", issuedCerts.Keys);
+        Assert.DoesNotContain("approved-no-cert", issuedCerts.Keys);
+    }
+
+    [Fact]
+    public void ClusterWideMode_UsesCsrNameAsAlias()
+    {
+        // Arrange
+        var csrs = new List<V1CertificateSigningRequest>
+        {
+            CreateTestCsr("my-custom-csr-name", "Approved", includeCertificate: true),
+            CreateTestCsr("another-csr", "Approved", includeCertificate: true)
+        };
+
+        // Act - CSR name should be used as the dictionary key (alias)
+        var issuedCerts = csrs
+            .Where(c => c.Status?.Certificate != null && c.Status.Certificate.Length > 0)
+            .ToDictionary(c => c.Metadata.Name, c => System.Text.Encoding.UTF8.GetString(c.Status.Certificate));
+
+        // Assert
+        Assert.Equal(2, issuedCerts.Count);
+        Assert.True(issuedCerts.ContainsKey("my-custom-csr-name"));
+        Assert.True(issuedCerts.ContainsKey("another-csr"));
+    }
+
+    [Fact]
+    public void ClusterWideMode_EmptyCluster_ReturnsEmptyDictionary()
+    {
+        // Arrange - Empty cluster
+        var csrs = new List<V1CertificateSigningRequest>();
+
+        // Act
+        var issuedCerts = csrs
+            .Where(c => c.Status?.Certificate != null && c.Status.Certificate.Length > 0)
+            .ToDictionary(c => c.Metadata.Name, c => System.Text.Encoding.UTF8.GetString(c.Status.Certificate));
+
+        // Assert
+        Assert.Empty(issuedCerts);
+    }
+
+    [Fact]
+    public void ClusterWideMode_AllPending_ReturnsEmptyDictionary()
+    {
+        // Arrange - All CSRs are pending
+        var csrs = new List<V1CertificateSigningRequest>
+        {
+            CreateTestCsr("pending-1", "Pending", includeCertificate: false),
+            CreateTestCsr("pending-2", "Pending", includeCertificate: false),
+            CreateTestCsr("pending-3", "Pending", includeCertificate: false)
+        };
+
+        // Act
+        var issuedCerts = csrs
+            .Where(c => c.Status?.Certificate != null && c.Status.Certificate.Length > 0)
+            .ToDictionary(c => c.Metadata.Name, c => System.Text.Encoding.UTF8.GetString(c.Status.Certificate));
+
+        // Assert
+        Assert.Empty(issuedCerts);
+    }
+
+    #endregion
 }

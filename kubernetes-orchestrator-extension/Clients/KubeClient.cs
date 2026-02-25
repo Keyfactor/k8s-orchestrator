@@ -2143,6 +2143,44 @@ public class KubeCertificateManagerClient
     }
 
     /// <summary>
+    /// Lists all Certificate Signing Requests in the cluster and returns their issued certificates.
+    /// Only returns CSRs that have been approved and have a signed certificate.
+    /// </summary>
+    /// <returns>Dictionary mapping CSR name to certificate PEM string.</returns>
+    public Dictionary<string, string> ListAllCertificateSigningRequests()
+    {
+        _logger.MethodEntry(LogLevel.Debug);
+        var results = new Dictionary<string, string>();
+
+        _logger.LogDebug("Listing all Certificate Signing Requests from cluster {Host}", GetHost());
+        var csrList = Client.CertificatesV1.ListCertificateSigningRequest();
+        _logger.LogDebug("Found {Count} CSRs in cluster", csrList.Items.Count);
+
+        foreach (var csr in csrList.Items)
+        {
+            var csrName = csr.Metadata.Name;
+            _logger.LogTrace("Processing CSR: {Name}", csrName);
+
+            // Skip CSRs that haven't been signed yet
+            if (csr.Status?.Certificate == null || csr.Status.Certificate.Length == 0)
+            {
+                _logger.LogDebug("CSR {Name} has no certificate (pending or denied), skipping", csrName);
+                continue;
+            }
+
+            var utfCert = Encoding.UTF8.GetString(csr.Status.Certificate);
+            _logger.LogTrace("CSR {Name} has certificate: {CertPreview}...", csrName,
+                utfCert.Length > 50 ? utfCert.Substring(0, 50) : utfCert);
+
+            results[csrName] = utfCert;
+        }
+
+        _logger.LogDebug("Returning {Count} issued certificates from CSRs", results.Count);
+        _logger.MethodExit(LogLevel.Debug);
+        return results;
+    }
+
+    /// <summary>
     /// Reads a DER-encoded certificate from a base64 string.
     /// </summary>
     /// <param name="derString">Base64-encoded DER certificate data.</param>

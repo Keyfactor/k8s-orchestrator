@@ -492,7 +492,8 @@ public class Inventory : JobBase, IInventoryJobExtension
 
     /// <summary>
     /// Handles inventory of Kubernetes Certificate Signing Requests (CSRs).
-    /// Retrieves certificate data from approved CSRs.
+    /// If KubeSecretName is specified, inventories that specific CSR (legacy single-CSR mode).
+    /// If KubeSecretName is empty or "*", inventories ALL issued CSRs in the cluster (cluster-wide mode).
     /// </summary>
     /// <param name="jobId">The job history ID for tracking.</param>
     /// <param name="submitInventory">Callback delegate to submit discovered certificates.</param>
@@ -500,15 +501,35 @@ public class Inventory : JobBase, IInventoryJobExtension
     private JobResult HandleCertificate(long jobId, SubmitInventoryUpdate submitInventory)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogDebug("Processing CSR inventory for job {JobId}", jobId);
         Logger.LogTrace("submitInventory: " + submitInventory);
 
-        const bool hasPrivateKey = false;
-        Logger.LogTrace("Calling GetCertificateSigningRequestStatus for job id " + jobId + "...");
+        // Determine mode: single CSR or cluster-wide
+        var isClusterWideMode = string.IsNullOrWhiteSpace(KubeSecretName) || KubeSecretName == "*";
+
+        if (isClusterWideMode)
+        {
+            Logger.LogDebug("Processing CSR inventory for job {JobId} - cluster-wide mode (all CSRs)", jobId);
+            return HandleCertificateClusterWide(jobId, submitInventory);
+        }
+        else
+        {
+            Logger.LogDebug("Processing CSR inventory for job {JobId} - single CSR mode (name: {CsrName})", jobId, KubeSecretName);
+            return HandleCertificateSingle(jobId, submitInventory);
+        }
+    }
+
+    /// <summary>
+    /// Handles inventory of a single CSR by name (legacy behavior).
+    /// </summary>
+    private JobResult HandleCertificateSingle(long jobId, SubmitInventoryUpdate submitInventory)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogTrace("Calling GetCertificateSigningRequestStatus for CSR '{CsrName}'...", KubeSecretName);
+
         try
         {
             var certificates = KubeClient.GetCertificateSigningRequestStatus(KubeSecretName);
-            Logger.LogDebug("GetCertificateSigningRequestStatus returned " + certificates.Count() + " certificates.");
+            Logger.LogDebug("GetCertificateSigningRequestStatus returned {Count} certificates.", certificates.Count());
             Logger.LogTrace(string.Join(",", certificates));
             Logger.LogDebug("Pushing {Count} certificates to inventory", certificates.Count());
             var result = PushInventory(certificates, jobId, submitInventory);
@@ -521,12 +542,11 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogTrace(e.ToString());
             Logger.LogTrace(e.StackTrace);
             var certDataErrorMsg =
-                $"Kubernetes {KubeSecretType} '{KubeSecretName}' was not found in namespace '{KubeNamespace}' on host '{KubeClient.GetHost()}'.";
+                $"Kubernetes CSR '{KubeSecretName}' was not found on host '{KubeClient.GetHost()}'.";
             Logger.LogError(certDataErrorMsg);
             var inventoryItems = new List<CurrentInventoryItem>();
             submitInventory.Invoke(inventoryItems);
-            Logger.LogTrace("Exiting HandleCertificate for job id " + jobId + "...");
-            // return FailJob(certDataErrorMsg, jobId);
+            Logger.LogTrace("Exiting HandleCertificateSingle for job id " + jobId + "...");
             return new JobResult
             {
                 Result = OrchestratorJobStatusJobResult.Success,
@@ -536,12 +556,94 @@ public class Inventory : JobBase, IInventoryJobExtension
         }
         catch (Exception e)
         {
-            Logger.LogError("HttpOperationException: " + e.Message);
+            Logger.LogError("Exception: " + e.Message);
             Logger.LogTrace(e.ToString());
             Logger.LogTrace(e.StackTrace);
-            var certDataErrorMsg = $"Error querying Kubernetes secret API: {e.Message}";
+            var certDataErrorMsg = $"Error querying Kubernetes CSR API: {e.Message}";
             Logger.LogError(certDataErrorMsg);
-            Logger.LogTrace("Exiting HandleCertificate for job id " + jobId + "...");
+            Logger.LogTrace("Exiting HandleCertificateSingle for job id " + jobId + "...");
+            return FailJob(certDataErrorMsg, jobId);
+        }
+    }
+
+    /// <summary>
+    /// Handles inventory of all CSRs in the cluster (new cluster-wide behavior).
+    /// </summary>
+    private JobResult HandleCertificateClusterWide(long jobId, SubmitInventoryUpdate submitInventory)
+    {
+        Logger.MethodEntry(MsLogLevel.Debug);
+
+        try
+        {
+            // List all CSRs in the cluster that have issued certificates
+            var csrCertificates = KubeClient.ListAllCertificateSigningRequests();
+            Logger.LogDebug("Found {Count} issued certificates from CSRs", csrCertificates.Count);
+
+            if (csrCertificates.Count == 0)
+            {
+                Logger.LogInformation("No issued CSR certificates found in cluster");
+                submitInventory.Invoke(new List<CurrentInventoryItem>());
+                return new JobResult
+                {
+                    Result = OrchestratorJobStatusJobResult.Success,
+                    JobHistoryId = jobId,
+                    FailureMessage = "No issued CSR certificates found in cluster"
+                };
+            }
+
+            var inventoryItems = new List<CurrentInventoryItem>();
+            foreach (var kvp in csrCertificates)
+            {
+                var csrName = kvp.Key;
+                var certPem = kvp.Value;
+
+                Logger.LogDebug("Processing CSR {CsrName}", csrName);
+                Logger.LogTrace("Certificate PEM: {CertPem}", certPem);
+
+                try
+                {
+                    // Parse the certificate to validate it
+                    var x509Cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(certPem);
+                    if (x509Cert == null)
+                    {
+                        Logger.LogWarning("Failed to parse certificate from CSR {CsrName}, skipping", csrName);
+                        continue;
+                    }
+
+                    // Use CSR name as the alias for easy identification
+                    var inventoryItem = new CurrentInventoryItem
+                    {
+                        Alias = csrName,
+                        PrivateKeyEntry = false, // CSRs never have private keys in K8s
+                        UseChainLevel = false,
+                        ItemStatus = OrchestratorInventoryItemStatus.Unknown,
+                        Certificates = new[] { certPem }
+                    };
+
+                    inventoryItems.Add(inventoryItem);
+                    Logger.LogDebug("Added CSR {CsrName} to inventory", csrName);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Error processing certificate from CSR {CsrName}, skipping", csrName);
+                }
+            }
+
+            Logger.LogDebug("Submitting {Count} CSR certificates to inventory", inventoryItems.Count);
+            submitInventory.Invoke(inventoryItems);
+
+            Logger.MethodExit(MsLogLevel.Debug);
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Success,
+                JobHistoryId = jobId
+            };
+        }
+        catch (Exception e)
+        {
+            Logger.LogError(e, "Error listing CSRs from cluster: {Message}", e.Message);
+            var certDataErrorMsg = $"Error querying Kubernetes CSR API: {e.Message}";
+            Logger.LogTrace("Exiting HandleCertificateClusterWide for job id " + jobId + "...");
             return FailJob(certDataErrorMsg, jobId);
         }
     }

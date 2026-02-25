@@ -769,6 +769,108 @@ api-get-jobs: ## Get recent orchestrator jobs (last 10)
 		-H "x-keyfactor-requested-with: APIClient" | \
 		jq -r '.[] | "\(.JobId) | \(.JobTypeName) | \(.Status) | \(.Requested)"'
 
+##@ Kubernetes CSR Management (for K8SCert testing)
+
+.PHONY: csr-create
+csr-create: ## Create a test CSR (usage: make csr-create [NAME=my-csr] [CN=test-cert])
+	@NAME=$${NAME:-test-csr-$$(date +%s)}; \
+	CN=$${CN:-test-certificate}; \
+	TMPDIR=$$(mktemp -d); \
+	echo "=== Creating CSR: $$NAME (CN=$$CN) ==="; \
+	openssl genrsa -out $$TMPDIR/key.pem 2048 2>/dev/null; \
+	openssl req -new -key $$TMPDIR/key.pem -out $$TMPDIR/csr.pem -subj "/CN=$$CN" 2>/dev/null; \
+	CSR_BASE64=$$(cat $$TMPDIR/csr.pem | base64 | tr -d '\n'); \
+	printf 'apiVersion: certificates.k8s.io/v1\nkind: CertificateSigningRequest\nmetadata:\n  name: %s\nspec:\n  request: %s\n  signerName: kubernetes.io/kube-apiserver-client\n  usages:\n  - client auth\n' "$$NAME" "$$CSR_BASE64" | kubectl apply -f -; \
+	rm -rf $$TMPDIR; \
+	echo "CSR created: $$NAME"; \
+	echo "To approve: make csr-approve NAME=$$NAME"; \
+	echo "To view:    kubectl get csr $$NAME"
+
+.PHONY: csr-create-approved
+csr-create-approved: ## Create and approve a test CSR (usage: make csr-create-approved [NAME=my-csr])
+	@NAME=$${NAME:-test-csr-$$(date +%s)}; \
+	$(MAKE) csr-create NAME=$$NAME; \
+	sleep 1; \
+	$(MAKE) csr-approve NAME=$$NAME
+
+.PHONY: csr-approve
+csr-approve: ## Approve a CSR (usage: make csr-approve NAME=my-csr)
+	@if [ -z "$(NAME)" ]; then \
+		echo "ERROR: NAME required"; \
+		echo "Usage: make csr-approve NAME=my-csr"; \
+		exit 1; \
+	fi
+	@echo "=== Approving CSR: $(NAME) ==="
+	@kubectl certificate approve $(NAME)
+	@echo "CSR approved"
+
+.PHONY: csr-deny
+csr-deny: ## Deny a CSR (usage: make csr-deny NAME=my-csr)
+	@if [ -z "$(NAME)" ]; then \
+		echo "ERROR: NAME required"; \
+		echo "Usage: make csr-deny NAME=my-csr"; \
+		exit 1; \
+	fi
+	@echo "=== Denying CSR: $(NAME) ==="
+	@kubectl certificate deny $(NAME)
+	@echo "CSR denied"
+
+.PHONY: csr-list
+csr-list: ## List all CSRs in the cluster
+	@echo "=== Certificate Signing Requests ==="
+	@kubectl get csr -o wide
+
+.PHONY: csr-list-test
+csr-list-test: ## List only test CSRs (prefixed with test-)
+	@echo "=== Test CSRs ==="
+	@kubectl get csr -o wide | grep -E "^NAME|^test-" || echo "No test CSRs found"
+
+.PHONY: csr-describe
+csr-describe: ## Describe a CSR (usage: make csr-describe NAME=my-csr)
+	@if [ -z "$(NAME)" ]; then \
+		echo "ERROR: NAME required"; \
+		echo "Usage: make csr-describe NAME=my-csr"; \
+		exit 1; \
+	fi
+	@kubectl describe csr $(NAME)
+
+.PHONY: csr-delete
+csr-delete: ## Delete a CSR (usage: make csr-delete NAME=my-csr)
+	@if [ -z "$(NAME)" ]; then \
+		echo "ERROR: NAME required"; \
+		echo "Usage: make csr-delete NAME=my-csr"; \
+		exit 1; \
+	fi
+	@echo "=== Deleting CSR: $(NAME) ==="
+	@kubectl delete csr $(NAME)
+	@echo "CSR deleted"
+
+.PHONY: csr-cleanup
+csr-cleanup: ## Delete all test CSRs (prefixed with test-)
+	@echo "=== Cleaning up test CSRs ==="
+	@kubectl get csr --no-headers 2>/dev/null | grep "^test-" | awk '{print $$1}' | \
+		while read csr; do \
+			echo "Deleting CSR $$csr..."; \
+			kubectl delete csr $$csr 2>/dev/null || true; \
+		done || echo "No test CSRs found"
+	@echo "Cleanup complete"
+
+.PHONY: csr-create-batch
+csr-create-batch: ## Create multiple test CSRs (usage: make csr-create-batch [COUNT=10] [APPROVE=true])
+	@COUNT=$${COUNT:-10}; \
+	APPROVE=$${APPROVE:-false}; \
+	echo "=== Creating $$COUNT test CSRs (approve=$$APPROVE) ==="; \
+	for i in $$(seq 1 $$COUNT); do \
+		NAME="test-batch-csr-$$i-$$(date +%s)"; \
+		if [ "$$APPROVE" = "true" ]; then \
+			$(MAKE) csr-create-approved NAME=$$NAME; \
+		else \
+			$(MAKE) csr-create NAME=$$NAME; \
+		fi; \
+		echo ""; \
+	done; \
+	echo "=== Created $$COUNT CSRs ==="
+
 ##@ Build
 
 .PHONY: build

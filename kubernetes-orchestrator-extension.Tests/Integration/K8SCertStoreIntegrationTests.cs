@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Threading.Tasks;
 using k8s;
@@ -27,9 +28,13 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 /// <summary>
 /// Integration tests for K8SCert store type operations against a real Kubernetes cluster.
 /// K8SCert is READ-ONLY - only Inventory and Discovery operations are tested.
+///
+/// K8SCert supports two inventory modes:
+/// - Single CSR mode: When KubeSecretName is set, inventories that specific CSR
+/// - Cluster-wide mode: When KubeSecretName is empty or "*", inventories ALL issued CSRs
+///
 /// No Management operations are supported for CSRs.
 /// Tests are gated by RUN_INTEGRATION_TESTS=true environment variable.
-/// Note: This test class tracks CSRs instead of secrets for cleanup.
 /// </summary>
 [Collection("K8SCert Integration Tests")]
 public class K8SCertStoreIntegrationTests : IAsyncLifetime
@@ -156,14 +161,15 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         return created;
     }
 
-    #region Inventory Tests
+    #region Single CSR Mode Tests (Legacy Behavior)
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Inventory_SingleApprovedCSR_ReturnsSuccess()
+    public async Task Inventory_SingleMode_ApprovedCSR_ReturnsSuccess()
     {
         // Arrange
-        var csrName = $"test-inventory-{Guid.NewGuid():N}";
+        var csrName = $"test-single-approved-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: true);
+        await Task.Delay(2000); // Wait for certificate to be issued
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -172,7 +178,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             {
                 ClientMachine = "cluster",
                 StorePath = csrName,
-                Properties = "{\"KubeSecretType\":\"certificate\"}"
+                Properties = $"{{\"KubeSecretName\":\"{csrName}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = _kubeconfigJson,
@@ -190,10 +196,10 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Inventory_PendingCSR_ReturnsSuccess()
+    public async Task Inventory_SingleMode_PendingCSR_ReturnsSuccessWithEmptyInventory()
     {
-        // Arrange
-        var csrName = $"test-pending-{Guid.NewGuid():N}";
+        // Arrange - CSR not approved, so no certificate issued
+        var csrName = $"test-single-pending-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: false);
 
         var jobConfig = new InventoryJobConfiguration
@@ -203,7 +209,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             {
                 ClientMachine = "cluster",
                 StorePath = csrName,
-                Properties = "{\"KubeSecretType\":\"certificate\"}"
+                Properties = $"{{\"KubeSecretName\":\"{csrName}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = _kubeconfigJson,
@@ -215,9 +221,179 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Act
         var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
 
+        // Assert - Should succeed but with empty inventory (CSR has no certificate)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_SingleMode_NonExistentCSR_ReturnsSuccessWithMessage()
+    {
+        // Arrange
+        var nonExistentCsr = $"does-not-exist-{Guid.NewGuid():N}";
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = nonExistentCsr,
+                Properties = $"{{\"KubeSecretName\":\"{nonExistentCsr}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Returns success with message about CSR not found
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotNull(result.FailureMessage);
+        Assert.Contains("not found", result.FailureMessage);
+    }
+
+    #endregion
+
+    #region Cluster-Wide Mode Tests (New Behavior)
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_EmptyName_ReturnsAllIssuedCSRs()
+    {
+        // Arrange - Create multiple CSRs
+        var approvedCsr1 = $"test-cw-approved-1-{Guid.NewGuid():N}";
+        var approvedCsr2 = $"test-cw-approved-2-{Guid.NewGuid():N}";
+        var pendingCsr = $"test-cw-pending-{Guid.NewGuid():N}";
+
+        await CreateTestCsr(approvedCsr1, approve: true);
+        await CreateTestCsr(approvedCsr2, approve: true);
+        await CreateTestCsr(pendingCsr, approve: false);
+        await Task.Delay(2000); // Wait for certificates to be issued
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster",
+                Properties = "{\"KubeSecretName\":\"\"}" // Empty = cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Should find at least our 2 approved CSRs
+        Assert.True(inventoryItems.Count >= 2,
+            $"Expected at least 2 inventory items but got {inventoryItems.Count}");
+
+        var aliases = inventoryItems.Select(i => i.Alias).ToList();
+        Assert.Contains(approvedCsr1, aliases);
+        Assert.Contains(approvedCsr2, aliases);
+        Assert.DoesNotContain(pendingCsr, aliases); // Pending CSR should not be included
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_Wildcard_ReturnsAllIssuedCSRs()
+    {
+        // Arrange
+        var approvedCsr = $"test-wc-approved-{Guid.NewGuid():N}";
+        await CreateTestCsr(approvedCsr, approve: true);
+        await Task.Delay(2000);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster",
+                Properties = "{\"KubeSecretName\":\"*\"}" // Wildcard = cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        var aliases = inventoryItems.Select(i => i.Alias).ToList();
+        Assert.Contains(approvedCsr, aliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_CSRsHaveNoPrivateKey()
+    {
+        // Arrange
+        var csrName = $"test-no-pk-cw-{Guid.NewGuid():N}";
+        await CreateTestCsr(csrName, approve: true);
+        await Task.Delay(2000);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster",
+                Properties = "{}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // All CSR inventory items should have PrivateKeyEntry = false
+        foreach (var item in inventoryItems)
+        {
+            Assert.False(item.PrivateKeyEntry, $"CSR {item.Alias} should not have private key");
+        }
     }
 
     #endregion
@@ -256,43 +432,6 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
-    }
-
-    #endregion
-
-    #region Error Handling Tests
-
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Inventory_NonExistentCSR_ReturnsFailure()
-    {
-        // Arrange
-        var nonExistentCsr = $"does-not-exist-{Guid.NewGuid():N}";
-
-        var jobConfig = new InventoryJobConfiguration
-        {
-            Capability = "K8SCert",
-            CertificateStoreDetails = new CertificateStore
-            {
-                ClientMachine = "cluster",
-                StorePath = nonExistentCsr,
-                Properties = "{\"KubeSecretType\":\"certificate\"}"
-            },
-            ServerUsername = string.Empty,
-            ServerPassword = _kubeconfigJson,
-            UseSSL = true
-        };
-
-        var inventory = new Inventory(_mockPamResolver.Object);
-
-        // Act
-        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
-
-        // Assert
-        // Non-existent stores return Success with empty inventory and a FailureMessage explaining the issue
-        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
-            $"Expected Success (lenient behavior for missing stores) but got {result.Result}. FailureMessage: {result.FailureMessage}");
-        Assert.NotNull(result.FailureMessage);
-        Assert.Contains("was not found", result.FailureMessage);
     }
 
     #endregion
