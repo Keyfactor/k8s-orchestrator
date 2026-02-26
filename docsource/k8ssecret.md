@@ -10,9 +10,18 @@ For discovery of `K8SSecret` stores you can use the following params to filter t
 
 ## Certificate Store Configuration
 
-In order for certificates of type `Opaque` to be inventoried as `K8SSecret` store types, they must have specific keys in 
-the Kubernetes secret.  
-- Required keys: `tls.crt` or `ca.crt` 
+In order for certificates of type `Opaque` to be inventoried as `K8SSecret` store types, they must have specific keys in
+the Kubernetes secret.
+- Required keys: `tls.crt` or `ca.crt`
 - Additional keys: `tls.key`
+
+### Storepath Patterns
+
+- `<secret_name>`
+- `<namespace_name>/<secret_name>`
+
+### Alias Patterns
+
+- `<secret_name>` (when certificate is stored directly)
 
 

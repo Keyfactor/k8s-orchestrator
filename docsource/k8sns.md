@@ -17,10 +17,12 @@ have specific keys in the Kubernetes secret.
 - Additional keys: `tls.key`
 
 ### Storepath Patterns
+
 - `<namespace_name>`
 - `<cluster_name>/<namespace_name>`
 
 ### Alias Patterns
+
 - `secrets/<tls|opaque>/<secret_name>`
 
 

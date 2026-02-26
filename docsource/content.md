@@ -39,6 +39,7 @@ The Kubernetes Orchestrator Extension supports certificates with the following k
 ## Requirements
 
 ### Kubernetes API Access
+
 This orchestrator extension makes use of the Kubernetes API by using a service account
 to communicate remotely with certificate stores. The service account must exist and have the appropriate permissions.
 The service account token can be provided to the extension in one of two ways:
@@ -46,6 +47,7 @@ The service account token can be provided to the extension in one of two ways:
 - As a base64 encoded string that contains the service account credentials
 
 #### Service Account Setup
+
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
 information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
 

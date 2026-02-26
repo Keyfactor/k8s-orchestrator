@@ -34,11 +34,13 @@ the Kubernetes secret.
 - Valid Keys: `*.pfx`, `*.pkcs12`, `*.p12`
 
 ### Storepath Patterns
+
 - `<namespace_name>/<secret_name>`
 - `<namespace_name>/secrets/<secret_name>`
 - `<cluster_name>/<namespace_name>/secrets/<secret_name>`
 
 ### Alias Patterns
+
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is

@@ -15,3 +15,12 @@ the Kubernetes secret.
 - Required keys: `tls.crt` and `tls.key`
 - Optional keys: `ca.crt`
 
+### Storepath Patterns
+
+- `<secret_name>`
+- `<namespace_name>/<secret_name>`
+
+### Alias Patterns
+
+- `<secret_name>` (the TLS secret name)
+
