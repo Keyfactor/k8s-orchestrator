@@ -576,8 +576,8 @@ internal class Program
 
             if (input == "SerializeTest")
             {
-                var xml =
-                    "<response status=\"error\" code=\"10\"><msg><line> <![CDATA[ Boingy]]> cannot be deleted because of references from:</line><line> certificate-profile -> Keyfactor -> CA -> Boingy</line></msg></response>";
+                // Example XML for testing serialization (currently disabled)
+                // var xml = "<response status=\"error\" code=\"10\"><msg><line> <![CDATA[ Boingy]]> cannot be deleted because of references from:</line><line> certificate-profile -> Keyfactor -> CA -> Boingy</line></msg></response>";
                 // using System.Xml.Serialization;
                 // var serializer = new XmlSerializer(typeof(ErrorSuccessResponse));
                 // using var reader = new StringReader(xml);
