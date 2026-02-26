@@ -85,6 +85,7 @@ Before installing the Kubernetes Universal Orchestrator extension, we recommend 
 
 
 ### Kubernetes API Access
+
 This orchestrator extension makes use of the Kubernetes API by using a service account
 to communicate remotely with certificate stores. The service account must exist and have the appropriate permissions.
 The service account token can be provided to the extension in one of two ways:
@@ -92,6 +93,7 @@ The service account token can be provided to the extension in one of two ways:
 - As a base64 encoded string that contains the service account credentials
 
 #### Service Account Setup
+
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
 information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
 
@@ -1695,10 +1697,12 @@ have specific keys in the Kubernetes secret.
 - Additional keys: `tls.key`
 
 ### Storepath Patterns
+
 - `<namespace_name>`
 - `<cluster_name>/<namespace_name>`
 
 ### Alias Patterns
+
 - `secrets/<tls|opaque>/<secret_name>`
 
 
@@ -1796,11 +1800,13 @@ the Kubernetes secret.
 - Valid Keys: `*.pfx`, `*.pkcs12`, `*.p12`
 
 ### Storepath Patterns
+
 - `<namespace_name>/<secret_name>`
 - `<namespace_name>/secrets/<secret_name>`
 - `<cluster_name>/<namespace_name>/secrets/<secret_name>`
 
 ### Alias Patterns
+
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
@@ -1921,10 +1927,19 @@ The K8SPKCS12 store type supports certificates with the following key algorithms
 
 <details><summary>K8SSecret (K8SSecret)</summary>
 
-In order for certificates of type `Opaque` to be inventoried as `K8SSecret` store types, they must have specific keys in 
-the Kubernetes secret.  
-- Required keys: `tls.crt` or `ca.crt` 
+In order for certificates of type `Opaque` to be inventoried as `K8SSecret` store types, they must have specific keys in
+the Kubernetes secret.
+- Required keys: `tls.crt` or `ca.crt`
 - Additional keys: `tls.key`
+
+### Storepath Patterns
+
+- `<secret_name>`
+- `<namespace_name>/<secret_name>`
+
+### Alias Patterns
+
+- `<secret_name>` (when certificate is stored directly)
 
 
 ### Store Creation
@@ -2024,6 +2039,15 @@ In order for certificates of type `kubernetes.io/tls` to be inventoried, they mu
 the Kubernetes secret.
 - Required keys: `tls.crt` and `tls.key`
 - Optional keys: `ca.crt`
+
+### Storepath Patterns
+
+- `<secret_name>`
+- `<namespace_name>/<secret_name>`
+
+### Alias Patterns
+
+- `<secret_name>` (the TLS secret name)
 
 
 ### Store Creation
