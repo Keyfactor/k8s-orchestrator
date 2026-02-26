@@ -147,10 +147,18 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
             if (Capability.Contains("NS")) KubeSecretType = "namespace";
+            if (Capability.Contains("Cert")) KubeSecretType = "certificate";
 
             var allowedKeys = new List<string>();
             if (!string.IsNullOrEmpty(CertificateDataFieldName))
                 allowedKeys = CertificateDataFieldName.Split(',').ToList();
+
+            // Handle null KubeSecretType gracefully
+            if (string.IsNullOrEmpty(KubeSecretType))
+            {
+                Logger.LogWarning("KubeSecretType is null or empty, defaulting to 'secret'");
+                KubeSecretType = "secret";
+            }
 
             switch (KubeSecretType.ToLower())
             {

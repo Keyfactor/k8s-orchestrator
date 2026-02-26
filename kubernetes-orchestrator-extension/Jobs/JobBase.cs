@@ -1016,12 +1016,14 @@ public abstract class JobBase
                 var kS = sPathParts[2];
                 Logger.LogTrace("kS: {KubeSecretName}", kS);
 
-                if (kN is "secret" or "tls" or "certificate" or "namespace")
+                if (kN is "secret" or "secrets" or "tls" or "certificate" or "namespace")
                 {
                     Logger.LogInformation(
-                        "Store path is 3 parts and the second part is a reserved keyword, assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>'");
+                        "Store path is 3 parts and the second part '{Keyword}' is a reserved keyword, " +
+                        "re-interpreting as '<namespace_name>/{Keyword}/<secret_name>' pattern",
+                        kN, kN);
                     kN = sPathParts[0];
-                    kS = sPathParts[1];
+                    kS = sPathParts[2];
                 }
 
                 if (string.IsNullOrEmpty(KubeNamespace))
