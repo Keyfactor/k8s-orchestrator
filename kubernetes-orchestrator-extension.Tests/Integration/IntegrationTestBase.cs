@@ -51,10 +51,22 @@ public abstract class IntegrationTestBase : IAsyncLifetime
     protected readonly string TestRunId = Guid.NewGuid().ToString("N")[..8];
 
     /// <summary>
-    /// The Kubernetes namespace to use for this test class.
-    /// Each test class should return a unique namespace.
+    /// The .NET framework suffix for namespace isolation between parallel framework runs.
+    /// Example: "net8" or "net10"
     /// </summary>
-    protected abstract string TestNamespace { get; }
+    protected static readonly string FrameworkSuffix = $"net{Environment.Version.Major}";
+
+    /// <summary>
+    /// The base Kubernetes namespace for this test class (without framework suffix).
+    /// Each test class should return a unique base namespace.
+    /// </summary>
+    protected abstract string BaseTestNamespace { get; }
+
+    /// <summary>
+    /// The full Kubernetes namespace including framework suffix for test isolation.
+    /// This ensures net8.0 and net10.0 tests don't interfere when running in parallel.
+    /// </summary>
+    protected virtual string TestNamespace => $"{BaseTestNamespace}-{FrameworkSuffix}";
 
     protected IntegrationTestBase(IntegrationTestFixture fixture)
     {

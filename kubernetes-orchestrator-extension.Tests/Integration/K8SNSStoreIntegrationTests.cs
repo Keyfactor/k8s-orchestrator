@@ -30,15 +30,17 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8SNS Integration Tests")]
 public class K8SNSStoreIntegrationTests : IntegrationTestBase
 {
-    protected override string TestNamespace => "keyfactor-k8sns-integration-tests";
+    protected override string BaseTestNamespace => "keyfactor-k8sns-integration-tests";
 
     public K8SNSStoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
     }
 
-    private async Task<V1Secret> CreateTestSecret(string name, KeyType keyType = KeyType.Rsa2048, string secretType = "Opaque")
+    private async Task<V1Secret> CreateTestSecret(string name, KeyType keyType = KeyType.Rsa2048, string secretType = "Opaque", bool useCache = false)
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        var certInfo = useCache
+            ? CachedCertificateProvider.GetOrCreate(keyType, $"Integration Test {keyType}")
+            : CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -63,11 +65,11 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Discovery_SingleNamespace_FindsAllSecrets()
     {
-        // Arrange - Create secrets in the namespace
+        // Arrange - Create secrets in the namespace (read-only test uses cached certs)
         var secret1Name = $"test-ns-1-{Guid.NewGuid():N}";
         var secret2Name = $"test-ns-2-{Guid.NewGuid():N}";
-        await CreateTestSecret(secret1Name);
-        await CreateTestSecret(secret2Name);
+        await CreateTestSecret(secret1Name, useCache: true);
+        await CreateTestSecret(secret2Name, useCache: true);
 
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -97,11 +99,11 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Discovery_MixedSecretTypes_FindsAllTypes()
     {
-        // Arrange - Create different secret types in the namespace
+        // Arrange - Create different secret types in the namespace (read-only test uses cached certs)
         var opaqueSecret = $"test-opaque-ns-{Guid.NewGuid():N}";
         var tlsSecret = $"test-tls-ns-{Guid.NewGuid():N}";
-        await CreateTestSecret(opaqueSecret, KeyType.Rsa2048, "Opaque");
-        await CreateTestSecret(tlsSecret, KeyType.Rsa2048, "kubernetes.io/tls");
+        await CreateTestSecret(opaqueSecret, KeyType.Rsa2048, "Opaque", useCache: true);
+        await CreateTestSecret(tlsSecret, KeyType.Rsa2048, "kubernetes.io/tls", useCache: true);
 
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -135,11 +137,11 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_NamespaceScope_ReturnsAllCertificates()
     {
-        // Arrange - Create secrets in the namespace
+        // Arrange - Create secrets in the namespace (read-only test uses cached certs)
         var secret1Name = $"test-inv-ns-1-{Guid.NewGuid():N}";
         var secret2Name = $"test-inv-ns-2-{Guid.NewGuid():N}";
-        await CreateTestSecret(secret1Name);
-        await CreateTestSecret(secret2Name);
+        await CreateTestSecret(secret1Name, useCache: true);
+        await CreateTestSecret(secret2Name, useCache: true);
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -271,13 +273,13 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task NamespaceScope_OnlySeesSecretsInNamespace_NotOtherNamespaces()
     {
-        // Verify that K8SNS only sees secrets in its namespace
+        // Verify that K8SNS only sees secrets in its namespace (read-only test uses cached certs)
         // This requires creating a secret in another namespace (if we have cluster permissions)
         // For this test, we just verify our namespace secrets are correctly scoped
 
         // Arrange
         var secretName = $"test-boundary-{Guid.NewGuid():N}";
-        await CreateTestSecret(secretName);
+        await CreateTestSecret(secretName, useCache: true);
 
         // Act - Read secret
         var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
@@ -355,15 +357,15 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_Namespace_ReturnsCorrectPrivateKeyStatus()
     {
-        // Arrange - Create one secret with private key and one without
+        // Arrange - Create one secret with private key and one without (read-only test uses cached certs)
         var secretWithKey = $"test-ns-withkey-{Guid.NewGuid():N}";
         var secretWithoutKey = $"test-ns-nokey-{Guid.NewGuid():N}";
 
         // Create secret WITH private key
-        await CreateTestSecret(secretWithKey);
+        await CreateTestSecret(secretWithKey, useCache: true);
 
         // Create secret WITHOUT private key (cert only)
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "NS No Key Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "NS No Key Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var secretNoKey = new V1Secret
         {
@@ -427,11 +429,11 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_Namespace_ReturnsFullCertificateChains()
     {
-        // Arrange - Create a secret with a certificate chain
+        // Arrange - Create a secret with a certificate chain (read-only test uses cached certs)
         var secretName = $"test-ns-chain-{Guid.NewGuid():N}";
 
         // Create secret with certificate chain (leaf + intermediate + root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -511,9 +513,9 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
         // to inventory. This was a bug where StorePath "default" would overwrite
         // the configured KubeNamespace.
 
-        // Arrange - Create a unique secret in our test namespace
+        // Arrange - Create a unique secret in our test namespace (read-only test uses cached certs)
         var secretName = $"test-nsprop-{Guid.NewGuid():N}";
-        await CreateTestSecret(secretName);
+        await CreateTestSecret(secretName, useCache: true);
 
         var inventoryItems = new List<CurrentInventoryItem>();
 
@@ -553,6 +555,97 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
             "Inventory should return items when KubeNamespace property is set correctly");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_EmptyKubeNamespaceProperty_UsesStorePath()
+    {
+        // This test verifies that when KubeNamespace is empty/not provided,
+        // the StorePath is used as the namespace (fallback behavior).
+
+        // Arrange - Create a unique secret in our test namespace (read-only test uses cached certs)
+        var secretName = $"test-nsfallback-{Guid.NewGuid():N}";
+        await CreateTestSecret(secretName, useCache: true);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Configure with StorePath=TestNamespace and KubeNamespace empty
+        // The inventory should use StorePath (TestNamespace) as fallback
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = TestNamespace, // This should be used when KubeNamespace is empty
+                Properties = "{\"KubeSecretType\":\"namespace\"}" // No KubeNamespace provided
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert - Should succeed using StorePath as namespace
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify inventory returned items (proving StorePath was used as namespace)
+        Assert.True(inventoryItems.Count > 0,
+            "Inventory should return items when StorePath is used as namespace fallback");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_StorePathWithClusterNamespace_WorksCorrectly()
+    {
+        // Test the <cluster>/<namespace> storepath pattern for K8SNS
+        // This is documented as a valid pattern in docsource/k8sns.md
+
+        // Arrange - Create a unique secret in our test namespace (read-only test uses cached certs)
+        var secretName = $"test-clusterpath-{Guid.NewGuid():N}";
+        await CreateTestSecret(secretName, useCache: true);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Use <cluster>/<namespace> pattern
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SNS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "kf-integrations",
+                StorePath = $"kf-integrations/{TestNamespace}", // <cluster>/<namespace> pattern
+                Properties = "{\"KubeSecretType\":\"namespace\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify inventory returned items
+        Assert.True(inventoryItems.Count > 0,
+            "Inventory should return items with <cluster>/<namespace> path pattern");
+    }
+
     #endregion
 
     #region Multiple Secret Type Tests
@@ -560,15 +653,15 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Namespace_WithMultipleSecretTypes_HandlesAllTypes()
     {
-        // Verify K8SNS can handle multiple secret types in the same namespace
+        // Verify K8SNS can handle multiple secret types in the same namespace (read-only test uses cached certs)
         // Arrange
         var opaqueSecret = $"test-multi-opaque-{Guid.NewGuid():N}";
         var tlsSecret = $"test-multi-tls-{Guid.NewGuid():N}";
         var ecSecret = $"test-multi-ec-{Guid.NewGuid():N}";
 
-        await CreateTestSecret(opaqueSecret, KeyType.Rsa2048, "Opaque");
-        await CreateTestSecret(tlsSecret, KeyType.Rsa2048, "kubernetes.io/tls");
-        await CreateTestSecret(ecSecret, KeyType.EcP256, "Opaque");
+        await CreateTestSecret(opaqueSecret, KeyType.Rsa2048, "Opaque", useCache: true);
+        await CreateTestSecret(tlsSecret, KeyType.Rsa2048, "kubernetes.io/tls", useCache: true);
+        await CreateTestSecret(ecSecret, KeyType.EcP256, "Opaque", useCache: true);
 
         // Act - List all secrets in namespace
         var secrets = await K8sClient.CoreV1.ListNamespacedSecretAsync(TestNamespace);

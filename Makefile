@@ -263,10 +263,15 @@ test-cluster-setup: ## Display instructions for setting up test cluster
 .PHONY: test-cluster-cleanup
 test-cluster-cleanup: ## Clean up test namespaces and CSRs from cluster
 	@echo "=== Cleaning up test namespaces ==="
-	@for ns in keyfactor-k8sjks-integration-tests keyfactor-k8spkcs12-integration-tests \
-		keyfactor-k8ssecret-integration-tests keyfactor-k8stlssecr-integration-tests \
-		keyfactor-k8scluster-test-ns1 keyfactor-k8scluster-test-ns2 \
-		keyfactor-k8sns-integration-tests keyfactor-k8scert-integration-tests \
+	@# Clean up framework-specific namespaces (net8, net10) and legacy namespaces
+	@for ns in keyfactor-k8sjks-integration-tests keyfactor-k8sjks-integration-tests-net8 keyfactor-k8sjks-integration-tests-net10 \
+		keyfactor-k8spkcs12-integration-tests keyfactor-k8spkcs12-integration-tests-net8 keyfactor-k8spkcs12-integration-tests-net10 \
+		keyfactor-k8ssecret-integration-tests keyfactor-k8ssecret-integration-tests-net8 keyfactor-k8ssecret-integration-tests-net10 \
+		keyfactor-k8stlssecr-integration-tests keyfactor-k8stlssecr-integration-tests-net8 keyfactor-k8stlssecr-integration-tests-net10 \
+		keyfactor-k8scluster-test-ns1 keyfactor-k8scluster-test-ns1-net8 keyfactor-k8scluster-test-ns1-net10 \
+		keyfactor-k8scluster-test-ns2 keyfactor-k8scluster-test-ns2-net8 keyfactor-k8scluster-test-ns2-net10 \
+		keyfactor-k8sns-integration-tests keyfactor-k8sns-integration-tests-net8 keyfactor-k8sns-integration-tests-net10 \
+		keyfactor-k8scert-integration-tests keyfactor-k8scert-integration-tests-net8 keyfactor-k8scert-integration-tests-net10 \
 		keyfactor-manual-test; do \
 		if kubectl get namespace $$ns 2>/dev/null; then \
 			echo "Deleting namespace $$ns..."; \

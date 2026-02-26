@@ -39,7 +39,12 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8SCert Integration Tests")]
 public class K8SCertStoreIntegrationTests : IAsyncLifetime
 {
-    private const string TestNamespace = "keyfactor-k8scert-integration-tests";
+    /// <summary>
+    /// Framework suffix for namespace isolation between parallel framework runs.
+    /// </summary>
+    private static readonly string FrameworkSuffix = $"net{Environment.Version.Major}";
+
+    private static readonly string TestNamespace = $"keyfactor-k8scert-integration-tests-{FrameworkSuffix}";
 
     private readonly IntegrationTestFixture _fixture;
     private Kubernetes _k8sClient = null!;

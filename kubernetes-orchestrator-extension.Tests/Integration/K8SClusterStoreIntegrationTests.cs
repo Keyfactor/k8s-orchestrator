@@ -34,8 +34,13 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8SCluster Integration Tests")]
 public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 {
-    private const string TestNamespace1 = "keyfactor-k8scluster-test-ns1";
-    private const string TestNamespace2 = "keyfactor-k8scluster-test-ns2";
+    /// <summary>
+    /// Framework suffix for namespace isolation between parallel framework runs.
+    /// </summary>
+    private static readonly string FrameworkSuffix = $"net{Environment.Version.Major}";
+
+    private static readonly string TestNamespace1 = $"keyfactor-k8scluster-test-ns1-{FrameworkSuffix}";
+    private static readonly string TestNamespace2 = $"keyfactor-k8scluster-test-ns2-{FrameworkSuffix}";
 
     private readonly IntegrationTestFixture _fixture;
     private Kubernetes _k8sClient = null!;
@@ -131,7 +136,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
     private async Task<V1Secret> CreateTestSecret(string name, string namespaceName, KeyType keyType = KeyType.Rsa2048, string secretType = "Opaque")
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Integration Test {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -158,7 +163,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
     private async Task<V1Secret> CreateTestSecretWithChain(string name, string namespaceName, KeyType keyType = KeyType.Rsa2048, string secretType = "Opaque", bool separateChain = true)
     {
-        var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+        var chain = CachedCertificateProvider.GetOrCreateChain(keyType);
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -198,7 +203,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
     private async Task<V1Secret> CreateTestSecretCertOnly(string name, string namespaceName, KeyType keyType = KeyType.Rsa2048)
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Integration Test CertOnly {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -374,7 +379,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         await CreateTestSecret(secretWithKey, TestNamespace1);
 
         // Create secret WITHOUT private key (cert only)
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster No Key Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster No Key Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var secretNoKey = new V1Secret
         {
@@ -439,7 +444,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-cluster-chain-{Guid.NewGuid():N}";
 
         // Create secret with certificate chain (leaf + intermediate + root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Cluster Chain Test");
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);

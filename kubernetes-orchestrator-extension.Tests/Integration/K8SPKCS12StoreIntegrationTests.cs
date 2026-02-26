@@ -32,7 +32,7 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8SPKCS12 Integration Tests")]
 public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
 {
-    protected override string TestNamespace => "keyfactor-k8spkcs12-integration-tests";
+    protected override string BaseTestNamespace => "keyfactor-k8spkcs12-integration-tests";
 
     public K8SPKCS12StoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
@@ -47,8 +47,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-empty-pkcs12-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Integration Test Cert");
-        var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "testpassword", "testcert");
+        var pfxBytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "testpassword", "testcert");
 
         var secret = new V1Secret
         {
@@ -96,9 +95,9 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-multi-pkcs12-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
-        var cert3 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Cert 3");
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Inventory Multi Cert 1");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Inventory Multi Cert 2");
+        var cert3 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Inventory Multi Cert 3");
 
         var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -369,8 +368,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secret1Name);
         TrackSecret(secret2Name);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Discovery Test");
-        var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "testpassword");
+        var pfxBytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "testpassword", "discovery-test");
 
         foreach (var secretName in new[] { secret1Name, secret2Name })
         {
@@ -517,6 +515,120 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Failure,
             $"Expected Failure but got {result.Result}. FailureMessage: {result.FailureMessage}");
         Assert.NotNull(result.FailureMessage);
+    }
+
+    #endregion
+
+    #region StorePath Pattern Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_StorePathWithSecretsKeyword_WorksCorrectly()
+    {
+        // Test the <namespace>/secrets/<secret> storepath pattern
+        // Arrange
+        var secretName = $"test-path-secrets-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var pfxBytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "testpassword", "testcert");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", pfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Use <namespace>/secrets/<secret> pattern
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/secrets/{secretName}",
+                StorePassword = "testpassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\",\"StoreFileName\":\"keystore.pfx\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.True(inventoryItems.Count > 0, "Should find certificates with <namespace>/secrets/<secret> path pattern");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_StorePathWithClusterNamespaceSecrets_WorksCorrectly()
+    {
+        // Test the <cluster>/<namespace>/secrets/<secret> storepath pattern
+        // Arrange
+        var secretName = $"test-path-cluster-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var pfxBytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "testpassword", "testcert");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", pfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Use <cluster>/<namespace>/secrets/<secret> pattern
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "kf-integrations",
+                StorePath = $"kf-integrations/{TestNamespace}/secrets/{secretName}",
+                StorePassword = "testpassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\",\"StoreFileName\":\"keystore.pfx\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.True(inventoryItems.Count > 0, "Should find certificates with <cluster>/<namespace>/secrets/<secret> path pattern");
     }
 
     #endregion

@@ -31,7 +31,7 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8SSecret Integration Tests")]
 public class K8SSecretStoreIntegrationTests : IntegrationTestBase
 {
-    protected override string TestNamespace => "keyfactor-k8ssecret-integration-tests";
+    protected override string BaseTestNamespace => "keyfactor-k8ssecret-integration-tests";
 
     public K8SSecretStoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
@@ -39,7 +39,8 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
 
     private async Task<V1Secret> CreateTestOpaqueSecret(string name, KeyType keyType = KeyType.Rsa2048, bool includePrivateKey = true, bool includeChain = false)
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        // Use cached certificates for read-only inventory/discovery tests
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Cached Opaque Secret {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var data = new Dictionary<string, byte[]>
@@ -55,7 +56,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
 
         if (includeChain)
         {
-            var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+            var chain = CachedCertificateProvider.GetOrCreateChain(keyType);
             var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
             var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
             data["ca.crt"] = Encoding.UTF8.GetBytes(intermediatePem + rootPem);
@@ -583,8 +584,8 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain: Root -> Sub-CA -> Leaf
-        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        // Use cached chain for read-only inventory test
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -662,8 +663,8 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain
-        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        // Use cached chain for read-only inventory test
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -831,7 +832,9 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-certonly-inv-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var pemCert = CertificateTestHelper.GeneratePemCertificateOnly(KeyType.Rsa2048, "Cert Only Inventory Test");
+        // Use cached certificate for read-only inventory test
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert Only Inventory Test");
+        var pemCert = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
         {

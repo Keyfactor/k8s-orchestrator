@@ -31,7 +31,7 @@ namespace Keyfactor.Orchestrators.K8S.Tests.Integration;
 [Collection("K8STLSSecr Integration Tests")]
 public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
 {
-    protected override string TestNamespace => "keyfactor-k8stlssecr-integration-tests";
+    protected override string BaseTestNamespace => "keyfactor-k8stlssecr-integration-tests";
 
     public K8STLSSecrStoreIntegrationTests(IntegrationTestFixture fixture) : base(fixture)
     {
@@ -40,6 +40,20 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     private async Task<V1Secret> CreateTestTlsSecret(string name, KeyType keyType = KeyType.Rsa2048, bool includeChain = false)
     {
         var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        return await CreateTestTlsSecretFromCertInfo(name, certInfo, keyType, includeChain);
+    }
+
+    /// <summary>
+    /// Creates a TLS secret using a pre-generated certificate. Useful for read-only tests
+    /// that can share cached certificates to reduce test execution time.
+    /// </summary>
+    private async Task<V1Secret> CreateTestTlsSecretFromCertInfo(
+        string name,
+        CertificateInfo certInfo,
+        KeyType keyType = KeyType.Rsa2048,
+        bool includeChain = false,
+        List<CertificateInfo>? chainCerts = null)
+    {
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -51,7 +65,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
 
         if (includeChain)
         {
-            var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+            var chain = chainCerts ?? CachedCertificateProvider.GetOrCreateChain(keyType);
             var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
             var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
             data["ca.crt"] = Encoding.UTF8.GetBytes(intermediatePem + rootPem);
@@ -74,9 +88,10 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_TlsSecretWithCertificate_ReturnsSuccess()
     {
-        // Arrange
+        // Arrange - Use cached certificate for read-only inventory test
         var secretName = $"test-tls-cert-{Guid.NewGuid():N}";
-        await CreateTestTlsSecret(secretName, KeyType.Rsa2048);
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Inventory TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -105,9 +120,10 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_TlsSecretWithChain_ReturnsSuccess()
     {
-        // Arrange
+        // Arrange - Use cached certificate and chain for read-only inventory test
         var secretName = $"test-tls-chain-{Guid.NewGuid():N}";
-        await CreateTestTlsSecret(secretName, KeyType.Rsa2048, includeChain: true);
+        var cachedChain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Inventory Chain TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedChain[0], KeyType.Rsa2048, includeChain: true, chainCerts: cachedChain);
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -136,9 +152,10 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Inventory_EcCertificate_ReturnsSuccess()
     {
-        // Arrange - Test with EC certificate
+        // Arrange - Test with EC certificate using cached certificate for read-only test
         var secretName = $"test-tls-ec-{Guid.NewGuid():N}";
-        await CreateTestTlsSecret(secretName, KeyType.EcP256);
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Inventory EC TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.EcP256);
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -412,11 +429,13 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Discovery_FindsTlsSecrets_ReturnsSuccess()
     {
-        // Arrange - Create multiple TLS secrets
+        // Arrange - Create multiple TLS secrets using cached certificates for read-only discovery test
         var secret1Name = $"test-discover-tls-1-{Guid.NewGuid():N}";
         var secret2Name = $"test-discover-tls-2-{Guid.NewGuid():N}";
-        await CreateTestTlsSecret(secret1Name, KeyType.Rsa2048);
-        await CreateTestTlsSecret(secret2Name, KeyType.EcP256);
+        var cachedRsaCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery RSA TLS Test");
+        var cachedEcCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Discovery EC TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secret1Name, cachedRsaCert, KeyType.Rsa2048);
+        await CreateTestTlsSecretFromCertInfo(secret2Name, cachedEcCert, KeyType.EcP256);
 
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -537,9 +556,10 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     public async Task TlsSecret_CompatibleWithK8sIngress_CorrectFormat()
     {
         // Verify that K8STLSSecr secrets are compatible with native K8S resources like Ingress
-        // Arrange
+        // Arrange - Use cached certificate for read-only compatibility test
         var secretName = $"test-ingress-tls-{Guid.NewGuid():N}";
-        await CreateTestTlsSecret(secretName, KeyType.Rsa2048);
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Ingress Compat TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
 
         // Act - Read back the secret
         var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
@@ -564,12 +584,13 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     public async Task Inventory_TlsSecretWithMultipleCertsInCaCrt_ReturnsAllCertificates()
     {
         // Arrange - Create a TLS secret with leaf cert in tls.crt and multiple CA certs in ca.crt
+        // Use cached chain for read-only inventory test
         var secretName = $"test-chain-multi-ca-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        // Generate a certificate chain: Root -> Sub-CA -> Leaf
-        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        // Get cached certificate chain: Root -> Sub-CA -> Leaf
+        // Chain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Multi CA Inventory Test");
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -643,12 +664,13 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     public async Task Inventory_TlsSecretWithChainInTlsCrt_ReturnsAllCertificates()
     {
         // Arrange - Create a TLS secret with full chain in tls.crt (no separate ca.crt)
+        // Use cached chain for read-only inventory test
         var secretName = $"test-chain-in-tlscrt-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        // Generate a certificate chain
-        // GenerateCertificateChain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        // Get cached certificate chain
+        // Chain returns List<CertificateInfo> with [0]=leaf, [1]=intermediate, [2]=root
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Chain In TlsCrt Inventory Test");
         var leafCertPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var subCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCaPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
