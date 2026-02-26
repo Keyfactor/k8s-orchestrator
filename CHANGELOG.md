@@ -11,6 +11,7 @@
 - fix(client): Fix null reference issues in kubeconfig parsing when optional fields are missing.
 - fix(inventory): Initialize logger before all other operations to ensure proper error reporting.
 - fix(ci): Configure NuGet to source Keyfactor packages from GitHub Packages registry.
+- fix(management): `K8SPKCS12` respects `IncludeCertChain` flag.
 
 ## Chores:
 - chore(tests): Add comprehensive unit test suite with 240 tests covering all store types and cryptographic operations.

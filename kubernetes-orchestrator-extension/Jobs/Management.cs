@@ -600,7 +600,7 @@ public class Management : JobBase, IManagementJobExtension
         var sPass = getK8SStorePassword(k8sData.Secret);
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword,
-            alias, existingData, sPass, remove);
+            alias, existingData, sPass, remove, IncludeCertChain);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
             Logger.LogDebug("k8sData.Pkcs12Inventory is null or empty so creating new Dictionary...");
