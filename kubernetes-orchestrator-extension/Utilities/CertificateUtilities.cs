@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using Keyfactor.Logging;
+using Keyfactor.PKI.Enums;
+using Keyfactor.PKI.Extensions;
+using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Asn1.Pkcs;
 using Org.BouncyCastle.Asn1.X509;
@@ -100,20 +102,15 @@ public static class CertificateUtilities
 
         try
         {
-            using var reader = new StringReader(pemString);
-            var pemReader = new PemReader(reader);
-            var pemObject = pemReader.ReadPemObject();
+            var derBytes = PemUtilities.PEMToDER(pemString);
+            var certificateParser = new X509CertificateParser();
+            var cert = certificateParser.ReadCertificate(derBytes);
 
-            if (pemObject == null || pemObject.Type != "CERTIFICATE")
+            if (cert == null)
             {
-                Logger.LogError("Invalid PEM object type: {Type}", pemObject?.Type ?? "null");
+                Logger.LogError("Failed to parse certificate from PEM");
                 throw new ArgumentException("Invalid PEM certificate format");
             }
-
-            Logger.LogTrace("PEM object type: {Type}, content length: {Length}", pemObject.Type, pemObject.Content?.Length ?? 0);
-
-            var certificateParser = new X509CertificateParser();
-            var cert = certificateParser.ReadCertificate(pemObject.Content);
 
             Logger.LogDebug("Certificate parsed from PEM: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
             return cert;
@@ -232,10 +229,7 @@ public static class CertificateUtilities
 
         try
         {
-            using var sha1 = SHA1.Create();
-            var hash = sha1.ComputeHash(cert.GetEncoded());
-            var thumbprint = BitConverter.ToString(hash).Replace("-", "").ToUpperInvariant();
-
+            var thumbprint = BouncyCastleX509Extensions.Thumbprint(cert);
             Logger.LogTrace("Computed thumbprint: {Thumbprint}", thumbprint);
             return thumbprint;
         }
@@ -256,17 +250,7 @@ public static class CertificateUtilities
         if (cert == null)
             throw new ArgumentNullException(nameof(cert));
 
-        var subject = cert.SubjectDN;
-        var oids = subject.GetOidList();
-        var values = subject.GetValueList();
-
-        for (var i = 0; i < oids.Count; i++)
-        {
-            if (oids[i].ToString() == X509Name.CN.Id)
-                return values[i].ToString();
-        }
-
-        return string.Empty;
+        return BouncyCastleX509Extensions.CommonName(cert) ?? string.Empty;
     }
 
     /// <summary>
@@ -354,7 +338,7 @@ public static class CertificateUtilities
         if (cert == null)
             throw new ArgumentNullException(nameof(cert));
 
-        return cert.SerialNumber.ToString(16).ToUpperInvariant();
+        return BouncyCastleX509Extensions.SerialNumber(cert);
     }
 
     /// <summary>
@@ -367,13 +351,12 @@ public static class CertificateUtilities
         if (cert == null)
             throw new ArgumentNullException(nameof(cert));
 
-        var publicKey = cert.GetPublicKey();
-
-        return publicKey switch
+        var keyType = BouncyCastleX509Extensions.GetKeyType(cert);
+        return keyType switch
         {
-            RsaKeyParameters => "RSA",
-            ECPublicKeyParameters => "ECDSA",
-            DsaPublicKeyParameters => "DSA",
+            EncryptionKeyType.RSA => "RSA",
+            EncryptionKeyType.ECC => "ECDSA",
+            EncryptionKeyType.DSA => "DSA",
             _ => "Unknown"
         };
     }
@@ -682,12 +665,7 @@ public static class CertificateUtilities
         if (cert == null)
             throw new ArgumentNullException(nameof(cert));
 
-        var pemObject = new PemObject("CERTIFICATE", cert.GetEncoded());
-        using var stringWriter = new StringWriter();
-        var pemWriter = new PemWriter(stringWriter);
-        pemWriter.WriteObject(pemObject);
-        pemWriter.Writer.Flush();
-        return stringWriter.ToString();
+        return PemUtilities.DERToPEM(cert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
     }
 
     /// <summary>
