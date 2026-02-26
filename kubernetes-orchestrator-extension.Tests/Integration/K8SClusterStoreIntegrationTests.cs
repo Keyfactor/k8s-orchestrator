@@ -1245,5 +1245,87 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddTlsSecretWithChain_IncludeCertChainFalse_OnlyLeafCertStored()
+    {
+        // Arrange - Test that when IncludeCertChain=false, only the leaf certificate is stored
+        var secretName = $"test-tls-nochain-cluster-{Guid.NewGuid():N}";
+        _createdSecrets.Add((secretName, TestNamespace1));
+
+        // Generate a certificate chain (root -> intermediate -> leaf)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKey = chain[0].KeyPair.Private;
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        var pfxPassword = "testpassword";
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SCluster",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = $"{TestNamespace1}/secrets/tls/{secretName}",
+                PrivateKeyPassword = pfxPassword,
+                Contents = Convert.ToBase64String(
+                    CertificateTestHelper.GeneratePkcs12WithChain(
+                        leafCert,
+                        leafKey,
+                        new[] { intermediateCert, rootCert },
+                        pfxPassword))
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace1,
+                StorePath = "cluster",
+                Properties = "{\"KubeSecretType\":\"tls\",\"IncludeCertChain\":false}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Job should succeed
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await _k8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace1);
+        Assert.NotNull(secret);
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+
+        // Verify tls.crt contains ONLY the leaf certificate (not the chain)
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should contain tls.crt");
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = System.Text.RegularExpressions.Regex.Matches(tlsCrtData, "-----BEGIN CERTIFICATE-----").Count;
+        Assert.True(certCount == 1,
+            $"Expected only 1 certificate in tls.crt when IncludeCertChain=false, but found {certCount}");
+
+        // Verify tls.key contains a private key
+        Assert.True(secret.Data.ContainsKey("tls.key"), "Secret should contain tls.key");
+        var tlsKeyData = Encoding.UTF8.GetString(secret.Data["tls.key"]);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", tlsKeyData);
+
+        // Verify ca.crt is NOT present (since we're not including the chain)
+        Assert.False(secret.Data.ContainsKey("ca.crt"),
+            "Secret should NOT contain ca.crt when IncludeCertChain=false");
+
+        // Verify the single certificate is the leaf certificate by parsing and comparing subjects
+        using var reader = new System.IO.StringReader(tlsCrtData);
+        var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+        var storedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+        var storedSubject = storedCert.SubjectDN.ToString();
+        var leafSubject = leafCert.SubjectDN.ToString();
+        Assert.Equal(leafSubject, storedSubject);
+    }
+
     #endregion
 }

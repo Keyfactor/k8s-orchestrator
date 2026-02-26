@@ -410,6 +410,83 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         Assert.True(chainCertCount >= 1, $"ca.crt should contain chain certificates, but found {chainCertCount}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithChain_IncludeCertChainFalse_OnlyLeafCertStored()
+    {
+        // Arrange
+        var secretName = $"test-add-no-chain-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain (leaf -> intermediate -> root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKey = chain[0].KeyPair.Private;
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        var pfxPassword = "testpassword";
+
+        // Create PKCS12 with full chain
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithChain(
+            leafCert,
+            leafKey,
+            new[] { intermediateCert, rootCert },
+            pfxPassword);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SSecret",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "testcert",
+                PrivateKeyPassword = pfxPassword,
+                Contents = Convert.ToBase64String(pkcs12Bytes)
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = secretName,
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\",\"IncludeCertChain\":false}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Job should succeed
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Read the secret directly from Kubernetes
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.Equal("Opaque", secret.Type);
+
+        // Verify tls.crt exists
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should contain tls.crt");
+
+        // Parse tls.crt and verify it contains ONLY the leaf certificate (not intermediate or root)
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = System.Text.RegularExpressions.Regex.Matches(tlsCrtData, "-----BEGIN CERTIFICATE-----").Count;
+        Assert.Equal(1, certCount);
+
+        // Verify the single certificate is the leaf cert by checking subject
+        using var reader = new System.IO.StringReader(tlsCrtData);
+        var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+        var parsedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+        Assert.Equal(leafCert.SubjectDN.ToString(), parsedCert.SubjectDN.ToString());
+
+        // Verify no ca.crt field exists (chain was excluded)
+        Assert.False(secret.Data.ContainsKey("ca.crt"), "Secret should NOT contain ca.crt when IncludeCertChain=false");
+    }
+
     #endregion
 
     #region Discovery Tests

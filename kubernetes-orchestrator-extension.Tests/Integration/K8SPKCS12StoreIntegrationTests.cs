@@ -279,6 +279,86 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         Assert.Contains("newcert", aliases);
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithChain_IncludeCertChainFalse_OnlyLeafCertInKeystore()
+    {
+        // Arrange - Test that when IncludeCertChain=false, only the leaf certificate is stored in the PKCS12
+        var secretName = $"test-no-chain-pkcs12-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain (leaf -> intermediate -> root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKey = chain[0].KeyPair.Private;
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        var pfxPassword = "testpassword";
+        var storePassword = "storepassword";
+
+        // Create a PKCS12 with the full chain included
+        var pfxWithChain = CertificateTestHelper.GeneratePkcs12WithChain(
+            leafCert,
+            leafKey,
+            new[] { intermediateCert, rootCert },
+            pfxPassword);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = storePassword,
+                Properties = $"{{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"{storePassword}\",\"StoreFileName\":\"keystore.pfx\",\"IncludeCertChain\":false}}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "testcert",
+                PrivateKeyPassword = pfxPassword,
+                Contents = Convert.ToBase64String(pfxWithChain)
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("keystore.pfx"), "Secret should contain keystore.pfx");
+
+        // Load the PKCS12 from the secret and verify certificate count
+        var serializer = new Pkcs12CertificateStoreSerializer(null);
+        var store = serializer.DeserializeRemoteCertificateStore(secret.Data["keystore.pfx"], "/test", storePassword);
+
+        // Get the certificate chain for the alias
+        var certChain = store.GetCertificateChain("testcert");
+        Assert.NotNull(certChain);
+
+        // With IncludeCertChain=false, the chain should contain only the leaf certificate (1 cert)
+        Assert.True(certChain.Length == 1,
+            $"Expected only 1 certificate (leaf) in PKCS12 when IncludeCertChain=false, but found {certChain.Length} certificate(s)");
+
+        // Verify the single certificate is indeed the leaf certificate
+        var storedCert = certChain[0].Certificate;
+        var storedSubject = storedCert.SubjectDN.ToString();
+        var leafSubject = leafCert.SubjectDN.ToString();
+        Assert.Equal(leafSubject, storedSubject);
+    }
+
     #endregion
 
     #region Management Remove Tests

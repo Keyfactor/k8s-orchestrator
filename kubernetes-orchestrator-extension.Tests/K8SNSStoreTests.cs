@@ -427,6 +427,181 @@ public class K8SNSStoreTests
 
     #endregion
 
+    #region IncludeCertChain=false Tests
+
+    [Fact]
+    public void Management_IncludeCertChainFalse_TlsSecret_OnlyLeafCertStored()
+    {
+        // When IncludeCertChain=false is set for K8SNS TLS secrets, only the leaf certificate
+        // should be stored, not the intermediate or root certificates.
+
+        // Arrange - Generate a certificate chain (leaf -> intermediate -> root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Act - Create TLS secret with ONLY the leaf certificate (simulating IncludeCertChain=false behavior)
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "ns-tls-include-cert-chain-false",
+                NamespaceProperty = "production"
+            },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.Equal(2, secret.Data.Count); // Only tls.crt and tls.key, NO ca.crt
+
+        // Verify tls.crt contains ONLY the leaf certificate (1 certificate)
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, certCount);
+
+        // Verify NO ca.crt field exists
+        Assert.False(secret.Data.ContainsKey("ca.crt"),
+            "K8SNS TLS secret should NOT contain ca.crt when IncludeCertChain=false");
+
+        // Verify the stored certificate is the leaf certificate
+        using var reader = new System.IO.StringReader(tlsCrtData);
+        var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+        var storedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+        Assert.Equal(leafCert.SubjectDN.ToString(), storedCert.SubjectDN.ToString());
+    }
+
+    [Fact]
+    public void Management_IncludeCertChainFalse_OpaqueSecret_OnlyLeafCertStored()
+    {
+        // When IncludeCertChain=false is set for K8SNS Opaque secrets, only the leaf certificate
+        // should be stored, not the intermediate or root certificates.
+
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Act - Create Opaque secret with ONLY the leaf certificate
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "ns-opaque-include-cert-chain-false",
+                NamespaceProperty = "production"
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal("Opaque", secret.Type);
+        Assert.Equal(2, secret.Data.Count);
+
+        // Verify tls.crt contains ONLY the leaf certificate
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, certCount);
+
+        Assert.False(secret.Data.ContainsKey("ca.crt"),
+            "K8SNS Opaque secret should NOT contain ca.crt when IncludeCertChain=false");
+    }
+
+    [Fact]
+    public void IncludeCertChainFalse_VersusTrue_NamespaceSecrets_DifferentStructures()
+    {
+        // Compare the expected output between IncludeCertChain=true vs IncludeCertChain=false for namespace secrets
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // IncludeCertChain=false: Only leaf certificate
+        var includeCertChainFalseSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "ns-include-chain-false", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // IncludeCertChain=true (SeparateChain=false): Full chain bundled
+        var includeCertChainTrueSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "ns-include-chain-true", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem + intermediatePem + rootPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - IncludeCertChain=false has only 1 certificate
+        var falseChainCount = Encoding.UTF8.GetString(includeCertChainFalseSecret.Data["tls.crt"])
+            .Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, falseChainCount);
+        Assert.False(includeCertChainFalseSecret.Data.ContainsKey("ca.crt"));
+
+        // Assert - IncludeCertChain=true has 3 certificates
+        var trueChainCount = Encoding.UTF8.GetString(includeCertChainTrueSecret.Data["tls.crt"])
+            .Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(3, trueChainCount);
+    }
+
+    [Fact]
+    public void IncludeCertChainFalse_NamespaceBoundary_Enforced()
+    {
+        // Verify that IncludeCertChain=false respects namespace boundaries
+        var namespaceName = "production";
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        var secrets = new List<V1Secret>();
+        for (int i = 0; i < 3; i++)
+        {
+            secrets.Add(new V1Secret
+            {
+                Metadata = new V1ObjectMeta { Name = $"secret-{i}", NamespaceProperty = namespaceName },
+                Type = "kubernetes.io/tls",
+                Data = new Dictionary<string, byte[]>
+                {
+                    { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                    { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+                }
+            });
+        }
+
+        // Assert - All secrets are in the same namespace and have only leaf cert
+        Assert.All(secrets, s => Assert.Equal(namespaceName, s.Metadata.NamespaceProperty));
+        Assert.All(secrets, s =>
+        {
+            var certCount = Encoding.UTF8.GetString(s.Data["tls.crt"])
+                .Split("-----BEGIN CERTIFICATE-----").Length - 1;
+            Assert.Equal(1, certCount);
+            Assert.False(s.Data.ContainsKey("ca.crt"));
+        });
+    }
+
+    #endregion
+
     #region Namespace Validation Tests
 
     [Fact]

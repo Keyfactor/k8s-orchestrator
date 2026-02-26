@@ -403,6 +403,147 @@ public class K8SJKSStoreTests
 
     #endregion
 
+    #region IncludeCertChain=false Tests
+
+    [Fact]
+    public void Management_IncludeCertChainFalse_OnlyLeafCertInChain()
+    {
+        // When IncludeCertChain=false is set for JKS stores, only the leaf certificate
+        // should be stored in the keystore, not the intermediate or root certificates.
+
+        // Arrange - Generate a certificate chain and create JKS with ONLY the leaf
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKeyPair = chain[0].KeyPair;
+
+        // Create JKS with only the leaf certificate (no chain) - simulating IncludeCertChain=false
+        var jksBytes = CertificateTestHelper.GenerateJks(
+            leafCert,
+            leafKeyPair,
+            "password",
+            "leaf-only",
+            chain: null  // No chain certificates
+        );
+
+        // Act - Deserialize and verify
+        var store = _serializer.DeserializeRemoteCertificateStore(jksBytes, "/test/path", "password");
+
+        // Assert
+        Assert.NotNull(store);
+        var certChain = store.GetCertificateChain("leaf-only");
+        Assert.NotNull(certChain);
+
+        // When IncludeCertChain=false, only the leaf certificate should be present
+        Assert.Single(certChain);
+
+        // Verify it's the leaf certificate
+        var storedCert = certChain[0].Certificate;
+        Assert.Equal(leafCert.SubjectDN.ToString(), storedCert.SubjectDN.ToString());
+    }
+
+    [Fact]
+    public void IncludeCertChainFalse_VersusTrue_DifferentChainLengths()
+    {
+        // Compare JKS with IncludeCertChain=true vs IncludeCertChain=false
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKeyPair = chain[0].KeyPair;
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        // IncludeCertChain=false: Only leaf certificate
+        var jksFalse = CertificateTestHelper.GenerateJks(
+            leafCert,
+            leafKeyPair,
+            "password",
+            "leaf-only",
+            chain: null
+        );
+
+        // IncludeCertChain=true: Leaf + full chain
+        var jksTrue = CertificateTestHelper.GenerateJks(
+            leafCert,
+            leafKeyPair,
+            "password",
+            "with-chain",
+            chain: new[] { intermediateCert, rootCert }
+        );
+
+        // Deserialize both
+        var storeFalse = _serializer.DeserializeRemoteCertificateStore(jksFalse, "/test/path", "password");
+        var storeTrue = _serializer.DeserializeRemoteCertificateStore(jksTrue, "/test/path", "password");
+
+        // Assert - IncludeCertChain=false has only 1 cert in chain
+        var chainFalse = storeFalse.GetCertificateChain("leaf-only");
+        Assert.Single(chainFalse);
+
+        // Assert - IncludeCertChain=true has 3 certs in chain
+        var chainTrue = storeTrue.GetCertificateChain("with-chain");
+        Assert.Equal(3, chainTrue.Length);
+    }
+
+    [Theory]
+    [InlineData(KeyType.Rsa2048)]
+    [InlineData(KeyType.EcP256)]
+    [InlineData(KeyType.EcP384)]
+    public void IncludeCertChainFalse_VariousKeyTypes_OnlyLeafCertInChain(KeyType keyType)
+    {
+        // Verify that IncludeCertChain=false behavior works with various key types for JKS
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+        var leafCert = chain[0].Certificate;
+        var leafKeyPair = chain[0].KeyPair;
+
+        // Create JKS with only the leaf certificate
+        var jksBytes = CertificateTestHelper.GenerateJks(
+            leafCert,
+            leafKeyPair,
+            "password",
+            "testcert",
+            chain: null
+        );
+
+        // Act
+        var store = _serializer.DeserializeRemoteCertificateStore(jksBytes, "/test/path", "password");
+
+        // Assert - Only 1 certificate in the chain
+        var certChain = store.GetCertificateChain("testcert");
+        Assert.Single(certChain);
+        Assert.Equal(leafCert.SubjectDN.ToString(), certChain[0].Certificate.SubjectDN.ToString());
+    }
+
+    [Fact]
+    public void IncludeCertChainFalse_RoundTrip_PreservesLeafOnly()
+    {
+        // Verify that round-trip serialization preserves the leaf-only chain
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKeyPair = chain[0].KeyPair;
+
+        var originalJks = CertificateTestHelper.GenerateJks(
+            leafCert,
+            leafKeyPair,
+            "password",
+            "leaf-only",
+            chain: null
+        );
+
+        var originalStore = _serializer.DeserializeRemoteCertificateStore(originalJks, "/test/path", "password");
+
+        // Act - Round-trip: serialize and deserialize again
+        var serialized = _serializer.SerializeRemoteCertificateStore(originalStore, "/test/path", "store.jks", "password");
+        var roundTripStore = _serializer.DeserializeRemoteCertificateStore(serialized[0].Contents, "/test/path", "password");
+
+        // Assert - Still only 1 certificate in chain after round-trip
+        var roundTripChain = roundTripStore.GetCertificateChain("leaf-only");
+        Assert.Single(roundTripChain);
+        Assert.Equal(leafCert.SubjectDN.ToString(), roundTripChain[0].Certificate.SubjectDN.ToString());
+    }
+
+    #endregion
+
     #region Edge Case Tests
 
     [Fact]

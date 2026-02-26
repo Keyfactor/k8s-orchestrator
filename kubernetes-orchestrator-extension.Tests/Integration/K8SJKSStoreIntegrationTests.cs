@@ -206,6 +206,93 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithChain_IncludeCertChainFalse_OnlyLeafCertInKeystore()
+    {
+        // Arrange
+        var secretName = $"test-include-chain-false-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain (leaf -> intermediate -> root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048,
+            leafCN: "Leaf Cert",
+            intermediateCN: "Intermediate CA",
+            rootCN: "Root CA");
+
+        var leafCert = chain[0];
+        var intermediateCert = chain[1];
+        var rootCert = chain[2];
+
+        // Create PKCS12 with the full chain (leaf + intermediate + root)
+        var chainCerts = new[] { intermediateCert.Certificate, rootCert.Certificate };
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12WithChain(
+            leafCert.Certificate,
+            leafCert.KeyPair.Private,
+            chainCerts,
+            password: "certpassword",
+            alias: "leafcert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        // Create Management Add job config with IncludeCertChain=false
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.jks\",\"IncludeCertChain\":\"false\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "leafcert",
+                PrivateKeyPassword = "certpassword",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Job should succeed
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("keystore.jks"), "Secret should contain keystore.jks");
+
+        // Load the JKS and verify the chain length
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(secret.Data["keystore.jks"]))
+        {
+            jksStore.Load(ms, "storepassword".ToCharArray());
+        }
+
+        // Verify the alias exists
+        Assert.True(jksStore.ContainsAlias("leafcert"), "JKS should contain the 'leafcert' alias");
+
+        // Get the certificate chain for the alias
+        var certChain = jksStore.GetCertificateChain("leafcert");
+
+        // With IncludeCertChain=false, only the leaf certificate should be in the chain
+        Assert.NotNull(certChain);
+        Assert.Single(certChain); // Should have exactly 1 certificate (only the leaf)
+
+        // Verify the certificate is the leaf certificate
+        var storedCert = certChain[0];
+        Assert.Equal(leafCert.Certificate.SubjectDN.ToString(), storedCert.SubjectDN.ToString());
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Management_AddCertificateToExistingSecret_UpdatesSecret()
     {
         // Arrange

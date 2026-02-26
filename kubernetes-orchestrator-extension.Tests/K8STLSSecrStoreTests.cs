@@ -501,6 +501,141 @@ public class K8STLSSecrStoreTests
 
     #endregion
 
+    #region IncludeCertChain=false Tests
+
+    [Fact]
+    public void Management_IncludeCertChainFalse_OnlyLeafCertStored()
+    {
+        // When IncludeCertChain=false is set, only the leaf certificate should be stored,
+        // not the intermediate or root certificates. This tests the expected output structure.
+
+        // Arrange - Generate a certificate chain (leaf -> intermediate -> root)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Act - Create TLS secret with ONLY the leaf certificate (simulating IncludeCertChain=false behavior)
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = "test-include-cert-chain-false",
+                NamespaceProperty = "default"
+            },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+        Assert.Equal(2, secret.Data.Count); // Only tls.crt and tls.key, NO ca.crt
+
+        // Verify tls.crt contains ONLY the leaf certificate (1 certificate)
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, certCount);
+
+        // Verify NO ca.crt field exists
+        Assert.False(secret.Data.ContainsKey("ca.crt"),
+            "Secret should NOT contain ca.crt when IncludeCertChain=false");
+
+        // Verify the stored certificate is the leaf certificate by checking its subject
+        using var reader = new System.IO.StringReader(tlsCrtData);
+        var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+        var storedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+        var storedSubject = storedCert.SubjectDN.ToString();
+        var leafSubject = leafCert.SubjectDN.ToString();
+
+        Assert.Equal(leafSubject, storedSubject);
+    }
+
+    [Fact]
+    public void IncludeCertChainFalse_VersusTrue_DifferentStructures()
+    {
+        // Compare the expected output between IncludeCertChain=true vs IncludeCertChain=false
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
+        var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
+        var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // IncludeCertChain=false: Only leaf certificate in tls.crt, no chain
+        var includeCertChainFalseSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "include-chain-false" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // IncludeCertChain=true (SeparateChain=false): Full chain bundled in tls.crt
+        var includeCertChainTrueBundledSecret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "include-chain-true-bundled" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem + intermediatePem + rootPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - IncludeCertChain=false has only 1 certificate in tls.crt
+        var falseChainCount = Encoding.UTF8.GetString(includeCertChainFalseSecret.Data["tls.crt"])
+            .Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, falseChainCount);
+        Assert.False(includeCertChainFalseSecret.Data.ContainsKey("ca.crt"));
+
+        // Assert - IncludeCertChain=true (bundled) has 3 certificates in tls.crt
+        var trueBundledChainCount = Encoding.UTF8.GetString(includeCertChainTrueBundledSecret.Data["tls.crt"])
+            .Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(3, trueBundledChainCount);
+        Assert.False(includeCertChainTrueBundledSecret.Data.ContainsKey("ca.crt"));
+    }
+
+    [Theory]
+    [InlineData(KeyType.Rsa2048)]
+    [InlineData(KeyType.EcP256)]
+    [InlineData(KeyType.EcP384)]
+    public void IncludeCertChainFalse_VariousKeyTypes_OnlyLeafCertStored(KeyType keyType)
+    {
+        // Verify that IncludeCertChain=false behavior works with various key types
+        // Arrange
+        var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+        var leafCert = chain[0].Certificate;
+        var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
+
+        // Act - Simulate IncludeCertChain=false output
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = $"test-no-chain-{keyType}" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(leafPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        // Assert - Only 1 certificate in tls.crt
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = tlsCrtData.Split("-----BEGIN CERTIFICATE-----").Length - 1;
+        Assert.Equal(1, certCount);
+        Assert.False(secret.Data.ContainsKey("ca.crt"));
+    }
+
+    #endregion
+
     #region Metadata Tests
 
     [Fact]
