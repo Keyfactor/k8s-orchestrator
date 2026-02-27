@@ -498,6 +498,76 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         Assert.Equal(leafSubject, storedSubject);
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificateWithChain_InvalidConfig_IncludeCertChainFalse_SeparateChainTrue_RespectsIncludeCertChain()
+    {
+        // Arrange - Test invalid configuration: IncludeCertChain=false, SeparateChain=true
+        // The code should log a warning and respect IncludeCertChain=false (only leaf cert deployed)
+        var secretName = $"test-invalid-config-tls-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate a certificate chain (root -> intermediate -> leaf)
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+        var leafKey = chain[0].KeyPair.Private;
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        var pfxPassword = "testpassword";
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            OperationType = CertStoreOperationType.Add,
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = secretName,
+                PrivateKeyPassword = pfxPassword,
+                Contents = Convert.ToBase64String(
+                    CertificateTestHelper.GeneratePkcs12WithChain(
+                        leafCert,
+                        leafKey,
+                        new[] { intermediateCert, rootCert },
+                        pfxPassword))
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                // Invalid config: SeparateChain=true but IncludeCertChain=false
+                // Should warn and respect IncludeCertChain=false
+                Properties = $"{{\"KubeSecretType\":\"tls_secret\",\"KubeNamespace\":\"{TestNamespace}\",\"IncludeCertChain\":false,\"SeparateChain\":true}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            Overwrite = false
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Should succeed (with warning logged)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.Equal("kubernetes.io/tls", secret.Type);
+
+        // Verify IncludeCertChain=false is respected: only leaf certificate, no chain
+        Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should contain tls.crt");
+        var tlsCrtData = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var certCount = System.Text.RegularExpressions.Regex.Matches(tlsCrtData, "-----BEGIN CERTIFICATE-----").Count;
+        Assert.True(certCount == 1, $"tls.crt should contain only the leaf certificate when IncludeCertChain=false, but found {certCount} certificate(s)");
+
+        // Verify there is NO ca.crt (IncludeCertChain=false takes precedence over SeparateChain=true)
+        Assert.False(secret.Data.ContainsKey("ca.crt"), "Secret should NOT contain ca.crt when IncludeCertChain=false (even if SeparateChain=true)");
+    }
+
     #endregion
 
     #region Discovery Tests

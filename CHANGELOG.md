@@ -1,9 +1,10 @@
 # 1.3.0
 
 ## Features
+- feat(storetypes): `K8SCert` supports inventory of all signed K8S cluster CSRs.
 - feat(crypto): Replace `X509Certificate2` with BouncyCastle for all cryptographic operations, improving cross-platform compatibility.
 - feat(crypto): Add `CertificateUtilities` class with comprehensive certificate parsing, key extraction, and format detection.
-- feat(crypto): Support for all key types: RSA (1024-8192 bit), ECDSA (P-256, P-384, P-521), DSA (1024, 2048 bit), Ed25519, Ed448.
+- feat(crypto): Support for all key types: `RSA (1024-8192 bit), ECDSA (P-256, P-384, P-521), DSA (1024, 2048 bit), Ed25519, Ed448`.
 - feat(logging): Implement comprehensive trace-level logging with sensitive data redaction for debugging.
 
 ## Bug Fixes
@@ -14,18 +15,18 @@
 - fix(management): `K8SPKCS12` respects `IncludeCertChain` flag.
 
 ## Chores:
-- chore(tests): Add comprehensive unit test suite with 240 tests covering all store types and cryptographic operations.
-- chore(tests): Add integration test suite with 55 tests validating end-to-end operations against live Kubernetes clusters.
+- chore(tests): Add comprehensive unit test suite covering all store types and cryptographic operations.
+- chore(tests): Add integration test suite validating end-to-end operations against live Kubernetes clusters.
 - chore(ci): Add GitHub Actions workflows for unit tests, integration tests, code quality, and security scanning.
 - chore(ci): Add CodeQL, dependency review, SBOM generation, and license compliance workflows.
 - chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.
-- chore(ci): Add `nuget.config` for GitHub Packages authentication in CI workflows.
 - chore(docs): Document supported key types for all store types.
-- chore(docs): Fix typos and inconsistencies in docsource documentation.
 - chore(util): Add verbose logging to PAM credential resolver.
 
 # 1.2.3
-- fix(jobs): Add `IncludeCertChain` at base job level, and include in management jobs.
+
+## Bug Fixes
+- fix(management): Add `IncludeCertChain` at base job level, and include in management jobs.
 
 # 1.2.2
 

@@ -18,10 +18,10 @@ Comprehensive testing guide for the Keyfactor Kubernetes Universal Orchestrator 
 
 ## Overview
 
-The test suite includes **595 tests** across all 7 Kubernetes Orchestrator store types:
+The test suite includes **603+ tests** across all 7 Kubernetes Orchestrator store types:
 
 - **457 unit tests** - Fast, isolated tests with no external dependencies
-- **138 integration tests** - End-to-end tests against real Kubernetes clusters
+- **146+ integration tests** - End-to-end tests against real Kubernetes clusters
 
 All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for cryptographic operations, and **Keyfactor.PKI** for certificate utilities.
 
@@ -32,12 +32,12 @@ All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for
 | K8SJKS (Java Keystores) | ~80 | 14 | ~94 |
 | K8SPKCS12 (PKCS12/PFX) | ~75 | 13 | ~88 |
 | K8SCert (CSRs) | ~25 | 7 | ~32 |
-| K8SSecret (Opaque PEM) | ~53 | 24 | ~77 |
-| K8STLSSecr (TLS Secrets) | ~58 | 24 | ~82 |
-| K8SCluster (Cluster-wide) | ~55 | 20 | ~75 |
-| K8SNS (Namespace) | ~55 | 24 | ~79 |
+| K8SSecret (Opaque PEM) | ~53 | 25 | ~78 |
+| K8STLSSecr (TLS Secrets) | ~58 | 25 | ~83 |
+| K8SCluster (Cluster-wide) | ~55 | 21 | ~76 |
+| K8SNS (Namespace) | ~55 | 27 | ~82 |
 | Utilities/CertificateFormat | ~56 | - | ~56 |
-| **Total** | **~457** | **~138** | **~595** |
+| **Total** | **~457** | **~146** | **~603** |
 
 > **Note**: Counts are approximate due to parameterized tests. Run `dotnet test --list-tests` for exact counts.
 
@@ -542,6 +542,22 @@ JKS and PKCS12 inventories behave differently for keystores with mixed entry typ
 - **PKCS12 Inventory**: Returns **all** entries including trusted certificate entries.
 
 This is the current implemented behavior and is tested/documented. If you need to manage trusted certificates in JKS stores, you can add them but they won't appear in inventory.
+
+### Invalid Configuration: IncludeCertChain=false with SeparateChain=true
+
+When `SeparateChain=true` but `IncludeCertChain=false`, this is an invalid/conflicting configuration:
+- `SeparateChain=true` means "put the chain in ca.crt and leaf in tls.crt"
+- `IncludeCertChain=false` means "don't include any chain certificates"
+
+**Behavior:**
+- A warning is logged: "Invalid configuration: SeparateChain=true but IncludeCertChain=false..."
+- `IncludeCertChain=false` takes precedence - only the leaf certificate is deployed
+- `SeparateChain` is effectively ignored
+
+**Recommendation:**
+- Use `IncludeCertChain=true,SeparateChain=true` if you want chain in ca.crt
+- Use `IncludeCertChain=true,SeparateChain=false` if you want full chain in tls.crt
+- Use `IncludeCertChain=false` (any SeparateChain value) if you want leaf only
 
 ---
 

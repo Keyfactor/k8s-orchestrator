@@ -1169,6 +1169,17 @@ public abstract class JobBase
             {
                 IncludeCertChain = storeProperties["IncludeCertChain"];
             }
+
+            // Validate conflicting configuration: SeparateChain=true requires IncludeCertChain=true
+            // If IncludeCertChain=false, there's no chain to separate, so SeparateChain is meaningless
+            if (SeparateChain && !IncludeCertChain)
+            {
+                Logger.LogWarning(
+                    "Invalid configuration: SeparateChain=true but IncludeCertChain=false. " +
+                    "Cannot separate a certificate chain that is not being included. " +
+                    "SeparateChain will be ignored and only the leaf certificate will be deployed");
+                SeparateChain = false;
+            }
         }
         catch (Exception ex)
         {
