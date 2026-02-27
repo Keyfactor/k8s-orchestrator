@@ -712,4 +712,522 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
     }
 
     #endregion
+
+    #region Mixed Entry Types Tests (Private Keys + Trusted Certs)
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_Pkcs12WithMixedEntries_ReturnsCorrectPrivateKeyFlags()
+    {
+        // Arrange - Create PKCS12 with 2 private key entries + 2 trusted cert entries
+        var secretName = $"test-mixed-pkcs12-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate certificates for private key entries (with keys)
+        var serverCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert 1");
+        var serverCert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Server Cert 2");
+
+        // Generate certificates for trusted cert entries (no keys)
+        var trustedRootCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted Root CA");
+        var trustedIntermediateCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Trusted Intermediate CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server1", (serverCert1.Certificate, serverCert1.KeyPair) },
+            { "server2", (serverCert2.Certificate, serverCert2.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "root-ca", trustedRootCa.Certificate },
+            { "intermediate-ca", trustedIntermediateCa.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "testpassword");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", pkcs12Bytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Create Inventory job config
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "testpassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\",\"StoreFileName\":\"keystore.pfx\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // NOTE: PKCS12 inventory returns ALL entries including trusted certificate entries.
+        // This differs from JKS inventory which only returns key entries.
+        // Should have 4 inventory items (2 private key entries + 2 trusted cert entries)
+        Assert.Equal(4, inventoryItems.Count);
+
+        // Verify all entries are returned with full alias format: <secretDataKey>/<entryAlias>
+        var server1Item = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.pfx/server1");
+        var server2Item = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.pfx/server2");
+        var rootCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.pfx/root-ca");
+        var intermediateCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.pfx/intermediate-ca");
+
+        Assert.NotNull(server1Item);
+        Assert.NotNull(server2Item);
+        Assert.NotNull(rootCaItem);
+        Assert.NotNull(intermediateCaItem);
+
+        // All entries have PrivateKeyEntry=true because the PKCS12 inventory
+        // sets this globally based on whether ANY entry has a private key
+        Assert.True(server1Item.PrivateKeyEntry, "server1 should have PrivateKeyEntry = true");
+        Assert.True(server2Item.PrivateKeyEntry, "server2 should have PrivateKeyEntry = true");
+        // Note: Trusted certs also get PrivateKeyEntry=true because the flag is set globally
+        Assert.True(rootCaItem.PrivateKeyEntry, "root-ca has PrivateKeyEntry = true (global flag)");
+        Assert.True(intermediateCaItem.PrivateKeyEntry, "intermediate-ca has PrivateKeyEntry = true (global flag)");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddTrustedCert_ToExistingPkcs12_Success()
+    {
+        // Arrange - Create existing PKCS12 with a private key entry
+        var secretName = $"test-add-trusted-pkcs12-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var serverCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(serverCert.Certificate, serverCert.KeyPair, "storepassword", "server");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", existingPkcs12 }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Generate a trusted certificate (certificate only, no private key)
+        var trustedCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        // For adding a certificate-only entry, we send the DER-encoded certificate
+        var certOnlyBase64 = Convert.ToBase64String(trustedCa.Certificate.GetEncoded());
+
+        // Create Management Add job config
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.pfx\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "trusted-ca",
+                PrivateKeyPassword = null, // No private key password for certificate-only entry
+                Contents = certOnlyBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify the PKCS12 was updated with both entries
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(updatedSecret);
+
+        // Load the PKCS12 and verify both entries exist
+        var pkcs12Store = new Org.BouncyCastle.Pkcs.Pkcs12StoreBuilder().Build();
+        using (var ms = new System.IO.MemoryStream(updatedSecret.Data["keystore.pfx"]))
+        {
+            pkcs12Store.Load(ms, "storepassword".ToCharArray());
+        }
+
+        var aliases = pkcs12Store.Aliases.ToList();
+        Assert.Equal(2, aliases.Count);
+        Assert.Contains("server", aliases);
+        Assert.Contains("trusted-ca", aliases);
+
+        // Verify entry types
+        Assert.True(pkcs12Store.IsKeyEntry("server"), "server should be a key entry");
+        Assert.False(pkcs12Store.IsKeyEntry("trusted-ca"), "trusted-ca should be a certificate-only entry");
+    }
+
+    #endregion
+
+    #region Multiple PKCS12 Files in Single Secret Tests
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_SecretWithMultiplePkcs12Files_ReturnsAllCertificatesFromAllFiles()
+    {
+        // Arrange - Create a K8s secret with multiple PKCS12 files (app.pfx, ca.p12, truststore.pfx)
+        var secretName = $"test-multi-pfx-files-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate different certificates for each PKCS12 file
+        var appCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Server PKCS12");
+        var caCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "CA Certificate PKCS12");
+        var trustCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Truststore PKCS12");
+
+        // Generate separate PKCS12 files with unique aliases
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12(appCert.Certificate, appCert.KeyPair, "testpassword", "app-server");
+        var caP12Bytes = CertificateTestHelper.GeneratePkcs12(caCert.Certificate, caCert.KeyPair, "testpassword", "ca-cert");
+        var trustPfxBytes = CertificateTestHelper.GeneratePkcs12(trustCert.Certificate, trustCert.KeyPair, "testpassword", "trust-cert");
+
+        // Create secret with multiple PKCS12 files
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "app.pfx", appPfxBytes },
+                { "ca.p12", caP12Bytes },
+                { "truststore.pfx", trustPfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        // Create Inventory job config - Note: without StoreFileName, it should process ALL PKCS12 files
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "testpassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Should find all 3 certificates from all 3 PKCS12 files
+        Assert.True(inventoryItems.Count >= 3,
+            $"Expected at least 3 certificates but found {inventoryItems.Count}");
+
+        // Verify aliases from each file are present
+        var aliasStrings = inventoryItems.Select(i => i.Alias).ToList();
+        Assert.Contains(aliasStrings, a => a.Contains("app-server") || a.Contains("app.pfx"));
+        Assert.Contains(aliasStrings, a => a.Contains("ca-cert") || a.Contains("ca.p12"));
+        Assert.Contains(aliasStrings, a => a.Contains("trust-cert") || a.Contains("truststore.pfx"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_SecretWithMultiplePkcs12Files_EachFileHasMultipleEntries_ReturnsAll()
+    {
+        // Arrange - Create a K8s secret with 2 PKCS12 files, each containing 2 certificates
+        var secretName = $"test-multi-pfx-multi-entries-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate certificates for app.pfx (2 entries)
+        var appCert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Cert 1 PFX");
+        var appCert2 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Cert 2 PFX");
+
+        // Generate certificates for backend.pfx (2 entries)
+        var backendCert1 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend Cert 1 PFX");
+        var backendCert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend Cert 2 PFX");
+
+        var appEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "app-cert-1", (appCert1.Certificate, appCert1.KeyPair) },
+            { "app-cert-2", (appCert2.Certificate, appCert2.KeyPair) }
+        };
+
+        var backendEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "backend-cert-1", (backendCert1.Certificate, backendCert1.KeyPair) },
+            { "backend-cert-2", (backendCert2.Certificate, backendCert2.KeyPair) }
+        };
+
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(appEntries, "testpassword");
+        var backendPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(backendEntries, "testpassword");
+
+        // Create secret with multiple PKCS12 files
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "app.pfx", appPfxBytes },
+                { "backend.pfx", backendPfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "testpassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"testpassword\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Should find all 4 certificates (2 from each PKCS12 file)
+        Assert.True(inventoryItems.Count >= 4,
+            $"Expected at least 4 certificates but found {inventoryItems.Count}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddCertificate_ToSpecificPkcs12File_UpdatesCorrectFile()
+    {
+        // Arrange - Create a K8s secret with multiple PKCS12 files
+        var secretName = $"test-add-specific-pfx-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Generate existing PKCS12 files
+        var appCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing App Cert PFX");
+        var backendCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Existing Backend Cert PFX");
+
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12(appCert.Certificate, appCert.KeyPair, "storepassword", "existing-app");
+        var backendPfxBytes = CertificateTestHelper.GeneratePkcs12(backendCert.Certificate, backendCert.KeyPair, "storepassword", "existing-backend");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "app.pfx", appPfxBytes },
+                { "backend.pfx", backendPfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Prepare new certificate to add to app.pfx specifically
+        var newCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New App Cert PFX");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(newCert.Certificate, newCert.KeyPair, "certpassword", "new-app-cert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        // Create Management Add job config targeting app.pfx specifically
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                // Use StoreFileName to target a specific PKCS12 file
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"app.pfx\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "new-app-cert",
+                PrivateKeyPassword = "certpassword",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify the secret was updated
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(updatedSecret);
+        Assert.True(updatedSecret.Data.ContainsKey("app.pfx"), "app.pfx should still exist");
+        Assert.True(updatedSecret.Data.ContainsKey("backend.pfx"), "backend.pfx should still exist");
+
+        // Verify app.pfx was updated with the new cert
+        var serializer = new Pkcs12CertificateStoreSerializer(null);
+        var appStore = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["app.pfx"], "/test", "storepassword");
+        var appAliases = appStore.Aliases.ToList();
+        Assert.Equal(2, appAliases.Count);
+        Assert.Contains("existing-app", appAliases);
+        Assert.Contains("new-app-cert", appAliases);
+
+        // Verify backend.pfx was NOT modified (should still have only 1 cert)
+        var backendStore = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["backend.pfx"], "/test", "storepassword");
+        var backendAliases = backendStore.Aliases.ToList();
+        Assert.Single(backendAliases);
+        Assert.Contains("existing-backend", backendAliases);
+        Assert.DoesNotContain("new-app-cert", backendAliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_RemoveCertificate_FromSpecificPkcs12File_UpdatesCorrectFile()
+    {
+        // Arrange - Create a K8s secret with multiple PKCS12 files, each with multiple certs
+        var secretName = $"test-remove-specific-pfx-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Create app.pfx with 2 certs
+        var appCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Cert 1 PFX Remove");
+        var appCert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Cert 2 PFX Remove");
+        var appEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "app-cert-1", (appCert1.Certificate, appCert1.KeyPair) },
+            { "app-cert-2", (appCert2.Certificate, appCert2.KeyPair) }
+        };
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(appEntries, "storepassword");
+
+        // Create backend.pfx with 2 certs
+        var backendCert1 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend Cert 1 PFX Remove");
+        var backendCert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend Cert 2 PFX Remove");
+        var backendEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "backend-cert-1", (backendCert1.Certificate, backendCert1.KeyPair) },
+            { "backend-cert-2", (backendCert2.Certificate, backendCert2.KeyPair) }
+        };
+        var backendPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(backendEntries, "storepassword");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "app.pfx", appPfxBytes },
+                { "backend.pfx", backendPfxBytes }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Remove app-cert-1 from app.pfx specifically
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            OperationType = CertStoreOperationType.Remove,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"pkcs12\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"app.pfx\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "app-cert-1"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify the correct file was updated
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var serializer = new Pkcs12CertificateStoreSerializer(null);
+
+        // app.pfx should now have only 1 cert (app-cert-2)
+        var appStore = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["app.pfx"], "/test", "storepassword");
+        var appAliases = appStore.Aliases.ToList();
+        Assert.Single(appAliases);
+        Assert.Contains("app-cert-2", appAliases);
+        Assert.DoesNotContain("app-cert-1", appAliases);
+
+        // backend.pfx should be unchanged (still have 2 certs)
+        var backendStore = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["backend.pfx"], "/test", "storepassword");
+        var backendAliases = backendStore.Aliases.ToList();
+        Assert.Equal(2, backendAliases.Count);
+        Assert.Contains("backend-cert-1", backendAliases);
+        Assert.Contains("backend-cert-2", backendAliases);
+    }
+
+    #endregion
 }

@@ -18,10 +18,10 @@ Comprehensive testing guide for the Keyfactor Kubernetes Universal Orchestrator 
 
 ## Overview
 
-The test suite includes **532 tests** across all 7 Kubernetes Orchestrator store types:
+The test suite includes **595 tests** across all 7 Kubernetes Orchestrator store types:
 
-- **412 unit tests** - Fast, isolated tests with no external dependencies
-- **120 integration tests** - End-to-end tests against real Kubernetes clusters
+- **457 unit tests** - Fast, isolated tests with no external dependencies
+- **138 integration tests** - End-to-end tests against real Kubernetes clusters
 
 All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for cryptographic operations, and **Keyfactor.PKI** for certificate utilities.
 
@@ -29,15 +29,17 @@ All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for
 
 | Store Type | Unit Tests | Integration Tests | Total |
 |------------|-----------|------------------|-------|
-| K8SJKS (Java Keystores) | ~60 | 11 | ~71 |
-| K8SPKCS12 (PKCS12/PFX) | ~60 | 11 | ~71 |
+| K8SJKS (Java Keystores) | ~80 | 14 | ~94 |
+| K8SPKCS12 (PKCS12/PFX) | ~75 | 13 | ~88 |
 | K8SCert (CSRs) | ~25 | 7 | ~32 |
-| K8SSecret (Opaque PEM) | ~53 | 20 | ~73 |
+| K8SSecret (Opaque PEM) | ~53 | 24 | ~77 |
 | K8STLSSecr (TLS Secrets) | ~58 | 24 | ~82 |
-| K8SCluster (Cluster-wide) | ~49 | 17 | ~66 |
-| K8SNS (Namespace) | ~49 | 19 | ~68 |
-| Utilities (CertificateUtilities) | ~51 | - | ~51 |
-| **Total** | **412** | **120** | **532** |
+| K8SCluster (Cluster-wide) | ~55 | 20 | ~75 |
+| K8SNS (Namespace) | ~55 | 24 | ~79 |
+| Utilities/CertificateFormat | ~56 | - | ~56 |
+| **Total** | **~457** | **~138** | **~595** |
+
+> **Note**: Counts are approximate due to parameterized tests. Run `dotnet test --list-tests` for exact counts.
 
 ---
 
@@ -510,6 +512,36 @@ var jksBytes = CertificateTestHelper.GenerateJks(
 // Generate corrupted data for negative tests
 var corruptedData = CertificateTestHelper.GenerateCorruptedPkcs12();
 ```
+
+---
+
+## Known Limitations
+
+### IncludeCertChain with Certificates Without Private Keys
+
+When `IncludeCertChain=true` is configured for a certificate store, but the certificate being deployed in Keyfactor Command does **not** have a private key, the certificate chain **cannot** be included.
+
+**Why?**
+- Keyfactor Command sends certificates in DER format when they have no private key
+- DER format can only contain a single certificate (the leaf certificate)
+- Certificate chains require PKCS12 format, which requires a private key
+
+**Symptoms:**
+- A warning is logged: "IncludeCertChain is enabled but the certificate was received in DER format..."
+- Only the leaf certificate is deployed, regardless of the IncludeCertChain setting
+
+**Solution:**
+- Ensure certificates in Keyfactor Command have "Private Key" set if you need the chain included
+- Alternatively, use `SeparateChain=true` to manually manage chain certificates
+
+### JKS vs PKCS12 Inventory Behavior
+
+JKS and PKCS12 inventories behave differently for keystores with mixed entry types:
+
+- **JKS Inventory**: Only returns entries with private keys (PrivateKeyEntry). Trusted certificate entries (certificate-only, no private key) are **not** returned.
+- **PKCS12 Inventory**: Returns **all** entries including trusted certificate entries.
+
+This is the current implemented behavior and is tested/documented. If you need to manage trusted certificates in JKS stores, you can add them but they won't appear in inventory.
 
 ---
 

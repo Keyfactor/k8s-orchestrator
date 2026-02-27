@@ -1984,6 +1984,17 @@ public abstract class JobBase
         Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogDebug("Parsing DER-encoded certificate ({ByteCount} bytes)", derBytes.Length);
 
+        // Log warning if IncludeCertChain is true but certificate has no private key
+        // When Command sends a certificate without a private key, it arrives in DER format
+        // which only contains the leaf certificate - the chain cannot be included.
+        if (IncludeCertChain)
+        {
+            Logger.LogWarning(
+                "IncludeCertChain is enabled but the certificate was received in DER format (no private key). " +
+                "DER format only contains the leaf certificate, so the certificate chain cannot be included. " +
+                "To include the certificate chain, ensure the certificate in Keyfactor Command has 'Private Key' set.");
+        }
+
         try
         {
             var parser = new Org.BouncyCastle.X509.X509CertificateParser();
@@ -2006,7 +2017,7 @@ public abstract class JobBase
             jobCertObject.CertificateEntry = new Org.BouncyCastle.Pkcs.X509CertificateEntry(bcCertificate);
             jobCertObject.HasPrivateKey = false;
 
-            // For DER certificates, set up single-entry chain
+            // For DER certificates, set up single-entry chain (leaf only, no issuer chain)
             jobCertObject.CertificateEntryChain = new[] { jobCertObject.CertificateEntry };
             jobCertObject.ChainPem = new List<string> { pemCert };
 

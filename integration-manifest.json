@@ -124,7 +124,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -244,7 +244,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "StorePasswordPath",
@@ -319,7 +319,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -385,7 +385,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "CertificateDataFieldName",
@@ -531,7 +531,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -624,7 +624,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",

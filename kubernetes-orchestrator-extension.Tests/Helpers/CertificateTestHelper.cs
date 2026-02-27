@@ -593,6 +593,124 @@ public static class CertificateTestHelper
 
     #endregion
 
+    #region Mixed Entry Types (Private Keys + Trusted Certs)
+
+    /// <summary>
+    /// Generates a JKS keystore with mixed entry types (private key entries and trusted certificate entries).
+    /// Private key entries contain a certificate + private key (PrivateKeyEntry).
+    /// Trusted certificate entries contain only a certificate, no private key (TrustedCertificateEntry).
+    /// This is common in real-world keystores that contain both server certs and CA trust anchors.
+    /// </summary>
+    /// <param name="privateKeyEntries">Dictionary of alias -> (certificate, keyPair) for private key entries</param>
+    /// <param name="trustedCertEntries">Dictionary of alias -> certificate for trusted certificate entries (no private key)</param>
+    /// <param name="storePassword">Password for the keystore</param>
+    /// <returns>JKS keystore bytes containing both entry types</returns>
+    public static byte[] GenerateJksWithMixedEntries(
+        Dictionary<string, (X509Certificate cert, AsymmetricCipherKeyPair keyPair)> privateKeyEntries,
+        Dictionary<string, X509Certificate> trustedCertEntries,
+        string storePassword)
+    {
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+
+        // Add private key entries (PrivateKeyEntry - cert + key)
+        foreach (var kvp in privateKeyEntries)
+        {
+            var alias = kvp.Key;
+            var (cert, keyPair) = kvp.Value;
+            jksStore.SetKeyEntry(alias, keyPair.Private, storePassword.ToCharArray(), new[] { cert });
+        }
+
+        // Add trusted certificate entries (TrustedCertificateEntry - cert only, no key)
+        foreach (var kvp in trustedCertEntries)
+        {
+            var alias = kvp.Key;
+            var cert = kvp.Value;
+            jksStore.SetCertificateEntry(alias, cert);
+        }
+
+        using var ms = new MemoryStream();
+        jksStore.Save(ms, storePassword.ToCharArray());
+        return ms.ToArray();
+    }
+
+    /// <summary>
+    /// Generates a PKCS12 keystore with mixed entry types (private key entries and trusted certificate entries).
+    /// Private key entries contain a certificate + private key.
+    /// Trusted certificate entries contain only a certificate, no private key.
+    /// </summary>
+    /// <param name="privateKeyEntries">Dictionary of alias -> (certificate, keyPair) for private key entries</param>
+    /// <param name="trustedCertEntries">Dictionary of alias -> certificate for trusted certificate entries (no private key)</param>
+    /// <param name="storePassword">Password for the keystore</param>
+    /// <returns>PKCS12 keystore bytes containing both entry types</returns>
+    public static byte[] GeneratePkcs12WithMixedEntries(
+        Dictionary<string, (X509Certificate cert, AsymmetricCipherKeyPair keyPair)> privateKeyEntries,
+        Dictionary<string, X509Certificate> trustedCertEntries,
+        string storePassword)
+    {
+        var store = new Pkcs12StoreBuilder().Build();
+
+        // Add private key entries (with private key)
+        foreach (var kvp in privateKeyEntries)
+        {
+            var alias = kvp.Key;
+            var (cert, keyPair) = kvp.Value;
+            var certEntry = new X509CertificateEntry(cert);
+            store.SetKeyEntry(alias, new AsymmetricKeyEntry(keyPair.Private), new[] { certEntry });
+        }
+
+        // Add trusted certificate entries (certificate only, no private key)
+        foreach (var kvp in trustedCertEntries)
+        {
+            var alias = kvp.Key;
+            var cert = kvp.Value;
+            store.SetCertificateEntry(alias, new X509CertificateEntry(cert));
+        }
+
+        using var ms = new MemoryStream();
+        store.Save(ms, storePassword.ToCharArray(), Random);
+        return ms.ToArray();
+    }
+
+    #endregion
+
+    #region JKS/PKCS12 Format Detection
+
+    /// <summary>
+    /// Checks if byte array is in native JKS format by checking magic bytes.
+    /// JKS files start with 0xFEEDFEED (4 bytes: 0xFE, 0xED, 0xFE, 0xED)
+    /// </summary>
+    /// <param name="data">The byte array to check</param>
+    /// <returns>True if the data starts with JKS magic bytes (0xFEEDFEED)</returns>
+    public static bool IsNativeJksFormat(byte[] data)
+    {
+        if (data == null || data.Length < 4) return false;
+        return data[0] == 0xFE && data[1] == 0xED && data[2] == 0xFE && data[3] == 0xED;
+    }
+
+    /// <summary>
+    /// Checks if byte array is in PKCS12 format by checking for ASN.1 SEQUENCE tag.
+    /// PKCS12 files typically start with 0x30 (ASN.1 SEQUENCE tag)
+    /// </summary>
+    /// <param name="data">The byte array to check</param>
+    /// <returns>True if the data starts with PKCS12/ASN.1 SEQUENCE tag (0x30)</returns>
+    public static bool IsPkcs12Format(byte[] data)
+    {
+        if (data == null || data.Length < 1) return false;
+        return data[0] == 0x30;
+    }
+
+    /// <summary>
+    /// Gets the JKS magic bytes constant (0xFEEDFEED).
+    /// </summary>
+    public static readonly byte[] JksMagicBytes = { 0xFE, 0xED, 0xFE, 0xED };
+
+    /// <summary>
+    /// Gets the PKCS12 ASN.1 SEQUENCE tag.
+    /// </summary>
+    public const byte Pkcs12SequenceTag = 0x30;
+
+    #endregion
+
     #region DER/PEM Certificate Generation (No Private Key)
 
     /// <summary>

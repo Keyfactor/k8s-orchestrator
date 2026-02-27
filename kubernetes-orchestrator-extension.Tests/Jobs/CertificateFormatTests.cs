@@ -327,4 +327,76 @@ public class CertificateFormatTests
     }
 
     #endregion
+
+    #region IncludeCertChain Limitation Tests
+
+    /// <summary>
+    /// Documents the limitation that DER certificates (sent by Command when no private key)
+    /// cannot include the certificate chain regardless of IncludeCertChain setting.
+    /// </summary>
+    [Fact]
+    public void DerCertificate_ContainsOnlyLeafCertificate_NoChain()
+    {
+        // Arrange - Create a chain with leaf, intermediate, and root
+        var chain = GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0].Certificate;
+
+        // When Command sends a certificate without private key, only the leaf DER is sent
+        var derBytes = leafCert.GetEncoded();
+
+        // Act - Parse the DER bytes (simulating what ParseDerCertificate does)
+        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
+        var parsedCert = parser.ReadCertificate(derBytes);
+
+        // Assert - DER format can only contain a single certificate
+        // This is why IncludeCertChain=true cannot work when certificate has no private key
+        Assert.NotNull(parsedCert);
+        Assert.Equal(leafCert.SubjectDN.ToString(), parsedCert.SubjectDN.ToString());
+
+        // DER is single certificate - no way to include chain
+        // When IncludeCertChain=true but cert has no private key:
+        // - Command sends DER format (leaf only)
+        // - Chain information is NOT available
+        // - A warning is logged by ParseDerCertificate
+    }
+
+    /// <summary>
+    /// Verifies that PKCS12 format CAN include the certificate chain,
+    /// demonstrating the difference from DER format.
+    /// </summary>
+    [Fact]
+    public void Pkcs12Certificate_CanIncludeCertificateChain()
+    {
+        // Arrange - Create a chain with leaf, intermediate, and root
+        var chain = GenerateCertificateChain(KeyType.Rsa2048);
+        var leafCert = chain[0];
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+
+        // Create PKCS12 with full chain (requires private key)
+        var pkcs12Bytes = GeneratePkcs12(
+            leafCert.Certificate,
+            leafCert.KeyPair,
+            "password",
+            "alias",
+            new[] { intermediateCert, rootCert });
+
+        // Act - Parse PKCS12
+        var store = new Org.BouncyCastle.Pkcs.Pkcs12StoreBuilder().Build();
+        using var ms = new System.IO.MemoryStream(pkcs12Bytes);
+        store.Load(ms, "password".ToCharArray());
+
+        // Find the alias with the key entry
+        var alias = store.Aliases.First(a => store.IsKeyEntry(a));
+        var certChain = store.GetCertificateChain(alias);
+
+        // Assert - PKCS12 CAN include the full chain
+        Assert.NotNull(certChain);
+        Assert.Equal(3, certChain.Length); // leaf + intermediate + root
+
+        // This is why IncludeCertChain=true works with PKCS12 (private key required)
+        // but NOT with DER format (no private key)
+    }
+
+    #endregion
 }

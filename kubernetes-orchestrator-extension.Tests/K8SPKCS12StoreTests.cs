@@ -550,6 +550,185 @@ public class K8SPKCS12StoreTests
 
     #endregion
 
+    #region Multiple PKCS12 Files in Single Secret Tests
+
+    [Fact]
+    public void Inventory_SecretWithMultiplePkcs12Files_LoadsAllKeystores()
+    {
+        // Test that multiple PKCS12 files stored in a single Kubernetes secret are all loaded correctly.
+        // This simulates a K8s secret with multiple data fields like:
+        // data:
+        //   app.pfx: <base64>
+        //   ca.p12: <base64>
+        //   truststore.pfx: <base64>
+
+        // Arrange - Create separate PKCS12 files with different certificates
+        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Certificate");
+        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "CA Certificate");
+        var cert3 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Truststore Certificate");
+
+        // Generate separate PKCS12 files
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12(cert1.Certificate, cert1.KeyPair, "password", "appcert");
+        var caP12Bytes = CertificateTestHelper.GeneratePkcs12(cert2.Certificate, cert2.KeyPair, "password", "cacert");
+        var truststorePfxBytes = CertificateTestHelper.GeneratePkcs12(cert3.Certificate, cert3.KeyPair, "password", "trustcert");
+
+        // Simulate multiple PKCS12 files in a secret's Inventory dictionary
+        var inventoryDict = new Dictionary<string, byte[]>
+        {
+            { "app.pfx", appPfxBytes },
+            { "ca.p12", caP12Bytes },
+            { "truststore.pfx", truststorePfxBytes }
+        };
+
+        // Act - Deserialize each PKCS12 file and collect all aliases
+        var allAliases = new Dictionary<string, List<string>>();
+        foreach (var (keyName, keyBytes) in inventoryDict)
+        {
+            var store = _serializer.DeserializeRemoteCertificateStore(keyBytes, $"/test/{keyName}", "password");
+            allAliases[keyName] = store.Aliases.ToList();
+        }
+
+        // Assert - All three PKCS12 files should be loaded
+        Assert.Equal(3, allAliases.Count);
+        Assert.Contains("app.pfx", allAliases.Keys);
+        Assert.Contains("ca.p12", allAliases.Keys);
+        Assert.Contains("truststore.pfx", allAliases.Keys);
+    }
+
+    [Fact]
+    public void Inventory_SecretWithMultiplePkcs12Files_EachHasCorrectAliases()
+    {
+        // Test that aliases from each PKCS12 file are correctly attributed to the right file.
+        // Each PKCS12 file has unique aliases that should be identifiable.
+
+        // Arrange - Create PKCS12 files with different unique aliases
+        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Web Server");
+        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Database");
+        var cert3 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "API Gateway");
+
+        // Create PKCS12 files with specific unique aliases
+        var webPfxBytes = CertificateTestHelper.GeneratePkcs12(cert1.Certificate, cert1.KeyPair, "password", "webserver-cert");
+        var dbPfxBytes = CertificateTestHelper.GeneratePkcs12(cert2.Certificate, cert2.KeyPair, "password", "database-cert");
+        var apiPfxBytes = CertificateTestHelper.GeneratePkcs12(cert3.Certificate, cert3.KeyPair, "password", "apigateway-cert");
+
+        var inventoryDict = new Dictionary<string, byte[]>
+        {
+            { "web.pfx", webPfxBytes },
+            { "db.pfx", dbPfxBytes },
+            { "api.pfx", apiPfxBytes }
+        };
+
+        // Act - Deserialize each PKCS12 and verify aliases
+        var webStore = _serializer.DeserializeRemoteCertificateStore(inventoryDict["web.pfx"], "/test/web.pfx", "password");
+        var dbStore = _serializer.DeserializeRemoteCertificateStore(inventoryDict["db.pfx"], "/test/db.pfx", "password");
+        var apiStore = _serializer.DeserializeRemoteCertificateStore(inventoryDict["api.pfx"], "/test/api.pfx", "password");
+
+        // Assert - Each store has exactly one alias with the expected name
+        var webAliases = webStore.Aliases.ToList();
+        var dbAliases = dbStore.Aliases.ToList();
+        var apiAliases = apiStore.Aliases.ToList();
+
+        Assert.Single(webAliases);
+        Assert.Single(dbAliases);
+        Assert.Single(apiAliases);
+
+        Assert.Contains("webserver-cert", webAliases);
+        Assert.Contains("database-cert", dbAliases);
+        Assert.Contains("apigateway-cert", apiAliases);
+
+        // Verify that aliases are NOT mixed between files
+        Assert.DoesNotContain("database-cert", webAliases);
+        Assert.DoesNotContain("apigateway-cert", webAliases);
+        Assert.DoesNotContain("webserver-cert", dbAliases);
+    }
+
+    [Fact]
+    public void Inventory_SecretWithMultiplePkcs12Files_DifferentPasswords_ThrowsOnWrongPassword()
+    {
+        // Test behavior when PKCS12 files have different passwords.
+        // In practice, K8S stores usually have the same password for all files,
+        // but we should handle cases where they differ.
+
+        // Arrange
+        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
+        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 2");
+
+        var pfx1Bytes = CertificateTestHelper.GeneratePkcs12(cert1.Certificate, cert1.KeyPair, "password1", "cert1");
+        var pfx2Bytes = CertificateTestHelper.GeneratePkcs12(cert2.Certificate, cert2.KeyPair, "password2", "cert2");
+
+        // Act & Assert - First file loads with correct password
+        var store1 = _serializer.DeserializeRemoteCertificateStore(pfx1Bytes, "/test/file1.pfx", "password1");
+        Assert.NotNull(store1);
+        Assert.Single(store1.Aliases);
+
+        // Second file should throw with wrong password
+        Assert.ThrowsAny<Exception>(() =>
+            _serializer.DeserializeRemoteCertificateStore(pfx2Bytes, "/test/file2.pfx", "password1"));
+
+        // Second file loads with correct password
+        var store2 = _serializer.DeserializeRemoteCertificateStore(pfx2Bytes, "/test/file2.pfx", "password2");
+        Assert.NotNull(store2);
+        Assert.Single(store2.Aliases);
+    }
+
+    [Fact]
+    public void Inventory_SecretWithMultiplePkcs12Files_EachWithMultipleEntries_LoadsAllCorrectly()
+    {
+        // Test that multiple PKCS12 files, each containing multiple entries, all load correctly.
+
+        // Arrange - Create two PKCS12 files, each with multiple aliases
+        var cert1a = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Server 1");
+        var cert1b = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Server 2");
+        var cert2a = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 1");
+        var cert2b = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 2");
+        var cert2c = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 3");
+
+        var appEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "app-server-1", (cert1a.Certificate, cert1a.KeyPair) },
+            { "app-server-2", (cert1b.Certificate, cert1b.KeyPair) }
+        };
+
+        var backendEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "backend-1", (cert2a.Certificate, cert2a.KeyPair) },
+            { "backend-2", (cert2b.Certificate, cert2b.KeyPair) },
+            { "backend-3", (cert2c.Certificate, cert2c.KeyPair) }
+        };
+
+        var appPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(appEntries, "password");
+        var backendPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(backendEntries, "password");
+
+        var inventoryDict = new Dictionary<string, byte[]>
+        {
+            { "app.pfx", appPfxBytes },
+            { "backend.pfx", backendPfxBytes }
+        };
+
+        // Act
+        var appStore = _serializer.DeserializeRemoteCertificateStore(inventoryDict["app.pfx"], "/test/app.pfx", "password");
+        var backendStore = _serializer.DeserializeRemoteCertificateStore(inventoryDict["backend.pfx"], "/test/backend.pfx", "password");
+
+        // Assert
+        var appAliases = appStore.Aliases.ToList();
+        var backendAliases = backendStore.Aliases.ToList();
+
+        Assert.Equal(2, appAliases.Count);
+        Assert.Equal(3, backendAliases.Count);
+
+        Assert.Contains("app-server-1", appAliases);
+        Assert.Contains("app-server-2", appAliases);
+
+        Assert.Contains("backend-1", backendAliases);
+        Assert.Contains("backend-2", backendAliases);
+        Assert.Contains("backend-3", backendAliases);
+
+        // Total aliases across all files
+        Assert.Equal(5, appAliases.Count + backendAliases.Count);
+    }
+
+    #endregion
+
     #region Edge Case Tests
 
     [Fact]
@@ -621,6 +800,250 @@ public class K8SPKCS12StoreTests
         Assert.NotNull(loadedStore);
         Assert.Contains("certonly", loadedStore.Aliases.ToList());
         Assert.False(loadedStore.IsKeyEntry("certonly"));
+    }
+
+    #endregion
+
+    #region Mixed Entry Types Tests (Private Keys + Trusted Certs)
+
+    [Fact]
+    public void DeserializeRemoteCertificateStore_MixedEntryTypes_LoadsBothTypes()
+    {
+        // Arrange - Create a PKCS12 with both private key entries and trusted certificate entries
+        var privateKeyEntry1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert 1");
+        var privateKeyEntry2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Server Cert 2");
+        var trustedCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted Root CA");
+        var trustedCert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Trusted Intermediate CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server1", (privateKeyEntry1.Certificate, privateKeyEntry1.KeyPair) },
+            { "server2", (privateKeyEntry2.Certificate, privateKeyEntry2.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "root-ca", trustedCert1.Certificate },
+            { "intermediate-ca", trustedCert2.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "password");
+
+        // Act
+        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
+
+        // Assert - All 4 entries should be loaded
+        Assert.NotNull(store);
+        var aliases = store.Aliases.ToList();
+        Assert.Equal(4, aliases.Count);
+        Assert.Contains("server1", aliases);
+        Assert.Contains("server2", aliases);
+        Assert.Contains("root-ca", aliases);
+        Assert.Contains("intermediate-ca", aliases);
+    }
+
+    [Fact]
+    public void Inventory_MixedEntryTypes_ReportsCorrectPrivateKeyStatus()
+    {
+        // Arrange - Create a PKCS12 with both private key entries and trusted certificate entries
+        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server", (privateKeyEntry.Certificate, privateKeyEntry.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "trusted-ca", trustedCert.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "password");
+
+        // Act
+        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
+
+        // Assert - Verify IsKeyEntry returns correct values
+        Assert.True(store.IsKeyEntry("server"), "server should be a key entry (has private key)");
+        Assert.False(store.IsKeyEntry("trusted-ca"), "trusted-ca should NOT be a key entry (certificate only)");
+
+        // Verify we can get the certificate from both entries
+        var serverCert = store.GetCertificate("server");
+        var trustedCaCert = store.GetCertificate("trusted-ca");
+        Assert.NotNull(serverCert);
+        Assert.NotNull(trustedCaCert);
+    }
+
+    [Fact]
+    public void CreateOrUpdatePkcs12_AddTrustedCertEntry_PreservesExistingEntries()
+    {
+        // Arrange - Create initial PKCS12 with a private key entry
+        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Server Cert");
+        var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(existingCert.Certificate, existingCert.KeyPair, "password", "existing-server");
+
+        // Create a trusted certificate (no private key) to add
+        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        // Convert trusted cert to DER bytes (certificate only, no private key)
+        var trustedCertBytes = trustedCert.Certificate.GetEncoded();
+
+        // Act - Add the trusted certificate entry
+        var updatedPkcs12Bytes = _serializer.CreateOrUpdatePkcs12(
+            trustedCertBytes,
+            null, // No password for certificate-only
+            "trusted-ca",
+            existingPkcs12,
+            "password",
+            remove: false,
+            includeChain: true);
+
+        // Deserialize and verify
+        var store = _serializer.DeserializeRemoteCertificateStore(updatedPkcs12Bytes, "/test/path", "password");
+
+        // Assert - Both entries should exist
+        var aliases = store.Aliases.ToList();
+        Assert.Equal(2, aliases.Count);
+        Assert.Contains("existing-server", aliases);
+        Assert.Contains("trusted-ca", aliases);
+
+        // Verify entry types are preserved
+        Assert.True(store.IsKeyEntry("existing-server"), "existing-server should still be a key entry");
+        Assert.False(store.IsKeyEntry("trusted-ca"), "trusted-ca should be a certificate-only entry");
+    }
+
+    [Fact]
+    public void SerializeRemoteCertificateStore_MixedEntryTypes_PreservesEntryTypes()
+    {
+        // Arrange - Create a PKCS12 with mixed entry types
+        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server", (privateKeyEntry.Certificate, privateKeyEntry.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "trusted-ca", trustedCert.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "password");
+        var originalStore = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
+
+        // Act - Serialize and deserialize
+        var serialized = _serializer.SerializeRemoteCertificateStore(originalStore, "/test/path", "store.pfx", "password");
+        var roundTripStore = _serializer.DeserializeRemoteCertificateStore(serialized[0].Contents, "/test/path", "password");
+
+        // Assert - Entry types should be preserved after round-trip
+        Assert.True(roundTripStore.IsKeyEntry("server"), "server should still be a key entry after round-trip");
+        Assert.False(roundTripStore.IsKeyEntry("trusted-ca"), "trusted-ca should still be certificate-only after round-trip");
+    }
+
+    [Fact]
+    public void DeserializeRemoteCertificateStore_MixedEntryTypes_CorrectCertificateChainForKeyEntries()
+    {
+        // Arrange - Create a PKCS12 with a private key entry that has a chain and a trusted cert entry
+        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048, "Server", "Intermediate", "Root");
+        var serverCert = chain[0];
+        var intermediateCert = chain[1].Certificate;
+        var rootCert = chain[2].Certificate;
+        var trustedCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "External Trusted CA");
+
+        // Create PKCS12 manually with chain for key entry
+        var store = new Pkcs12StoreBuilder().Build();
+        var certChain = new[]
+        {
+            new X509CertificateEntry(serverCert.Certificate),
+            new X509CertificateEntry(intermediateCert),
+            new X509CertificateEntry(rootCert)
+        };
+        store.SetKeyEntry("server", new AsymmetricKeyEntry(serverCert.KeyPair.Private), certChain);
+        store.SetCertificateEntry("external-ca", new X509CertificateEntry(trustedCa.Certificate));
+
+        using var ms = new MemoryStream();
+        store.Save(ms, "password".ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+        var pkcs12Bytes = ms.ToArray();
+
+        // Act
+        var loadedStore = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
+
+        // Assert - Key entry should have full chain
+        var serverChain = loadedStore.GetCertificateChain("server");
+        Assert.NotNull(serverChain);
+        Assert.Equal(3, serverChain.Length);
+
+        // Trusted cert entry should have no chain (just the certificate)
+        var externalCaChain = loadedStore.GetCertificateChain("external-ca");
+        Assert.Null(externalCaChain); // Certificate entries don't have chains, only key entries do
+    }
+
+    [Fact]
+    public void CreateOrUpdatePkcs12_RemoveTrustedCertEntry_PreservesKeyEntries()
+    {
+        // Arrange - Create PKCS12 with both entry types
+        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server", (privateKeyEntry.Certificate, privateKeyEntry.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "trusted-ca", trustedCert.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "password");
+
+        // Act - Remove the trusted cert entry
+        var updatedPkcs12Bytes = _serializer.CreateOrUpdatePkcs12(
+            Array.Empty<byte>(),
+            null,
+            "trusted-ca",
+            pkcs12Bytes,
+            "password",
+            remove: true,
+            includeChain: true);
+
+        // Deserialize and verify
+        var store = _serializer.DeserializeRemoteCertificateStore(updatedPkcs12Bytes, "/test/path", "password");
+
+        // Assert - Only the key entry should remain
+        var aliases = store.Aliases.ToList();
+        Assert.Single(aliases);
+        Assert.Contains("server", aliases);
+        Assert.DoesNotContain("trusted-ca", aliases);
+        Assert.True(store.IsKeyEntry("server"), "server should still be a key entry");
+    }
+
+    [Fact]
+    public void DeserializeRemoteCertificateStore_MixedEntryTypesWithEmptyPassword_LoadsCorrectly()
+    {
+        // Arrange - PKCS12 supports empty passwords
+        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+
+        var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "server", (privateKeyEntry.Certificate, privateKeyEntry.KeyPair) }
+        };
+
+        var trustedCertEntries = new Dictionary<string, Org.BouncyCastle.X509.X509Certificate>
+        {
+            { "trusted-ca", trustedCert.Certificate }
+        };
+
+        var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12WithMixedEntries(privateKeyEntries, trustedCertEntries, "");
+
+        // Act
+        var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "");
+
+        // Assert
+        Assert.True(store.IsKeyEntry("server"), "server should be a key entry");
+        Assert.False(store.IsKeyEntry("trusted-ca"), "trusted-ca should NOT be a key entry");
     }
 
     #endregion
