@@ -1,0 +1,70 @@
+name: ".NET Security Scan"
+
+on:
+  push:
+    branches: [ "main", "release-*" ]
+  pull_request:
+    branches: [ "main", "release-*" ]
+  schedule:
+    # Run weekly security scan
+    - cron: '0 8 * * 2'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  packages: read
+
+jobs:
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Authenticate NuGet with GitHub Packages
+        run: dotnet nuget add source https://nuget.pkg.github.com/Keyfactor/index.json --name keyfactor-github --username ${{ github.actor }} --password ${{ secrets.V2BUILDTOKEN }} --store-password-in-clear-text
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      # Run .NET Security Scan for known vulnerabilities in NuGet packages
+      - name: Run dotnet list package --vulnerable
+        run: |
+          dotnet list package --vulnerable --include-transitive 2>&1 | tee vulnerable-packages.txt
+        continue-on-error: true
+
+      - name: Check for vulnerable packages
+        run: |
+          if grep -q "has the following vulnerable packages" vulnerable-packages.txt; then
+            echo "::error::Vulnerable packages detected!"
+            cat vulnerable-packages.txt
+            exit 1
+          else
+            echo "No vulnerable packages detected."
+          fi
+
+      # Run .NET Outdated Packages Check
+      - name: Install dotnet-outdated tool
+        run: dotnet tool install --global dotnet-outdated-tool
+
+      - name: Check for outdated packages
+        run: dotnet outdated --upgrade --include-auto-references
+        continue-on-error: true
+
+      # Upload results
+      - name: Upload scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-scan-results
+          path: vulnerable-packages.txt
