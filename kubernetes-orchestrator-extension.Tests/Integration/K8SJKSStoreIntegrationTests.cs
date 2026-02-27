@@ -367,6 +367,125 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         Assert.Contains("newcert", aliases);
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_CreateStoreIfMissing_NoCertificateData_CreatesEmptyJksStore()
+    {
+        // Arrange - "Create store if missing" scenario: no certificate data provided
+        var secretName = $"test-create-store-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Create Management Add job config with no certificate contents (simulates "create store if missing")
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.jks\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                // No alias, no contents - simulates "create store if missing"
+                Alias = null,
+                PrivateKeyPassword = null,
+                Contents = null
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created with an empty but valid JKS keystore
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("keystore.jks"), "Expected 'keystore.jks' key in secret data");
+        Assert.NotEmpty(secret.Data["keystore.jks"]);
+
+        // Verify the JKS store is valid and empty (no aliases)
+        var serializer = new JksCertificateStoreSerializer(null);
+        var jksStore = serializer.DeserializeRemoteCertificateStore(secret.Data["keystore.jks"], "/test", "storepassword");
+        var aliases = jksStore.Aliases.ToList();
+        Assert.Empty(aliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_CreateStoreIfMissing_SecretAlreadyExists_ReturnsExistingSecret()
+    {
+        // Arrange - Secret already exists, "create store if missing" should return the existing secret
+        var secretName = $"test-existing-store-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Create existing secret with one certificate
+        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+        var existingJks = CertificateTestHelper.GenerateJks(existingCert.Certificate, existingCert.KeyPair, "storepassword", "existing");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", existingJks }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Create Management Add job config with no certificate contents
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.jks\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = null,
+                PrivateKeyPassword = null,
+                Contents = null
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Should succeed without modifying the existing store
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify the existing certificate is still present
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var serializer = new JksCertificateStoreSerializer(null);
+        var jksStore = serializer.DeserializeRemoteCertificateStore(updatedSecret.Data["keystore.jks"], "/test", "storepassword");
+        var aliases = jksStore.Aliases.ToList();
+        Assert.Single(aliases);
+        Assert.Contains("existing", aliases);
+    }
+
     #endregion
 
     #region Management Remove Tests
@@ -575,10 +694,12 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Inventory_NonExistentSecret_ReturnsFailure()
+    public async Task Inventory_NonExistentSecret_ReturnsSuccessWithEmptyInventory()
     {
-        // Arrange
+        // Arrange - Test that non-existent secrets return success with empty inventory
+        // This behavior supports the "create store if missing" feature
         var nonExistentSecretName = $"does-not-exist-{Guid.NewGuid():N}";
+        var inventoryItems = new List<CurrentInventoryItem>();
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -598,12 +719,17 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         var inventory = new Inventory(MockPamResolver.Object);
 
         // Act
-        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
 
-        // Assert
-        Assert.True(result.Result == OrchestratorJobStatusJobResult.Failure,
-            $"Expected Failure but got {result.Result}. FailureMessage: {result.FailureMessage}");
-        Assert.NotNull(result.FailureMessage);
+        // Assert - Should return Success with warning message and empty inventory
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains("not found", result.FailureMessage ?? "", StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(inventoryItems);
     }
 
     #endregion

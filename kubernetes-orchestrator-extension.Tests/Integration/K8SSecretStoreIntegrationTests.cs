@@ -557,6 +557,113 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         Assert.False(secret.Data.ContainsKey("ca.crt"), "Secret should NOT contain ca.crt when IncludeCertChain=false (even if SeparateChain=true)");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_CreateStoreIfMissing_NoCertificateData_CreatesEmptyOpaqueSecret()
+    {
+        // Arrange - "Create store if missing" scenario: no certificate data provided
+        var secretName = $"test-create-store-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Create Management Add job config with no certificate contents (simulates "create store if missing")
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SSecret",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                Properties = "{\"KubeSecretType\":\"secret\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                // No alias, no contents - simulates "create store if missing"
+                Alias = null,
+                PrivateKeyPassword = null,
+                Contents = null
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created as empty Opaque secret
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.Equal("Opaque", secret.Type);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_CreateStoreIfMissing_SecretAlreadyExists_ReturnsExistingSecret()
+    {
+        // Arrange - Secret already exists, "create store if missing" should return the existing secret
+        var secretName = $"test-existing-store-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        // Create existing secret with certificate
+        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertCertificateToPem(existingCert.Certificate)) },
+                { "tls.key", Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertPrivateKeyToPem(existingCert.KeyPair.Private)) }
+            }
+        };
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Create Management Add job config with no certificate contents
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SSecret",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                Properties = "{\"KubeSecretType\":\"secret\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = null,
+                PrivateKeyPassword = null,
+                Contents = null
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert - Should succeed without modifying the existing secret
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify the existing certificate is still present
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.True(updatedSecret.Data.ContainsKey("tls.crt"), "Existing tls.crt should be preserved");
+        Assert.True(updatedSecret.Data.ContainsKey("tls.key"), "Existing tls.key should be preserved");
+    }
+
     #endregion
 
     #region Discovery Tests

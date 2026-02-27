@@ -8,6 +8,7 @@ This guide documents all available Make targets for the Kubernetes Orchestrator 
 |----------|---------------|
 | **Build** | `make build` |
 | **Testing** | `make test-unit`, `make test-integration`, `make test` |
+| **Coverage** | `make test-coverage-unit`, `make test-coverage-open` |
 | **Debugging** | `make debug-loop`, `make debug-logs` |
 | **OAuth** | `make token`, `make token-show` |
 | **API** | `make api-list-stores`, `make api-list-certs` |
@@ -123,8 +124,42 @@ Interactive single test selection using `fzf`. Select a test from the list to ru
 #### `make test-watch`
 Run tests in watch mode - automatically re-runs tests when files change.
 
+### Code Coverage
+
 #### `make test-coverage`
-Run tests with code coverage collection and generate an HTML report at `./coverage/html/index.html`.
+Run all tests (unit + integration) with code coverage and generate an HTML report.
+```bash
+make test-coverage
+# Report generated at ./coverage/html/index.html
+```
+
+#### `make test-coverage-unit`
+Run unit tests only with code coverage (faster, excludes integration tests).
+```bash
+make test-coverage-unit
+# Report generated at ./coverage/unit/html/index.html
+```
+
+#### `make test-coverage-summary`
+Display coverage summary in the terminal (requires running coverage first).
+```bash
+make test-coverage-unit
+make test-coverage-summary
+```
+
+#### `make test-coverage-open`
+Open the HTML coverage report in your browser (macOS).
+```bash
+make test-coverage-open
+```
+
+#### `make test-coverage-clean`
+Remove all coverage reports and artifacts.
+```bash
+make test-coverage-clean
+```
+
+### Utilities
 
 #### `make test-cluster-setup`
 Display instructions for setting up the test Kubernetes cluster, including:

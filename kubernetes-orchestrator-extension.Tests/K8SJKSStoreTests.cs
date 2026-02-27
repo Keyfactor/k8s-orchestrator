@@ -1414,4 +1414,93 @@ public class K8SJKSStoreTests
     }
 
     #endregion
+
+    #region Empty Store Tests (Create Store If Missing)
+
+    [Fact]
+    public void CreateEmptyJksStore_WithPassword_CanBeLoadedWithSamePassword()
+    {
+        // Arrange - Create an empty JKS store (simulates "create store if missing")
+        var emptyJksStore = new Org.BouncyCastle.Security.JksStore();
+        var password = "testpassword";
+
+        // Act - Save the empty store
+        using var outStream = new MemoryStream();
+        emptyJksStore.Save(outStream, password.ToCharArray());
+        var emptyJksBytes = outStream.ToArray();
+
+        // Assert - Should be valid JKS that can be loaded
+        Assert.NotNull(emptyJksBytes);
+        Assert.NotEmpty(emptyJksBytes);
+
+        // Verify it has JKS magic bytes
+        Assert.True(CertificateTestHelper.IsNativeJksFormat(emptyJksBytes), "Empty JKS store should have JKS magic bytes");
+
+        // Verify it can be loaded
+        var loadedStore = new Org.BouncyCastle.Security.JksStore();
+        using var inStream = new MemoryStream(emptyJksBytes);
+        loadedStore.Load(inStream, password.ToCharArray());
+        Assert.Empty(loadedStore.Aliases);
+    }
+
+    [Fact]
+    public void CreateEmptyJksStore_WithEmptyPassword_CanBeLoadedWithEmptyPassword()
+    {
+        // Arrange - Create an empty JKS store with empty password
+        var emptyJksStore = new Org.BouncyCastle.Security.JksStore();
+
+        // Act - Save the empty store with empty password
+        using var outStream = new MemoryStream();
+        emptyJksStore.Save(outStream, Array.Empty<char>());
+        var emptyJksBytes = outStream.ToArray();
+
+        // Assert - Should be valid JKS that can be loaded
+        Assert.NotNull(emptyJksBytes);
+        Assert.NotEmpty(emptyJksBytes);
+
+        // Verify it has JKS magic bytes
+        Assert.True(CertificateTestHelper.IsNativeJksFormat(emptyJksBytes), "Empty JKS store should have JKS magic bytes");
+
+        // Verify it can be loaded
+        var loadedStore = new Org.BouncyCastle.Security.JksStore();
+        using var inStream = new MemoryStream(emptyJksBytes);
+        loadedStore.Load(inStream, Array.Empty<char>());
+        Assert.Empty(loadedStore.Aliases);
+    }
+
+    [Fact]
+    public void CreateEmptyJksStore_ThenAddCertificate_Success()
+    {
+        // Arrange - Create an empty JKS store
+        var emptyJksStore = new Org.BouncyCastle.Security.JksStore();
+        var password = "testpassword";
+
+        using var outStream = new MemoryStream();
+        emptyJksStore.Save(outStream, password.ToCharArray());
+        var emptyJksBytes = outStream.ToArray();
+
+        // Create a certificate to add
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
+        var newCertPkcs12 = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, password, "newcert");
+
+        // Act - Use CreateOrUpdateJks to add the certificate to the empty store
+        var updatedJksBytes = _serializer.CreateOrUpdateJks(
+            newCertPkcs12,
+            password,
+            "newcert",
+            emptyJksBytes,
+            password,
+            false,
+            true);
+
+        // Assert - Should have one certificate
+        var loadedStore = new Org.BouncyCastle.Security.JksStore();
+        using var inStream = new MemoryStream(updatedJksBytes);
+        loadedStore.Load(inStream, password.ToCharArray());
+        var aliases = loadedStore.Aliases.ToList();
+        Assert.Single(aliases);
+        Assert.Contains("newcert", aliases);
+    }
+
+    #endregion
 }

@@ -48,10 +48,18 @@ All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for
 The project includes convenient Makefile targets for all common test operations:
 
 ```bash
+# Testing
 make test-unit              # Run unit tests only
 make test-integration       # Run integration tests only
-make test-coverage          # Generate coverage report
 make test-store-jks         # Test specific store type
+
+# Code Coverage
+make test-coverage-unit     # Unit tests with coverage report
+make test-coverage          # All tests with coverage report
+make test-coverage-open     # Open HTML coverage report in browser
+make test-coverage-summary  # Show coverage summary in terminal
+
+# Cluster Management
 make test-cluster-setup     # Show cluster configuration
 make test-cluster-cleanup   # Clean up test resources
 ```
@@ -144,6 +152,25 @@ dotnet test --filter "FullyQualifiedName~K8SSecret|FullyQualifiedName~K8STLSSecr
 
 #### Run with Code Coverage
 
+**Using Makefile (Recommended):**
+```bash
+# Run unit tests with coverage (fastest)
+make test-coverage-unit
+
+# Run all tests (unit + integration) with coverage
+make test-coverage
+
+# View coverage summary in terminal
+make test-coverage-summary
+
+# Open HTML report in browser (macOS)
+make test-coverage-open
+
+# Clean up coverage reports
+make test-coverage-clean
+```
+
+**Manual Method:**
 ```bash
 # Install coverage tool (one-time)
 dotnet tool install -g dotnet-coverage
@@ -318,6 +345,15 @@ kubectl delete namespace keyfactor-k8sjks-integration-tests
 - Malformed PEM data
 - Empty keystores
 
+#### Create Store If Missing
+Tests for the "Create Store If Missing" feature in Keyfactor Command:
+- K8SJKS: Creates empty JKS keystore when no certificate data provided
+- K8SPKCS12: Creates empty PKCS12 keystore when no certificate data provided
+- K8SSecret: Creates empty Opaque secret when no certificate data provided
+- K8STLSSecr: Creates empty TLS secret when no certificate data provided
+- K8SCluster: Returns success with warning (not supported for aggregate store types)
+- K8SNS: Returns success with warning (not supported for aggregate store types)
+
 #### Edge Cases
 - Empty secrets
 - Whitespace in PEM data
@@ -325,6 +361,7 @@ kubectl delete namespace keyfactor-k8sjks-integration-tests
 - Special characters in secret names
 - Cross-namespace operations (K8SCluster)
 - Namespace boundaries (K8SNS)
+- KubeSecretType property derivation from Capability (deprecated property support)
 
 ---
 
@@ -558,6 +595,44 @@ When `SeparateChain=true` but `IncludeCertChain=false`, this is an invalid/confl
 - Use `IncludeCertChain=true,SeparateChain=true` if you want chain in ca.crt
 - Use `IncludeCertChain=true,SeparateChain=false` if you want full chain in tls.crt
 - Use `IncludeCertChain=false` (any SeparateChain value) if you want leaf only
+
+### KubeSecretType Property Deprecation
+
+The `KubeSecretType` store property is **deprecated** and will be removed in a future release.
+
+**Why?**
+- The secret type is now automatically derived from the store's Capability
+- This eliminates redundant configuration and potential mismatches
+
+**Behavior:**
+- If `KubeSecretType` is provided in store properties, a deprecation warning is logged
+- The derived value from Capability takes precedence over the store property value
+- Store type definitions have been updated to mark this property as `Required: false`
+
+**Mapping (Capability → Derived KubeSecretType):**
+| Capability | Derived Type |
+|------------|--------------|
+| K8SJKS | jks |
+| K8SPKCS12 | pkcs12 |
+| K8SSecret | secret |
+| K8STLSSecr | tls_secret |
+| K8SCluster | cluster |
+| K8SNS | namespace |
+| K8SCert | certificate |
+
+### Create Store If Missing - Aggregate Store Types
+
+K8SCluster and K8SNS store types do **not** support the "Create Store If Missing" feature.
+
+**Why?**
+- K8SCluster and K8SNS are "aggregate" store types that manage multiple secrets
+- There is no single "store" to create - they represent all secrets in a cluster/namespace
+- The concept of "creating" an empty cluster or namespace doesn't apply
+
+**Behavior:**
+- A warning is logged explaining that this operation is not supported
+- The job returns **success** with a descriptive message
+- No secrets are created or modified
 
 ---
 

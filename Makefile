@@ -168,15 +168,57 @@ test-ci: ## Run CI-optimized tests (fast on PRs, full on main branch)
 	fi
 
 .PHONY: test-coverage
-test-coverage: ## Run tests with code coverage and generate HTML report
-	@source .env; \
-	source .test.env; \
-	dotnet test --collect:"XPlat Code Coverage" --results-directory ./coverage; \
+test-coverage: ## Run all tests with code coverage and generate HTML report
+	@echo "Running all tests with coverage..."; \
+	source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	dotnet test \
+		--collect:"XPlat Code Coverage" \
+		--results-directory ./coverage \
+		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
 	reportgenerator \
 		-reports:./coverage/**/coverage.cobertura.xml \
 		-targetdir:./coverage/html \
 		-reporttypes:Html; \
 	echo "Coverage report generated at ./coverage/html/index.html"
+
+.PHONY: test-coverage-unit
+test-coverage-unit: ## Run unit tests only with code coverage
+	@echo "Running unit tests with coverage..."; \
+	dotnet test \
+		--filter "Category!=Integration" \
+		--collect:"XPlat Code Coverage" \
+		--results-directory ./coverage/unit \
+		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
+	reportgenerator \
+		-reports:./coverage/unit/**/coverage.cobertura.xml \
+		-targetdir:./coverage/unit/html \
+		-reporttypes:"Html;MarkdownSummary"; \
+	echo "Unit test coverage report generated at ./coverage/unit/html/index.html"
+
+.PHONY: test-coverage-summary
+test-coverage-summary: ## Show coverage summary in terminal (requires test-coverage-unit first)
+	@if [ -f ./coverage/unit/html/Summary.md ]; then \
+		cat ./coverage/unit/html/Summary.md; \
+	else \
+		echo "No coverage summary found. Run 'make test-coverage-unit' first."; \
+	fi
+
+.PHONY: test-coverage-open
+test-coverage-open: ## Open coverage HTML report in browser (macOS)
+	@if [ -f ./coverage/html/index.html ]; then \
+		open ./coverage/html/index.html; \
+	elif [ -f ./coverage/unit/html/index.html ]; then \
+		open ./coverage/unit/html/index.html; \
+	else \
+		echo "No coverage report found. Run 'make test-coverage' or 'make test-coverage-unit' first."; \
+	fi
+
+.PHONY: test-coverage-clean
+test-coverage-clean: ## Remove coverage reports
+	@rm -rf ./coverage
+	@echo "Coverage reports removed."
 
 .PHONY: test-watch
 test-watch: ## Run tests in watch mode (auto-rerun on file changes)

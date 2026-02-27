@@ -143,11 +143,15 @@ public class Inventory : JobBase, IInventoryJobExtension
 
             Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
 
-            Logger.LogTrace("Inventory entering switch based on KubeSecretType: " + KubeSecretType + "...");
-
-            if (Capability.Contains("Cluster")) KubeSecretType = "cluster";
-            if (Capability.Contains("NS")) KubeSecretType = "namespace";
-            if (Capability.Contains("Cert")) KubeSecretType = "certificate";
+            // Note: KubeSecretType is now derived from Capability in JobBase.DeriveSecretTypeFromCapability()
+            // The following store types are handled:
+            // - K8SCluster -> "cluster"
+            // - K8SNS -> "namespace"
+            // - K8SCert -> "certificate"
+            // - K8SJKS -> "jks"
+            // - K8SPKCS12 -> "pkcs12"
+            // - K8SSecret -> "secret"
+            // - K8STLSSecr -> "tls_secret"
 
             var allowedKeys = new List<string>();
             if (!string.IsNullOrEmpty(CertificateDataFieldName))
@@ -171,6 +175,13 @@ public class Inventory : JobBase, IInventoryJobExtension
                     {
                         var opaqueInventory = HandleOpaqueSecretAsList(config.JobHistoryId);
                         Logger.LogDebug("Returned inventory count: {Count}", opaqueInventory.Count.ToString());
+                        if (opaqueInventory.Count == 0)
+                        {
+                            Logger.LogInformation("No certificates found in Opaque secret {Namespace}/{Name}",
+                                KubeNamespace, KubeSecretName);
+                            submitInventory.Invoke(new List<CurrentInventoryItem>());
+                            return SuccessJob(config.JobHistoryId, "No certificates found in Opaque secret");
+                        }
                         return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, true);
                     }
                     catch (StoreNotFoundException)
@@ -178,7 +189,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                         Logger.LogWarning("Unable to locate Opaque secret {Namespace}/{Name}. Sending empty inventory.",
                             KubeNamespace, KubeSecretName);
                         return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
+                            "WARNING: Opaque secret not found in Kubernetes cluster. Assuming empty inventory.");
                     }
                     catch (Exception ex)
                     {
@@ -206,14 +217,21 @@ public class Inventory : JobBase, IInventoryJobExtension
                     {
                         var tlsCertsInv = HandleTlsSecret(config.JobHistoryId);
                         Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
+                        if (tlsCertsInv.Count == 0)
+                        {
+                            Logger.LogInformation("No certificates found in TLS secret {Namespace}/{Name}",
+                                KubeNamespace, KubeSecretName);
+                            submitInventory.Invoke(new List<CurrentInventoryItem>());
+                            return SuccessJob(config.JobHistoryId, "No certificates found in TLS secret");
+                        }
                         return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
                     }
                     catch (StoreNotFoundException)
                     {
-                        Logger.LogWarning("Unable to locate tls secret {Namespace}/{Name}. Sending empty inventory.",
+                        Logger.LogWarning("Unable to locate TLS secret {Namespace}/{Name}. Sending empty inventory.",
                             KubeNamespace, KubeSecretName);
                         return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: Store not found in Kubernetes cluster. Assuming empty inventory.");
+                            "WARNING: TLS secret not found in Kubernetes cluster. Assuming empty inventory.");
                     }
 
                 case "certificate":
@@ -230,15 +248,49 @@ public class Inventory : JobBase, IInventoryJobExtension
                     //combine allowed keys and CertificateDataFields into one list
                     allowedKeys.AddRange(Pkcs12AllowedKeys);
                     Logger.LogInformation("Inventorying PKCS12 using the following allowed keys: {Keys}", allowedKeys);
-                    var pkcs12Inventory = HandlePkcs12Secret(config, allowedKeys);
-                    Logger.LogDebug("Returned inventory count: {Count}", pkcs12Inventory.Count.ToString());
-                    return PushInventory(pkcs12Inventory, config.JobHistoryId, submitInventory, true);
+                    try
+                    {
+                        var pkcs12Inventory = HandlePkcs12Secret(config, allowedKeys);
+                        Logger.LogDebug("Returned inventory count: {Count}", pkcs12Inventory.Count.ToString());
+                        if (pkcs12Inventory.Count == 0)
+                        {
+                            Logger.LogInformation("No certificates found in PKCS12 keystore {Namespace}/{Name}",
+                                KubeNamespace, KubeSecretName);
+                            submitInventory.Invoke(new List<CurrentInventoryItem>());
+                            return SuccessJob(config.JobHistoryId, "No certificates found in PKCS12 keystore");
+                        }
+                        return PushInventory(pkcs12Inventory, config.JobHistoryId, submitInventory, true);
+                    }
+                    catch (StoreNotFoundException)
+                    {
+                        Logger.LogWarning("Unable to locate PKCS12 secret {Namespace}/{Name}. Sending empty inventory.",
+                            KubeNamespace, KubeSecretName);
+                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
+                            "WARNING: PKCS12 store not found in Kubernetes cluster. Assuming empty inventory.");
+                    }
                 case "jks":
                     allowedKeys.AddRange(JksAllowedKeys);
                     Logger.LogInformation("Inventorying JKS using the following allowed keys: {Keys}", allowedKeys);
-                    var jksInventory = HandleJKSSecret(config, allowedKeys);
-                    Logger.LogDebug("Returned inventory count: {Count}", jksInventory.Count.ToString());
-                    return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
+                    try
+                    {
+                        var jksInventory = HandleJKSSecret(config, allowedKeys);
+                        Logger.LogDebug("Returned inventory count: {Count}", jksInventory.Count.ToString());
+                        if (jksInventory.Count == 0)
+                        {
+                            Logger.LogInformation("No certificates found in JKS keystore {Namespace}/{Name}",
+                                KubeNamespace, KubeSecretName);
+                            submitInventory.Invoke(new List<CurrentInventoryItem>());
+                            return SuccessJob(config.JobHistoryId, "No certificates found in JKS keystore");
+                        }
+                        return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
+                    }
+                    catch (StoreNotFoundException)
+                    {
+                        Logger.LogWarning("Unable to locate JKS secret {Namespace}/{Name}. Sending empty inventory.",
+                            KubeNamespace, KubeSecretName);
+                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
+                            "WARNING: JKS store not found in Kubernetes cluster. Assuming empty inventory.");
+                    }
 
                 case "cluster":
                     var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all");

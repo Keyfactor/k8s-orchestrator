@@ -848,6 +848,46 @@ public abstract class JobBase
     }
 
     /// <summary>
+    /// Derives the KubeSecretType from the Capability string.
+    /// This replaces the need for the KubeSecretType store property for most store types.
+    /// </summary>
+    /// <param name="capability">The capability string (e.g., "CertStores.K8SJKS.Inventory")</param>
+    /// <returns>The derived secret type, or null if it cannot be determined from Capability alone.</returns>
+    /// <remarks>
+    /// Mapping:
+    /// - K8SJKS -> "jks"
+    /// - K8SPKCS12 -> "pkcs12"
+    /// - K8SSecret -> "secret"
+    /// - K8STLSSecr -> "tls_secret"
+    /// - K8SCluster -> "cluster" (actual secret type determined at runtime from alias)
+    /// - K8SNS -> "namespace" (actual secret type determined at runtime from alias)
+    /// - K8SCert -> "certificate"
+    /// </remarks>
+    protected static string DeriveSecretTypeFromCapability(string capability)
+    {
+        if (string.IsNullOrEmpty(capability))
+            return null;
+
+        // Order matters - check more specific patterns first
+        if (capability.Contains("K8STLSSecr", StringComparison.OrdinalIgnoreCase))
+            return "tls_secret";
+        if (capability.Contains("K8SSecret", StringComparison.OrdinalIgnoreCase))
+            return "secret";
+        if (capability.Contains("K8SJKS", StringComparison.OrdinalIgnoreCase))
+            return "jks";
+        if (capability.Contains("K8SPKCS12", StringComparison.OrdinalIgnoreCase))
+            return "pkcs12";
+        if (capability.Contains("K8SCluster", StringComparison.OrdinalIgnoreCase))
+            return "cluster";
+        if (capability.Contains("K8SNS", StringComparison.OrdinalIgnoreCase))
+            return "namespace";
+        if (capability.Contains("K8SCert", StringComparison.OrdinalIgnoreCase))
+            return "certificate";
+
+        return null;
+    }
+
+    /// <summary>
     /// Resolves and parses the store path to extract namespace, secret name, and secret type.
     /// Handles various path formats: secret_name, namespace/secret, cluster/namespace/secret, etc.
     /// </summary>
@@ -1108,9 +1148,23 @@ public abstract class JobBase
             KubeSecretName = (storeProperties["KubeSecretName"]?.ToString())?.Trim();
             Logger.LogTrace("KubeSecretName retrieved: {Value}", KubeSecretName ?? "null");
 
-            Logger.LogTrace("Attempting to get KubeSecretType from storeProperties");
-            KubeSecretType = (storeProperties["KubeSecretType"]?.ToString())?.Trim();
-            Logger.LogTrace("KubeSecretType retrieved: {Value}", KubeSecretType ?? "null");
+            // Derive KubeSecretType from Capability first (preferred method)
+            Logger.LogTrace("Attempting to derive KubeSecretType from Capability: {Capability}", Capability);
+            var derivedSecretType = DeriveSecretTypeFromCapability(Capability);
+            Logger.LogTrace("Derived KubeSecretType from Capability: {Value}", derivedSecretType ?? "null");
+
+            // Check if KubeSecretType is provided in store properties (deprecated)
+            string storePropertySecretType = (storeProperties["KubeSecretType"]?.ToString())?.Trim();
+            if (!string.IsNullOrEmpty(storePropertySecretType))
+            {
+                Logger.LogWarning(
+                    $"DEPRECATION WARNING: The 'KubeSecretType' store property is deprecated and will be removed in a future release. " +
+                    $"The secret type is now derived from the Capability. Property value '{storePropertySecretType}' will be ignored in favor of derived value '{derivedSecretType ?? "null"}'.");
+            }
+
+            // Use derived value if available, otherwise fall back to store property
+            KubeSecretType = derivedSecretType ?? storePropertySecretType;
+            Logger.LogTrace("Final KubeSecretType: {Value}", KubeSecretType ?? "null");
 
             Logger.LogTrace("Attempting to get KubeSvcCreds from storeProperties");
             KubeSvcCreds = storeProperties["KubeSvcCreds"];

@@ -204,11 +204,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `jks`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `jks`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "jks",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "CertificateDataFieldName",
@@ -452,11 +452,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "Kube Secret Type",
-              "Description": "This defaults to and must be `pkcs12`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `pkcs12`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "pkcs12",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "StorePasswordPath",
@@ -518,11 +518,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `secret`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `secret`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "secret",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "IncludeCertChain",
@@ -611,11 +611,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `tls_secret`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `tls_secret`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "tls_secret",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "IncludeCertChain",

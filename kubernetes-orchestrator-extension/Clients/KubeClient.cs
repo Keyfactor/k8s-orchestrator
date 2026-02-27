@@ -1598,7 +1598,9 @@ public class KubeCertificateManagerClient
             case "pfx":
             case "pkcs12":
                 secretType = "pkcs12";
-
+                break;
+            case "jks":
+                secretType = "jks";
                 break;
             default:
                 _logger.LogError("Unknown secret type: " + secretType);
@@ -1654,6 +1656,37 @@ public class KubeCertificateManagerClient
                         { "tls.key", Encoding.UTF8.GetBytes(keyPem ?? "") },
                         { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
                     }
+                };
+                break;
+            case "pkcs12":
+            case "pfx":
+                // PKCS12/PFX secrets are stored as Opaque secrets with the keystore data
+                // For "create store if missing", create an empty Opaque secret
+                _logger.LogDebug("Creating empty Opaque secret for PKCS12/PFX store");
+                k8SSecretData = new V1Secret
+                {
+                    Metadata = new V1ObjectMeta
+                    {
+                        Name = secretName,
+                        NamespaceProperty = namespaceName
+                    },
+                    Type = "Opaque",
+                    Data = new Dictionary<string, byte[]>()
+                };
+                break;
+            case "jks":
+                // JKS secrets are stored as Opaque secrets with the keystore data
+                // For "create store if missing", create an empty Opaque secret
+                _logger.LogDebug("Creating empty Opaque secret for JKS store");
+                k8SSecretData = new V1Secret
+                {
+                    Metadata = new V1ObjectMeta
+                    {
+                        Name = secretName,
+                        NamespaceProperty = namespaceName
+                    },
+                    Type = "Opaque",
+                    Data = new Dictionary<string, byte[]>()
                 };
                 break;
             default:

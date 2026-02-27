@@ -12,6 +12,7 @@ using Org.BouncyCastle.Asn1.Pkcs;
 using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Math.EC.Rfc8032;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.Utilities.IO.Pem;
@@ -351,12 +352,15 @@ public static class CertificateUtilities
         if (cert == null)
             throw new ArgumentNullException(nameof(cert));
 
-        var keyType = BouncyCastleX509Extensions.GetKeyType(cert);
-        return keyType switch
+        // Use direct type checking instead of obsolete EncryptionKeyType enum
+        var publicKey = cert.GetPublicKey();
+        return publicKey switch
         {
-            EncryptionKeyType.RSA => "RSA",
-            EncryptionKeyType.ECC => "ECDSA",
-            EncryptionKeyType.DSA => "DSA",
+            RsaKeyParameters => "RSA",
+            ECPublicKeyParameters => "ECDSA",
+            DsaPublicKeyParameters => "DSA",
+            Ed25519PublicKeyParameters => "Ed25519",
+            Ed448PublicKeyParameters => "Ed448",
             _ => "Unknown"
         };
     }

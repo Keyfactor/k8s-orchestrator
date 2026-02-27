@@ -1047,4 +1047,86 @@ public class K8SPKCS12StoreTests
     }
 
     #endregion
+
+    #region Empty Store Tests (Create Store If Missing)
+
+    [Fact]
+    public void CreateEmptyPkcs12Store_WithPassword_CanBeLoadedWithSamePassword()
+    {
+        // Arrange - Create an empty PKCS12 store (simulates "create store if missing")
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var emptyStore = storeBuilder.Build();
+        var password = "testpassword";
+
+        // Act - Save the empty store
+        using var outStream = new MemoryStream();
+        emptyStore.Save(outStream, password.ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+        var emptyPkcs12Bytes = outStream.ToArray();
+
+        // Assert - Should be valid PKCS12 that can be loaded
+        Assert.NotNull(emptyPkcs12Bytes);
+        Assert.NotEmpty(emptyPkcs12Bytes);
+
+        // Verify it can be loaded
+        var loadedStore = _serializer.DeserializeRemoteCertificateStore(emptyPkcs12Bytes, "/test/path", password);
+        Assert.NotNull(loadedStore);
+        Assert.Empty(loadedStore.Aliases.ToList());
+    }
+
+    [Fact]
+    public void CreateEmptyPkcs12Store_WithEmptyPassword_CanBeLoadedWithEmptyPassword()
+    {
+        // Arrange - Create an empty PKCS12 store with empty password
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var emptyStore = storeBuilder.Build();
+
+        // Act - Save the empty store with empty password
+        using var outStream = new MemoryStream();
+        emptyStore.Save(outStream, Array.Empty<char>(), new Org.BouncyCastle.Security.SecureRandom());
+        var emptyPkcs12Bytes = outStream.ToArray();
+
+        // Assert - Should be valid PKCS12 that can be loaded
+        Assert.NotNull(emptyPkcs12Bytes);
+        Assert.NotEmpty(emptyPkcs12Bytes);
+
+        // Verify it can be loaded
+        var loadedStore = _serializer.DeserializeRemoteCertificateStore(emptyPkcs12Bytes, "/test/path", "");
+        Assert.NotNull(loadedStore);
+        Assert.Empty(loadedStore.Aliases.ToList());
+    }
+
+    [Fact]
+    public void CreateEmptyPkcs12Store_ThenAddCertificate_Success()
+    {
+        // Arrange - Create an empty PKCS12 store
+        var storeBuilder = new Pkcs12StoreBuilder();
+        var emptyStore = storeBuilder.Build();
+        var password = "testpassword";
+
+        using var outStream = new MemoryStream();
+        emptyStore.Save(outStream, password.ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+        var emptyPkcs12Bytes = outStream.ToArray();
+
+        // Create a certificate to add
+        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
+        var newCertPkcs12 = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, password, "newcert");
+
+        // Act - Use CreateOrUpdatePkcs12 to add the certificate to the empty store
+        var updatedPkcs12Bytes = _serializer.CreateOrUpdatePkcs12(
+            newCertPkcs12,
+            password,
+            "newcert",
+            emptyPkcs12Bytes,
+            password,
+            false,
+            true);
+
+        // Assert - Should have one certificate
+        var loadedStore = _serializer.DeserializeRemoteCertificateStore(updatedPkcs12Bytes, "/test/path", password);
+        var aliases = loadedStore.Aliases.ToList();
+        Assert.Single(aliases);
+        Assert.Contains("newcert", aliases);
+    }
+
+    #endregion
 }
