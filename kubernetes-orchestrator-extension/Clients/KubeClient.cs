@@ -23,6 +23,7 @@ using k8s.KubeConfigModels;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
@@ -48,6 +49,8 @@ public class KubeCertificateManagerClient
     private readonly ILogger _logger;
     private readonly KubeconfigParser _kubeconfigParser;
     private readonly KeystoreManager _keystoreManager;
+    private readonly PasswordResolver _passwordResolver;
+    private SecretOperations _secretOperations;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KubeCertificateManagerClient"/> class.
@@ -59,11 +62,13 @@ public class KubeCertificateManagerClient
         _logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod()?.DeclaringType);
         _kubeconfigParser = new KubeconfigParser(_logger);
         _keystoreManager = new KeystoreManager(_logger);
+        _passwordResolver = new PasswordResolver(_logger);
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
         _logger.LogTrace("UseSSL: {UseSSL}", useSSL);
 
         Client = GetKubeClient(kubeconfig);
+        _secretOperations = new SecretOperations(Client, _logger);
         ConfigJson = kubeconfig;
         try
         {
@@ -409,67 +414,19 @@ public class KubeCertificateManagerClient
                 if (certdataFieldNames != null && !certdataFieldNames.Contains(searchFieldName)) continue;
 
                 _logger.LogTrace($"Loading PKCS12 store from field '{fieldName}'");
-                if (jobCertificate.PasswordIsK8SSecret)
-                {
-                    if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
-                    {
-                        _logger.LogDebug("Password is stored in K8S secret at path: {Path}", jobCertificate.StorePasswordPath);
-                        var passwordPath = jobCertificate.StorePasswordPath.Split("/");
-                        var passwordNamespace = passwordPath[0];
-                        var passwordSecretName = passwordPath[1];
-                        _logger.LogDebug("Buddy secret metadata - Name: {Name}, Namespace: {Namespace}, Field: {Field}",
-                            passwordSecretName, passwordNamespace, passwordFieldName);
 
-                        // Get password from k8s secret
-                        var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
-                        _logger.LogTrace("Buddy secret: {Summary}", LoggingUtilities.GetSecretSummary(k8sPasswordObj));
+                // Resolve password using centralized PasswordResolver
+                var passwordResult = _passwordResolver.ResolveStorePassword(
+                    jobCertificate,
+                    storePasswd,
+                    existingPkcs12DataObj.Data,
+                    passwordFieldName,
+                    ReadBuddyPass);
+                storePasswordBytes = passwordResult.Bytes;
 
-                        storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
-                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
-                        _logger.LogTrace("Password from buddy secret: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
-                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
-
-                        existingStore = storeBuilder.Build();
-                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                        existingStore.Load(ms, storePasswdString.ToCharArray());
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Password is stored in same secret, field: {Field}", passwordFieldName);
-                        storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
-                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes).TrimEnd('\r', '\n');
-                        _logger.LogTrace("Password from secret field: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
-                        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
-
-                        existingStore = storeBuilder.Build();
-                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                        existingStore.Load(ms, storePasswdString.ToCharArray());
-                    }
-                }
-                else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
-                {
-                    _logger.LogDebug("Using password from job configuration");
-                    storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
-                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
-
-                    existingStore = storeBuilder.Build();
-                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, storePasswdString.ToCharArray());
-                }
-                else
-                {
-                    _logger.LogDebug("Using default store password");
-                    storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                    _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswdString));
-                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePasswdString));
-
-                    existingStore = storeBuilder.Build();
-                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, storePasswdString.ToCharArray());
-                }
+                existingStore = storeBuilder.Build();
+                using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                existingStore.Load(ms, passwordResult.Value.ToCharArray());
             }
 
             if (existingStore != null && existingStore.Count > 0)
@@ -668,122 +625,19 @@ public class KubeCertificateManagerClient
 
                 certdataFieldName = fieldName;
                 _logger.LogTrace("Adding cert '{FieldName}' to existingPkcs12", fieldName);
-                if (jobCertificate.PasswordIsK8SSecret)
-                {
-                    _logger.LogDebug("Job certificate password is a K8S secret");
-                    if (!string.IsNullOrEmpty(jobCertificate.StorePasswordPath))
-                    {
-                        _logger.LogDebug("Job certificate store password path is {StorePasswordPath}",
-                            jobCertificate.StorePasswordPath);
 
-                        _logger.LogDebug("Splitting store password path into namespace and secret name");
-                        var passwordPath = jobCertificate.StorePasswordPath.Split("/");
+                // Resolve password using centralized PasswordResolver
+                var passwordResult = _passwordResolver.ResolveStorePassword(
+                    jobCertificate,
+                    storePasswd,
+                    existingPkcs12DataObj.Data,
+                    passwordFieldName,
+                    ReadBuddyPass);
+                storePasswordBytes = passwordResult.Bytes;
 
-                        string passwordNamespace;
-                        string passwordSecretName;
-
-                        if (passwordPath.Length == 1)
-                        {
-                            _logger.LogDebug("Password path length is 1, using KubeNamespace");
-                            passwordNamespace = namespaceName;
-                            _logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
-                            passwordSecretName = passwordPath[0];
-                        }
-                        else
-                        {
-                            _logger.LogDebug(
-                                "Password path length is not 1, using passwordPath[0] and passwordPath[^1]");
-                            passwordNamespace = passwordPath[0];
-                            _logger.LogTrace("Password namespace: {Namespace}", passwordNamespace);
-                            passwordSecretName = passwordPath[^1];
-                        }
-
-                        _logger.LogDebug("Password namespace: {PasswordNamespace}", passwordNamespace);
-                        _logger.LogDebug("Password secret name: {PasswordSecretName}", passwordSecretName);
-
-                        var k8sPasswordObj = ReadBuddyPass(passwordSecretName, passwordNamespace);
-                        _logger.LogDebug(
-                            "Successfully read password secret {PasswordSecretName} in namespace {PasswordNamespace}",
-                            passwordSecretName, passwordNamespace);
-
-                        if (k8sPasswordObj?.Data == null)
-                        {
-                            _logger.LogError("Unable to read K8S buddy secret {SecretName} in namespace {Namespace}",
-                                passwordSecretName, passwordNamespace);
-                            throw new InvalidK8SSecretException(
-                                $"Unable to read K8S buddy secret {passwordSecretName} in namespace {passwordNamespace}");
-                        }
-
-                        _logger.LogTrace("Secret response fields: {Keys}", k8sPasswordObj.Data.Keys);
-
-                        if (!k8sPasswordObj.Data.TryGetValue(passwordFieldName, out storePasswordBytes) ||
-                            storePasswordBytes == null)
-                        {
-                            _logger.LogError("Unable to find password field {FieldName}", passwordFieldName);
-                            throw new InvalidK8SSecretException(
-                                $"Unable to find password field '{passwordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}'"
-                            );
-                        }
-
-                        // storePasswordBytes = k8sPasswordObj.Data[passwordFieldName];
-                        if (storePasswordBytes == null || storePasswordBytes.Length == 0)
-                        {
-                            _logger.LogError(
-                                "Password field {FieldName} in secret {SecretName} in namespace {Namespace} is empty",
-                                passwordFieldName, passwordSecretName, passwordNamespace);
-                            throw new InvalidK8SSecretException(
-                                $"Password field '{passwordFieldName}' in secret '{passwordSecretName}' in namespace '{passwordNamespace}' is empty"
-                            );
-                        }
-
-                        var storePasswdString = Encoding.UTF8.GetString(storePasswordBytes);
-                        // _logger.LogTrace("Loading existing PKCS12 store with password");
-
-                        existingStore = storeBuilder.Build();
-                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                        existingStore.Load(ms, storePasswdString.ToCharArray());
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Job certificate store password path is empty, using existing secret data");
-                        storePasswordBytes = existingPkcs12DataObj.Data[passwordFieldName];
-                        if (storePasswordBytes == null || storePasswordBytes.Length == 0)
-                        {
-                            _logger.LogError(
-                                "Password field {FieldName} in secret {SecretName} in namespace {Namespace} is empty",
-                                passwordFieldName, secretName, namespaceName);
-                            throw new InvalidK8SSecretException(
-                                $"Password field '{passwordFieldName}' in secret '{secretName}' in namespace '{namespaceName}' is empty"
-                            );
-                        }
-
-                        // _logger.LogTrace("Loading existing PKCS12 store with password");
-                        existingStore = storeBuilder.Build();
-                        using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                        existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
-                    }
-                }
-                else if (!string.IsNullOrEmpty(jobCertificate.StorePassword))
-                {
-                    _logger.LogDebug(
-                        "Job certificate store password is not empty, using job certificate store password");
-                    storePasswordBytes = Encoding.UTF8.GetBytes(jobCertificate.StorePassword);
-                    // _logger.LogTrace("Loading existing PKCS12 store with password");
-
-                    existingStore = storeBuilder.Build();
-                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
-                }
-                else
-                {
-                    _logger.LogDebug("Job certificate store password is empty, using provided store password");
-                    storePasswordBytes = Encoding.UTF8.GetBytes(storePasswd);
-                    // _logger.LogTrace("Loading existing PKCS12 store with password");
-
-                    existingStore = storeBuilder.Build();
-                    using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
-                    existingStore.Load(ms, Encoding.UTF8.GetString(storePasswordBytes).ToCharArray());
-                }
+                existingStore = storeBuilder.Build();
+                using var ms = new MemoryStream(existingPkcs12DataObj.Data[fieldName]);
+                existingStore.Load(ms, passwordResult.Value.ToCharArray());
             }
 
             if (existingStore != null && existingStore.Count > 0)

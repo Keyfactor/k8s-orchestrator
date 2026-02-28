@@ -13,6 +13,7 @@ using k8s.Models;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
+using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
@@ -47,6 +48,11 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// </remarks>
 public class Management : JobBase, IManagementJobExtension
 {
+    /// <summary>
+    /// Keystore operations helper for JKS and PKCS12 stores.
+    /// </summary>
+    private IKeystoreOperations _keystoreOps;
+
     /// <summary>
     /// Initializes a new instance of the Management job with the specified PAM resolver.
     /// </summary>
@@ -456,40 +462,17 @@ public class Management : JobBase, IManagementJobExtension
             ? []
             : Convert.FromBase64String(config.JobCertificate.Contents);
 
-        var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
-        Logger.LogTrace("alias: {Alias}", alias);
+        // Initialize keystore operations helper if not already initialized
+        _keystoreOps ??= new KeystoreOperations(Logger);
 
-        // Try to get StoreFileName from Properties JSON, default to "jks" if not found
-        var existingDataFieldName = "jks";
-        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
-        {
-            try
-            {
-                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
-                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
-                {
-                    var storeFileName = storeFileNameElement.GetString();
-                    if (!string.IsNullOrEmpty(storeFileName))
-                    {
-                        existingDataFieldName = storeFileName;
-                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'jks'", ex.Message);
-            }
-        }
+        // Extract StoreFileName from Properties and parse alias using centralized helper
+        var existingDataFieldName = _keystoreOps.ExtractStoreFileNameFromProperties(
+            config.CertificateStoreDetails?.Properties, "jks");
 
-        // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
-        if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
-        {
-            Logger.LogDebug("alias contains a '/' so splitting on '/'...");
-            var aliasParts = alias.Split("/");
-            existingDataFieldName = aliasParts[0];
-            alias = aliasParts[1];
-        }
+        var rawAlias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
+        var aliasResult = _keystoreOps.ParseAliasAndFieldName(rawAlias, existingDataFieldName);
+        existingDataFieldName = aliasResult.FieldName;
+        var alias = aliasResult.Alias;
 
         Logger.LogTrace("existingDataFieldName: {Name}", existingDataFieldName);
         Logger.LogTrace("alias: {Alias}", alias);
@@ -620,43 +603,20 @@ public class Management : JobBase, IManagementJobExtension
             ? []
             : Convert.FromBase64String(config.JobCertificate.Contents);
 
-        var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
+        // Initialize keystore operations helper if not already initialized
+        _keystoreOps ??= new KeystoreOperations(Logger);
+
+        // Extract StoreFileName from Properties and parse alias using centralized helper
+        var existingDataFieldName = _keystoreOps.ExtractStoreFileNameFromProperties(
+            config.CertificateStoreDetails?.Properties, "pkcs12");
+
+        var rawAlias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
+        var aliasResult = _keystoreOps.ParseAliasAndFieldName(rawAlias, existingDataFieldName);
+        existingDataFieldName = aliasResult.FieldName;
+        var alias = aliasResult.Alias;
+
+        Logger.LogDebug("existingDataFieldName: {FieldName}", existingDataFieldName);
         Logger.LogDebug("alias: {Alias}", alias);
-
-        // Try to get StoreFileName from Properties JSON, default to "pkcs12" if not found
-        var existingDataFieldName = "pkcs12";
-        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
-        {
-            try
-            {
-                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
-                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
-                {
-                    var storeFileName = storeFileNameElement.GetString();
-                    if (!string.IsNullOrEmpty(storeFileName))
-                    {
-                        existingDataFieldName = storeFileName;
-                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'pkcs12'", ex.Message);
-            }
-        }
-
-        // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
-        if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
-        {
-            Logger.LogDebug("alias contains a '/' so splitting on '/'...");
-            var aliasParts = alias.Split("/");
-            existingDataFieldName = aliasParts[0];
-            alias = aliasParts[1];
-        }
-
-        Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
-        Logger.LogDebug("alias: " + alias);
 
         // Handle "create store if missing" - when no certificate data is provided (but NOT for Remove operations)
         if (newCertBytes.Length == 0 && !remove)

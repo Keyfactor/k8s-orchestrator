@@ -16,6 +16,7 @@ using Common.Logging;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
+using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Org.BouncyCastle.Crypto;
 using Keyfactor.Logging;
@@ -231,6 +232,9 @@ public abstract class JobBase
 
     /// <summary>Logger instance for this job.</summary>
     protected ILogger Logger;
+
+    /// <summary>Parser for extracting store configuration from properties.</summary>
+    private StoreConfigurationParser _configParser;
 
     static JobBase()
     {
@@ -1125,6 +1129,7 @@ public abstract class JobBase
     private void InitializeProperties(dynamic storeProperties)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
+        _configParser ??= new StoreConfigurationParser(Logger);
         string storePropsType = storeProperties != null ? (string)storeProperties.GetType().FullName : "null";
         Logger.LogTrace("InitializeProperties called with storeProperties type: {Type}", storePropsType);
 
@@ -1384,74 +1389,8 @@ public abstract class JobBase
             throw new ConfigurationException(credsErr);
         }
 
-        switch (KubeSecretType)
-        {
-            case "pfx":
-            case "p12":
-            case "pkcs12":
-                Logger.LogInformation(
-                    "Kubernetes certificate store type is 'pfx'. Setting default values for 'PasswordFieldName' and 'CertificateDataFieldName'");
-                PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName")
-                    ? storeProperties["PasswordFieldName"]
-                    : DefaultPFXPasswordSecretFieldName;
-                PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
-                    ? storeProperties["PasswordIsSeparateSecret"]
-                    : false;
-                StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
-                    ? storeProperties["StorePasswordPath"]
-                    : "";
-                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret")
-                    ? storeProperties["PasswordIsK8SSecret"]
-                    : false;
-                KubeSecretPassword = storeProperties.ContainsKey("KubeSecretPassword")
-                    ? storeProperties["KubeSecretPassword"]
-                    : "";
-                CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
-                    ? storeProperties["CertificateDataFieldName"]
-                    : DefaultPFXSecretFieldName;
-                break;
-            case "jks":
-                Logger.LogInformation(
-                    "Kubernetes certificate store type is 'jks'. Setting default values for 'PasswordFieldName' and 'CertificateDataFieldName'");
-                Logger.LogDebug("Parsing 'PasswordFieldName' from store properties");
-                PasswordFieldName = storeProperties.ContainsKey("PasswordFieldName")
-                    ? storeProperties["PasswordFieldName"]
-                    : DefaultPFXPasswordSecretFieldName;
-                Logger.LogTrace("PasswordFieldName: {PasswordFieldName}", PasswordFieldName);
-
-                Logger.LogDebug("Parsing 'PasswordIsSeparateSecret' from store properties");
-                PasswordIsSeparateSecret = storeProperties.ContainsKey("PasswordIsSeparateSecret")
-                    ? bool.Parse(storeProperties["PasswordIsSeparateSecret"])
-                    : false;
-                Logger.LogTrace("PasswordIsSeparateSecret: {PasswordIsSeparateSecret}", PasswordIsSeparateSecret);
-
-                Logger.LogDebug("Parsing 'StorePasswordPath' from store properties");
-                StorePasswordPath = storeProperties.ContainsKey("StorePasswordPath")
-                    ? storeProperties["StorePasswordPath"]
-                    : "";
-                Logger.LogTrace("StorePasswordPath presence: {Presence}", LoggingUtilities.GetFieldPresence("StorePasswordPath", StorePasswordPath));
-
-                Logger.LogDebug("Parsing 'PasswordIsK8SSecret' from store properties");
-                PasswordIsK8SSecret = storeProperties.ContainsKey("PasswordIsK8SSecret") &&
-                                      !string.IsNullOrEmpty(storeProperties["PasswordIsK8SSecret"]?.ToString())
-                    ? bool.Parse(storeProperties["PasswordIsK8SSecret"].ToString())
-                    : false;
-                Logger.LogTrace("PasswordIsK8SSecret: {PasswordIsK8SSecret}", PasswordIsK8SSecret);
-
-                Logger.LogDebug("Parsing 'KubeSecretPassword' from store properties");
-                KubeSecretPassword = storeProperties.ContainsKey("KubeSecretPassword")
-                    ? storeProperties["KubeSecretPassword"]
-                    : "";
-                Logger.LogTrace("KubeSecretPassword: {Password}", LoggingUtilities.RedactPassword(KubeSecretPassword?.ToString()));
-
-                Logger.LogDebug("Parsing 'CertificateDataFieldName' from store properties");
-                CertificateDataFieldName = storeProperties.ContainsKey("CertificateDataFieldName")
-                    ? storeProperties["CertificateDataFieldName"]
-                    : DefaultJKSSecretFieldName;
-                Logger.LogTrace("CertificateDataFieldName: {CertificateDataFieldName}", CertificateDataFieldName);
-
-                break;
-        }
+        // Apply keystore-specific defaults using centralized configuration parser
+        ApplyKeystoreDefaultsFromParser(storeProperties);
 
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
         Logger.LogTrace("KubeSvcCreds length: {Length}", KubeSvcCreds?.Length ?? 0);
@@ -1520,6 +1459,52 @@ public abstract class JobBase
         KubeSecretName = StorePath;
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.MethodExit(MsLogLevel.Debug);
+    }
+
+    /// <summary>
+    /// Applies keystore-specific defaults (PKCS12/JKS) using the centralized configuration parser.
+    /// Reduces complexity by delegating property extraction to StoreConfigurationParser.
+    /// </summary>
+    /// <param name="storeProperties">Dynamic dictionary of store properties.</param>
+    private void ApplyKeystoreDefaultsFromParser(dynamic storeProperties)
+    {
+        var secretType = KubeSecretType?.ToLower();
+        if (secretType is not ("pfx" or "p12" or "pkcs12" or "jks"))
+        {
+            return; // Not a keystore type, nothing to apply
+        }
+
+        Logger.LogInformation("Kubernetes certificate store type is '{Type}'. Applying keystore defaults", secretType);
+
+        // Create a StoreConfiguration from current values and apply defaults
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = secretType,
+            PasswordFieldName = PasswordFieldName,
+            CertificateDataFieldName = CertificateDataFieldName,
+            PasswordIsSeparateSecret = PasswordIsSeparateSecret,
+            StorePasswordPath = StorePasswordPath,
+            PasswordIsK8SSecret = PasswordIsK8SSecret,
+            KubeSecretPassword = KubeSecretPassword
+        };
+
+        // Apply keystore-specific defaults using centralized parser
+        _configParser.ApplyKeystoreDefaults(config, storeProperties);
+
+        // Copy back the resolved values
+        PasswordFieldName = config.PasswordFieldName;
+        CertificateDataFieldName = config.CertificateDataFieldName;
+        PasswordIsSeparateSecret = config.PasswordIsSeparateSecret;
+        StorePasswordPath = config.StorePasswordPath;
+        PasswordIsK8SSecret = config.PasswordIsK8SSecret;
+        KubeSecretPassword = config.KubeSecretPassword;
+
+        Logger.LogTrace("PasswordFieldName: {PasswordFieldName}", PasswordFieldName);
+        Logger.LogTrace("CertificateDataFieldName: {CertificateDataFieldName}", CertificateDataFieldName);
+        Logger.LogTrace("PasswordIsSeparateSecret: {PasswordIsSeparateSecret}", PasswordIsSeparateSecret);
+        Logger.LogTrace("StorePasswordPath presence: {Presence}", LoggingUtilities.GetFieldPresence("StorePasswordPath", StorePasswordPath));
+        Logger.LogTrace("PasswordIsK8SSecret: {PasswordIsK8SSecret}", PasswordIsK8SSecret);
+        Logger.LogTrace("KubeSecretPassword: {Password}", LoggingUtilities.RedactPassword(KubeSecretPassword?.ToString()));
     }
 
     /// <summary>
