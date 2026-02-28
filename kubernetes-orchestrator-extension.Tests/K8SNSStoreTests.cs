@@ -209,7 +209,7 @@ public class K8SNSStoreTests
     public void NamespaceSecret_WithPemCertificate_CanBeRead()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Namespace Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Namespace Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -241,7 +241,7 @@ public class K8SNSStoreTests
         var secrets = new List<V1Secret>();
         for (int i = 0; i < 5; i++)
         {
-            var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, $"Cert {i}");
+            var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, $"Cert {i}");
             var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
             secrets.Add(new V1Secret
@@ -436,7 +436,7 @@ public class K8SNSStoreTests
         // should be stored, not the intermediate or root certificates.
 
         // Arrange - Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -484,7 +484,7 @@ public class K8SNSStoreTests
         // should be stored, not the intermediate or root certificates.
 
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -523,7 +523,7 @@ public class K8SNSStoreTests
     {
         // Compare the expected output between IncludeCertChain=true vs IncludeCertChain=false for namespace secrets
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -570,7 +570,7 @@ public class K8SNSStoreTests
     {
         // Verify that IncludeCertChain=false respects namespace boundaries
         var namespaceName = "production";
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
 

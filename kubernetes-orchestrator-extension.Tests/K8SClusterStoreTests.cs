@@ -213,7 +213,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_WithPemCertificate_CanBeRead()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -244,7 +244,7 @@ public class K8SClusterStoreTests
         var secrets = new List<V1Secret>();
         for (int i = 0; i < 5; i++)
         {
-            var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, $"Cert {i}");
+            var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, $"Cert {i}");
             var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
             secrets.Add(new V1Secret
@@ -349,7 +349,7 @@ public class K8SClusterStoreTests
     {
         // K8SCluster can manage TLS secrets across the cluster
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster TLS Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster TLS Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -379,7 +379,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_WithCertificateChain_CanStoreSeparateCaField()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediateCert = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCert = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -412,7 +412,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_StrictFieldNames_OnlyTlsCrtAndTlsKey()
     {
         // TLS secrets managed via K8SCluster still enforce strict field names
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -438,7 +438,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_Type_MustBeKubernetesIoTls()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -462,7 +462,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_WithBundledChain_AllCertsInTlsCrt()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -494,7 +494,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_SeparateChainVsBundled_DifferentStructures()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -538,7 +538,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_NativeKubernetesFormat_Compatible()
     {
         // TLS secrets created via K8SCluster should be compatible with K8S Ingress
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -568,7 +568,7 @@ public class K8SClusterStoreTests
     public void ClusterTlsSecret_MissingRequiredFields_Invalid()
     {
         // TLS secrets require both tls.crt and tls.key
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -594,7 +594,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_WithPemCertAndKey_HasCorrectStructure()
     {
         // K8SCluster can manage Opaque secrets across the cluster
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Opaque Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Opaque Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -623,7 +623,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_WithCertificateChain_CanStoreSeparateCaField()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediateCert = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCert = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -657,7 +657,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_FlexibleFieldNames_SupportedVariations(string certFieldName)
     {
         // K8SCluster managing Opaque secrets supports flexible field names
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -677,7 +677,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_WithBundledChain_AllCertsInTlsCrt()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -708,7 +708,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_SeparateChainVsBundled_DifferentStructures()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -748,7 +748,7 @@ public class K8SClusterStoreTests
     public void ClusterOpaqueSecret_OnlyCertificateNoKey_ValidStructure()
     {
         // Some Opaque secrets may only contain certificates without private keys
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -773,11 +773,10 @@ public class K8SClusterStoreTests
     [InlineData(KeyType.Rsa1024)]
     [InlineData(KeyType.Rsa2048)]
     [InlineData(KeyType.Rsa4096)]
-    [InlineData(KeyType.Rsa8192)]
     public void ClusterSecret_RsaKeyTypes_ValidPemFormat(KeyType keyType)
     {
         // K8SCluster can manage secrets with various RSA key sizes
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"RSA {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"RSA {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -803,7 +802,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_EcKeyTypes_ValidPemFormat(KeyType keyType)
     {
         // K8SCluster can manage secrets with various EC curves
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"EC {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"EC {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -828,7 +827,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_EdwardsKeyTypes_ValidPemFormat(KeyType keyType)
     {
         // K8SCluster can manage secrets with Edwards curve keys
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Edwards {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Edwards {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -855,7 +854,7 @@ public class K8SClusterStoreTests
     public void ClusterStore_MixedSecretTypes_SameNamespace_CanCoexist()
     {
         // Both TLS and Opaque secrets can coexist in the same namespace
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -893,7 +892,7 @@ public class K8SClusterStoreTests
     public void ClusterStore_SameSecretName_DifferentNamespaces_AreIndependent()
     {
         // Same secret name can exist in different namespaces independently
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secretInProd = new V1Secret
@@ -964,7 +963,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_Utf8Encoding_RoundTripSuccessful()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var originalPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Act - Encode to bytes and decode back
@@ -979,7 +978,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_DerToPemConversion_ValidFormat()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var derBytes = certInfo.Certificate.GetEncoded();
 
         // Act - Parse from DER and convert to PEM
@@ -997,7 +996,7 @@ public class K8SClusterStoreTests
     public void ClusterSecret_PemWithWhitespace_StillValid()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Add extra whitespace
@@ -1019,7 +1018,7 @@ public class K8SClusterStoreTests
         // should be stored, not the intermediate or root certificates.
 
         // Arrange - Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -1067,7 +1066,7 @@ public class K8SClusterStoreTests
         // should be stored, not the intermediate or root certificates.
 
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -1106,7 +1105,7 @@ public class K8SClusterStoreTests
     {
         // Compare the expected output between IncludeCertChain=true vs IncludeCertChain=false for cluster secrets
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -1153,7 +1152,7 @@ public class K8SClusterStoreTests
     {
         // Verify IncludeCertChain=false behavior is consistent across multiple namespaces
         var namespaces = new[] { "production", "staging", "development" };
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
 
@@ -1231,6 +1230,34 @@ public class K8SClusterStoreTests
         Assert.NotNull(secret.Metadata.Annotations);
         Assert.Equal(2, secret.Metadata.Annotations.Count);
         Assert.Equal("12345", secret.Metadata.Annotations["keyfactor.com/certificate-id"]);
+    }
+
+    #endregion
+
+    #region RSA 8192 Key Type Test
+
+    [Fact]
+    public void ClusterSecret_Rsa8192KeyType_ValidPemFormat()
+    {
+        // Dedicated test for RSA 8192 key type - uses cached provider for performance
+        // K8SCluster can manage secrets with large RSA 8192 key sizes
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa8192, "RSA Rsa8192");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = "rsa-8192", NamespaceProperty = "production" },
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
+        Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);
     }
 
     #endregion

@@ -521,7 +521,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-mgmt-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Management Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Management Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -699,7 +699,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-add-tls-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster TLS Add Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster TLS Add Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -838,7 +838,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-add-opaque-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Opaque Add Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Opaque Add Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -890,7 +890,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-rsa2048-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "RSA 2048 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "RSA 2048 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -933,7 +933,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-ecp256-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "EC P-256 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "EC P-256 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -976,7 +976,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-ed25519-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed25519, "Ed25519 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Ed25519, "Ed25519 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -1024,7 +1024,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1098,7 +1098,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1253,7 +1253,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1336,7 +1336,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;

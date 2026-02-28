@@ -160,7 +160,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-new-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New Cert");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "certpassword", "newcert");
         var pfxBase64 = Convert.ToBase64String(pfxBytes);
 
@@ -212,7 +212,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing secret with one certificate
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing Cert");
         var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(existingCert.Certificate, existingCert.KeyPair, "storepassword", "existing");
 
         var secret = new V1Secret
@@ -228,7 +228,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Prepare new certificate to add
-        var newCert = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "New Cert");
+        var newCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "New Cert");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(newCert.Certificate, newCert.KeyPair, "certpassword", "newcert");
         var pfxBase64 = Convert.ToBase64String(pfxBytes);
 
@@ -287,7 +287,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -421,7 +421,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing secret with one certificate
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing Cert");
         var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(existingCert.Certificate, existingCert.KeyPair, "storepassword", "existing");
 
         var secret = new V1Secret
@@ -490,8 +490,8 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create secret with two certificates
-        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Cert 2");
 
         var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -631,7 +631,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing secret with one password
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing");
         var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(existingCert.Certificate, existingCert.KeyPair, "correctpassword");
 
         var secret = new V1Secret
@@ -647,7 +647,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Try to add with wrong password
-        var newCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New");
+        var newCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(newCert.Certificate, newCert.KeyPair, "certpassword");
 
         var jobConfig = new ManagementJobConfiguration
@@ -849,12 +849,12 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate certificates for private key entries (with keys)
-        var serverCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert 1");
-        var serverCert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Server Cert 2");
+        var serverCert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert 1");
+        var serverCert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Server Cert 2");
 
         // Generate certificates for trusted cert entries (no keys)
-        var trustedRootCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted Root CA");
-        var trustedIntermediateCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Trusted Intermediate CA");
+        var trustedRootCa = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted Root CA");
+        var trustedIntermediateCa = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Trusted Intermediate CA");
 
         var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -945,7 +945,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-trusted-pkcs12-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var serverCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
+        var serverCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert");
         var existingPkcs12 = CertificateTestHelper.GeneratePkcs12(serverCert.Certificate, serverCert.KeyPair, "storepassword", "server");
 
         var secret = new V1Secret
@@ -961,7 +961,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Generate a trusted certificate (certificate only, no private key)
-        var trustedCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+        var trustedCa = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted CA");
 
         // For adding a certificate-only entry, we send the DER-encoded certificate
         var certOnlyBase64 = Convert.ToBase64String(trustedCa.Certificate.GetEncoded());
@@ -1205,7 +1205,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Prepare new certificate to add to app.pfx specifically
-        var newCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New App Cert PFX");
+        var newCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New App Cert PFX");
         var pfxBytes = CertificateTestHelper.GeneratePkcs12(newCert.Certificate, newCert.KeyPair, "certpassword", "new-app-cert");
         var pfxBase64 = Convert.ToBase64String(pfxBytes);
 
@@ -1273,8 +1273,8 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create app.pfx with 2 certs
-        var appCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Cert 1 PFX Remove");
-        var appCert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Cert 2 PFX Remove");
+        var appCert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Cert 1 PFX Remove");
+        var appCert2 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Cert 2 PFX Remove");
         var appEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
             { "app-cert-1", (appCert1.Certificate, appCert1.KeyPair) },
@@ -1283,8 +1283,8 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         var appPfxBytes = CertificateTestHelper.GeneratePkcs12WithMultipleEntries(appEntries, "storepassword");
 
         // Create backend.pfx with 2 certs
-        var backendCert1 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend Cert 1 PFX Remove");
-        var backendCert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend Cert 2 PFX Remove");
+        var backendCert1 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend Cert 1 PFX Remove");
+        var backendCert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend Cert 2 PFX Remove");
         var backendEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
             { "backend-cert-1", (backendCert1.Certificate, backendCert1.KeyPair) },

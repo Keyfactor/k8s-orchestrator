@@ -28,7 +28,7 @@ public class K8SSecretStoreTests
     public void PemCertificate_ValidFormat_CanBeParsed()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test PEM Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test PEM Cert");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Assert
@@ -42,7 +42,7 @@ public class K8SSecretStoreTests
     public void PemPrivateKey_ValidFormat_CanBeParsed()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test");
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
         // Assert
@@ -55,7 +55,6 @@ public class K8SSecretStoreTests
     [InlineData(KeyType.Rsa1024)]
     [InlineData(KeyType.Rsa2048)]
     [InlineData(KeyType.Rsa4096)]
-    [InlineData(KeyType.Rsa8192)]
     [InlineData(KeyType.EcP256)]
     [InlineData(KeyType.EcP384)]
     [InlineData(KeyType.EcP521)]
@@ -66,7 +65,7 @@ public class K8SSecretStoreTests
     public void PemCertificate_VariousKeyTypes_ValidFormat(KeyType keyType)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Test {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Assert
@@ -82,7 +81,7 @@ public class K8SSecretStoreTests
     public void OpaqueSecret_WithPemCertAndKey_HasCorrectStructure()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -112,7 +111,7 @@ public class K8SSecretStoreTests
     public void OpaqueSecret_WithCertificateChain_CanStoreSeparateCaField()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediateCert = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootCert = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -147,7 +146,7 @@ public class K8SSecretStoreTests
     {
         // K8SSecret supports multiple field name variations (unlike K8STLSSecr which is strict)
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -171,7 +170,7 @@ public class K8SSecretStoreTests
     public void CertificateChain_ConcatenatedInSingleField_ValidFormat()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -189,7 +188,7 @@ public class K8SSecretStoreTests
     public void CertificateChain_SingleCertificate_NoChainField()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -210,7 +209,7 @@ public class K8SSecretStoreTests
     {
         // When SeparateChain=false, the full chain should be bundled into tls.crt
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -245,7 +244,7 @@ public class K8SSecretStoreTests
     {
         // Compare the two chain storage strategies for Opaque secrets
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -299,7 +298,7 @@ public class K8SSecretStoreTests
     public void DerCertificate_ConvertedToPem_ValidFormat()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var derBytes = certInfo.Certificate.GetEncoded();
 
         // Act - Parse from DER and convert to PEM
@@ -321,7 +320,7 @@ public class K8SSecretStoreTests
     public void PemCertificate_Utf8Encoding_RoundTripSuccessful()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var originalPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Act - Encode to bytes and decode back
@@ -336,7 +335,7 @@ public class K8SSecretStoreTests
     public void PemData_StoredAsBytes_CorrectlyDecoded()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var certBytes = Encoding.UTF8.GetBytes(certPem);
 
@@ -383,7 +382,7 @@ public class K8SSecretStoreTests
     {
         // Some secrets may only contain certificates without private keys
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -404,7 +403,7 @@ public class K8SSecretStoreTests
     public void PemCertificate_WithWhitespace_StillValid()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         // Add extra whitespace (common in manual creation)
@@ -423,7 +422,7 @@ public class K8SSecretStoreTests
         // The existing private key should be preserved.
 
         // Arrange - Existing secret with certificate and key
-        var certInfo1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Original");
+        var certInfo1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Original");
         var certPem1 = CertificateTestHelper.ConvertCertificateToPem(certInfo1.Certificate);
         var keyPem1 = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo1.KeyPair.Private);
 
@@ -439,7 +438,7 @@ public class K8SSecretStoreTests
         };
 
         // New secret with certificate only (no key)
-        var certInfo2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Updated");
+        var certInfo2 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Updated");
         var certPem2 = CertificateTestHelper.ConvertCertificateToPem(certInfo2.Certificate);
 
         var newSecret = new V1Secret
@@ -475,7 +474,7 @@ public class K8SSecretStoreTests
         // the tls.key field should not be present at all.
 
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         string keyPem = null; // No private key
 
@@ -520,7 +519,7 @@ public class K8SSecretStoreTests
     public void OpaqueSecret_WithVariousCertificateFieldNames_ValidStructure(string fieldName)
     {
         // Arrange - Create opaque secret with different field names for certificate
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
 
         var secret = new V1Secret
@@ -548,7 +547,7 @@ public class K8SSecretStoreTests
     public void TlsSecret_RequiresStandardFields()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -576,7 +575,7 @@ public class K8SSecretStoreTests
     [Fact]
     public void OpaqueVsTlsSecret_DifferentFieldRequirements()
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048);
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
@@ -623,7 +622,7 @@ public class K8SSecretStoreTests
         // should be stored, not the intermediate or root certificates.
 
         // Arrange - Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -672,7 +671,7 @@ public class K8SSecretStoreTests
     {
         // Compare the expected output between IncludeCertChain=true vs IncludeCertChain=false for Opaque secrets
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(chain[0].Certificate);
         var intermediatePem = CertificateTestHelper.ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = CertificateTestHelper.ConvertCertificateToPem(chain[2].Certificate);
@@ -723,7 +722,7 @@ public class K8SSecretStoreTests
     {
         // Verify that IncludeCertChain=false behavior works with various key types for Opaque secrets
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+        var chain = CachedCertificateProvider.GetOrCreateChain(keyType);
         var leafCert = chain[0].Certificate;
         var leafPem = CertificateTestHelper.ConvertCertificateToPem(leafCert);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(chain[0].KeyPair.Private);
@@ -774,6 +773,26 @@ public class K8SSecretStoreTests
         Assert.NotNull(secret.Metadata.Labels);
         Assert.Equal(2, secret.Metadata.Labels.Count);
         Assert.Equal("K8SSecret", secret.Metadata.Labels["keyfactor.com/store-type"]);
+    }
+
+    #endregion
+
+    #region RSA 8192 Key Type Tests
+
+    /// <summary>
+    /// Dedicated test for RSA 8192 key type to verify PEM certificate format.
+    /// RSA 8192 is tested separately due to slower key generation time.
+    /// </summary>
+    [Fact]
+    public void PemCertificate_Rsa8192KeyType_ValidFormat()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa8192, "Test Rsa8192");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        // Assert
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
+        Assert.Contains("-----END CERTIFICATE-----", certPem);
     }
 
     #endregion

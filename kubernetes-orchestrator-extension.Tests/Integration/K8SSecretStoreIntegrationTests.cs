@@ -180,7 +180,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-new-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Management Test Add");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Management Test Add");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -274,7 +274,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-bundled-chain-{Guid.NewGuid():N}";
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -345,7 +345,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-separate-chain-{Guid.NewGuid():N}";
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -418,7 +418,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -496,7 +496,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -611,7 +611,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing secret with certificate
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing Cert");
 
         var secret = new V1Secret
         {
@@ -1134,7 +1134,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-update-certonly-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Original Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Original Cert");
         var pfxPassword = "testpassword";
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, pfxPassword);
 
@@ -1225,7 +1225,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
     private async Task AddAndInventoryCertificate(string secretName, KeyType keyType)
     {
         // Generate certificate with specified key type
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"KeyType Test {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"KeyType Test {keyType}");
         var pfxPassword = "testpassword";
 
         // Calculate expected thumbprint BEFORE deployment

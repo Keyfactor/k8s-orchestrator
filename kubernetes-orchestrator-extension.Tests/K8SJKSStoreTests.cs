@@ -36,7 +36,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_ValidJksWithPassword_ReturnsStore()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test JKS Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test JKS Cert");
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Note: JKS deserialization will attempt to load as PKCS12 if JKS format fails
@@ -54,7 +54,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_EmptyPassword_ThrowsArgumentException()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair);
 
         // Act & Assert
@@ -68,7 +68,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_NullPassword_ThrowsArgumentException()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair);
 
         // Act & Assert
@@ -82,7 +82,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_WrongPassword_ThrowsException()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "correctpassword");
 
         // Act & Assert
@@ -127,11 +127,10 @@ public class K8SJKSStoreTests
     [InlineData(KeyType.Rsa1024)]
     [InlineData(KeyType.Rsa2048)]
     [InlineData(KeyType.Rsa4096)]
-    [InlineData(KeyType.Rsa8192)]
     public void DeserializeRemoteCertificateStore_RsaKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Test {keyType} Cert");
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
@@ -149,7 +148,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_EcKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Test {keyType} Cert");
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
@@ -166,7 +165,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_DsaKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Test {keyType} Cert");
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
@@ -183,7 +182,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_EdwardsKeys_SuccessfullyLoadsStore(KeyType keyType)
     {
         // Arrange - Edwards curve keys (Ed25519/Ed448) are supported via BouncyCastle JKS
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Test {keyType} Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Test {keyType} Cert");
         var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
@@ -207,7 +206,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_VariousPasswords_SuccessfullyLoadsStore(string password)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, password);
 
         // Act
@@ -225,7 +224,7 @@ public class K8SJKSStoreTests
         // Arrange
         var password = "password";
         var passwordWithNewline = "password\n";
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, password);
 
         // Act & Assert
@@ -242,7 +241,7 @@ public class K8SJKSStoreTests
     {
         // Arrange
         var longPassword = new string('x', 1000);
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, longPassword);
 
         // Act
@@ -261,7 +260,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_CertificateWithChain_LoadsAllCertificates()
     {
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048, "Leaf", "Intermediate", "Root");
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Leaf");
         var leafCert = chain[0].Certificate;
         var leafKeyPair = chain[0].KeyPair;
         var intermediateCert = chain[1].Certificate;
@@ -288,7 +287,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_SingleCertificate_LoadsWithoutChain()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
 
         // Act
@@ -309,9 +308,9 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_MultipleAliases_LoadsAllCertificates()
     {
         // Arrange
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2Info = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
-        var cert3Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Cert 3");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2Info = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Cert 2");
+        var cert3Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Cert 3");
 
         var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -342,7 +341,7 @@ public class K8SJKSStoreTests
     public void SerializeRemoteCertificateStore_ValidStore_ReturnsSerializedData()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
         var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
 
@@ -361,7 +360,7 @@ public class K8SJKSStoreTests
     public void SerializeRemoteCertificateStore_RoundTrip_PreservesData()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
         var originalStore = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password");
 
@@ -412,7 +411,7 @@ public class K8SJKSStoreTests
         // should be stored in the keystore, not the intermediate or root certificates.
 
         // Arrange - Generate a certificate chain and create JKS with ONLY the leaf
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKeyPair = chain[0].KeyPair;
 
@@ -446,7 +445,7 @@ public class K8SJKSStoreTests
     {
         // Compare JKS with IncludeCertChain=true vs IncludeCertChain=false
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKeyPair = chain[0].KeyPair;
         var intermediateCert = chain[1].Certificate;
@@ -491,7 +490,7 @@ public class K8SJKSStoreTests
     {
         // Verify that IncludeCertChain=false behavior works with various key types for JKS
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(keyType);
+        var chain = CachedCertificateProvider.GetOrCreateChain(keyType);
         var leafCert = chain[0].Certificate;
         var leafKeyPair = chain[0].KeyPair;
 
@@ -518,7 +517,7 @@ public class K8SJKSStoreTests
     {
         // Verify that round-trip serialization preserves the leaf-only chain
         // Arrange
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKeyPair = chain[0].KeyPair;
 
@@ -557,9 +556,9 @@ public class K8SJKSStoreTests
         //   truststore.jks: <base64>
 
         // Arrange - Create separate JKS files with different certificates
-        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Certificate");
-        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "CA Certificate");
-        var cert3 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Truststore Certificate");
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Certificate");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "CA Certificate");
+        var cert3 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Truststore Certificate");
 
         // Generate separate JKS files
         var appJksBytes = CertificateTestHelper.GenerateJks(cert1.Certificate, cert1.KeyPair, "password", "appcert");
@@ -596,9 +595,9 @@ public class K8SJKSStoreTests
         // Each JKS file has unique aliases that should be identifiable.
 
         // Arrange - Create JKS files with different unique aliases
-        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Web Server");
-        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Database");
-        var cert3 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "API Gateway");
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Web Server");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Database");
+        var cert3 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "API Gateway");
 
         // Create JKS files with specific unique aliases
         var webJksBytes = CertificateTestHelper.GenerateJks(cert1.Certificate, cert1.KeyPair, "password", "webserver-cert");
@@ -644,8 +643,8 @@ public class K8SJKSStoreTests
         // but we should handle cases where they differ.
 
         // Arrange
-        var cert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 2");
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 2");
 
         var jks1Bytes = CertificateTestHelper.GenerateJks(cert1.Certificate, cert1.KeyPair, "password1", "cert1");
         var jks2Bytes = CertificateTestHelper.GenerateJks(cert2.Certificate, cert2.KeyPair, "password2", "cert2");
@@ -671,11 +670,11 @@ public class K8SJKSStoreTests
         // Test that multiple JKS files, each containing multiple entries, all load correctly.
 
         // Arrange - Create two JKS files, each with multiple aliases
-        var cert1a = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Server 1");
-        var cert1b = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "App Server 2");
-        var cert2a = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 1");
-        var cert2b = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 2");
-        var cert2c = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Backend 3");
+        var cert1a = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Server 1");
+        var cert1b = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "App Server 2");
+        var cert2a = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend 1");
+        var cert2b = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend 2");
+        var cert2c = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Backend 3");
 
         var appEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -729,7 +728,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_PartiallyCorruptedData_ThrowsException()
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var validJksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
         var corruptedBytes = CertificateTestHelper.CorruptData(validJksBytes, bytesToCorrupt: 10);
 
@@ -758,7 +757,7 @@ public class K8SJKSStoreTests
     {
         // Tests that we can deserialize with one password and serialize with a different one
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate();
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048);
         var pkcs12Bytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password1");
         var store = _serializer.DeserializeRemoteCertificateStore(pkcs12Bytes, "/test/path", "password1");
 
@@ -779,10 +778,10 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_MixedEntryTypes_LoadsBothTypes()
     {
         // Arrange - Create a JKS with both private key entries and trusted certificate entries
-        var privateKeyEntry1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert 1");
-        var privateKeyEntry2 = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Server Cert 2");
-        var trustedCert1 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted Root CA");
-        var trustedCert2 = CertificateTestHelper.GenerateCertificate(KeyType.Rsa4096, "Trusted Intermediate CA");
+        var privateKeyEntry1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert 1");
+        var privateKeyEntry2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Server Cert 2");
+        var trustedCert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted Root CA");
+        var trustedCert2 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa4096, "Trusted Intermediate CA");
 
         var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -815,8 +814,8 @@ public class K8SJKSStoreTests
     public void Inventory_MixedEntryTypes_ReportsCorrectPrivateKeyStatus()
     {
         // Arrange - Create a JKS with both private key entries and trusted certificate entries
-        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
-        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+        var privateKeyEntry = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted CA");
 
         var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -848,11 +847,11 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_AddTrustedCertEntry_PreservesExistingEntries()
     {
         // Arrange - Create initial JKS with a private key entry
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Server Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing Server Cert");
         var existingJks = CertificateTestHelper.GenerateJks(existingCert.Certificate, existingCert.KeyPair, "password", "existing-server");
 
         // Create a trusted certificate (no private key) to add
-        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+        var trustedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted CA");
 
         // Convert trusted cert to DER bytes (certificate only, no private key)
         var trustedCertBytes = trustedCert.Certificate.GetEncoded();
@@ -885,8 +884,8 @@ public class K8SJKSStoreTests
     public void SerializeRemoteCertificateStore_MixedEntryTypes_PreservesEntryTypes()
     {
         // Arrange - Create a JKS with mixed entry types
-        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
-        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+        var privateKeyEntry = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted CA");
 
         var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -914,11 +913,11 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_MixedEntryTypes_CorrectCertificateChainForKeyEntries()
     {
         // Arrange - Create a JKS with a private key entry that has a chain and a trusted cert entry
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048, "Server", "Intermediate", "Root");
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048, "Server");
         var serverCert = chain[0];
         var intermediateCert = chain[1].Certificate;
         var rootCert = chain[2].Certificate;
-        var trustedCa = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "External Trusted CA");
+        var trustedCa = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "External Trusted CA");
 
         // Create JKS manually with chain for key entry
         var jksStore = new Org.BouncyCastle.Security.JksStore();
@@ -947,8 +946,8 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_RemoveTrustedCertEntry_PreservesKeyEntries()
     {
         // Arrange - Create JKS with both entry types
-        var privateKeyEntry = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Server Cert");
-        var trustedCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Trusted CA");
+        var privateKeyEntry = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Server Cert");
+        var trustedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Trusted CA");
 
         var privateKeyEntries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -997,7 +996,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_Pkcs12FileInsteadOfJks_ThrowsIOException()
     {
         // Arrange - Generate a PKCS12 file (not JKS) and try to deserialize as JKS
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "PKCS12 Test Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PKCS12 Test Cert");
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Act & Assert - The JKS deserializer cannot parse PKCS12 format and throws IOException
@@ -1014,8 +1013,8 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_Pkcs12WithMultipleEntries_ThrowsIOException()
     {
         // Arrange - Generate a PKCS12 file with multiple entries
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2Info = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2Info = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Cert 2");
 
         var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -1036,11 +1035,11 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_ExistingStoreIsPkcs12_ThrowsIOException()
     {
         // Arrange - Create a PKCS12 store as the "existing" store
-        var existingCertInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing PKCS12 Cert");
+        var existingCertInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing PKCS12 Cert");
         var existingPkcs12Bytes = CertificateTestHelper.GeneratePkcs12(existingCertInfo.Certificate, existingCertInfo.KeyPair, "password", "existing");
 
         // Create new certificate to add
-        var newCertInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
+        var newCertInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New Cert");
         var newPkcs12Bytes = CertificateTestHelper.GeneratePkcs12(newCertInfo.Certificate, newCertInfo.KeyPair, "password", "newcert");
 
         // Act & Assert - Attempting to update a PKCS12 store as JKS should throw IOException
@@ -1062,7 +1061,7 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_RemoveFromExistingPkcs12Store_ThrowsIOException()
     {
         // Arrange - Create a PKCS12 store as the "existing" store
-        var existingCertInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing PKCS12 Cert");
+        var existingCertInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing PKCS12 Cert");
         var existingPkcs12Bytes = CertificateTestHelper.GeneratePkcs12(existingCertInfo.Certificate, existingCertInfo.KeyPair, "password", "existing");
 
         // Act & Assert - Attempting to remove from a PKCS12 store as JKS should throw IOException
@@ -1086,7 +1085,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_Pkcs12VariousKeyTypes_ThrowsIOException(KeyType keyType)
     {
         // Arrange - Generate PKCS12 with various key types
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"PKCS12 {keyType} Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"PKCS12 {keyType} Cert");
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Act & Assert - All should throw IOException when attempting to parse as JKS
@@ -1104,7 +1103,7 @@ public class K8SJKSStoreTests
     public void DeserializeRemoteCertificateStore_ActualJksFile_LoadsSuccessfully()
     {
         // Arrange - Generate a proper JKS file
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Actual JKS Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Actual JKS Cert");
         var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Act
@@ -1125,7 +1124,7 @@ public class K8SJKSStoreTests
     public void NativeJksFormat_MagicBytesValidation_JksHasCorrectMagicBytes()
     {
         // Arrange - Generate a JKS file using BouncyCastle
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "JKS Magic Bytes Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Magic Bytes Test");
         var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Act & Assert - Verify JKS magic bytes (0xFEEDFEED)
@@ -1143,7 +1142,7 @@ public class K8SJKSStoreTests
     public void Pkcs12Format_MagicBytesValidation_Pkcs12DoesNotHaveJksMagicBytes()
     {
         // Arrange - Generate a PKCS12 file using BouncyCastle
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "PKCS12 Magic Bytes Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PKCS12 Magic Bytes Test");
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Act & Assert - Verify PKCS12 does NOT have JKS magic bytes
@@ -1159,14 +1158,14 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_NativeJksStore_OutputRemainsJksFormat()
     {
         // Arrange - Create an initial JKS store
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Initial Cert");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Initial Cert");
         var initialJks = CertificateTestHelper.GenerateJks(cert1Info.Certificate, cert1Info.KeyPair, "storepassword", "initial");
 
         // Verify initial JKS is in native JKS format
         Assert.True(CertificateTestHelper.IsNativeJksFormat(initialJks), "Initial JKS should be in native JKS format");
 
         // Create a new certificate to add (as PKCS12)
-        var cert2Info = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "New Cert");
+        var cert2Info = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "New Cert");
         var newCertPkcs12 = CertificateTestHelper.GeneratePkcs12(cert2Info.Certificate, cert2Info.KeyPair, "certpassword", "newcert");
 
         // Act - Add new certificate to existing JKS
@@ -1190,7 +1189,7 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_AddMultipleCerts_OutputRemainsJksFormat()
     {
         // Arrange - Create an initial JKS store with one certificate
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
         var initialJks = CertificateTestHelper.GenerateJks(cert1Info.Certificate, cert1Info.KeyPair, "storepassword", "cert1");
 
         // Verify initial JKS is in native JKS format
@@ -1200,7 +1199,7 @@ public class K8SJKSStoreTests
         var currentJks = initialJks;
         for (int i = 2; i <= 5; i++)
         {
-            var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, $"Cert {i}");
+            var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, $"Cert {i}");
             var certPkcs12 = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "certpassword", $"cert{i}");
 
             currentJks = _serializer.CreateOrUpdateJks(
@@ -1230,8 +1229,8 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_RemoveCert_OutputRemainsJksFormat()
     {
         // Arrange - Create a JKS store with two certificates
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2Info = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2Info = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Cert 2");
 
         var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
         {
@@ -1272,7 +1271,7 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_CreateNewStore_OutputIsJksFormat()
     {
         // Arrange - Create a new certificate as PKCS12
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Store Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New Store Cert");
         var certPkcs12 = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "certpassword", "testcert");
 
         // Act - Create a new JKS store (existingStore = null)
@@ -1300,11 +1299,11 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_VariousKeyTypes_OutputRemainsJksFormat(KeyType keyType)
     {
         // Arrange - Create initial JKS store
-        var initialCertInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Initial Cert");
+        var initialCertInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Initial Cert");
         var initialJks = CertificateTestHelper.GenerateJks(initialCertInfo.Certificate, initialCertInfo.KeyPair, "storepassword", "initial");
 
         // Create a new certificate with the specified key type
-        var newCertInfo = CertificateTestHelper.GenerateCertificate(keyType, $"New Cert {keyType}");
+        var newCertInfo = CachedCertificateProvider.GetOrCreate(keyType, $"New Cert {keyType}");
         var newCertPkcs12 = CertificateTestHelper.GeneratePkcs12(newCertInfo.Certificate, newCertInfo.KeyPair, "certpassword", "newcert");
 
         // Act - Add new certificate
@@ -1326,7 +1325,7 @@ public class K8SJKSStoreTests
     public void SerializeRemoteCertificateStore_OutputIsJksFormat()
     {
         // Arrange - Create a JKS store and deserialize it (converts to PKCS12 internally)
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Serialize Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Serialize Test");
         var originalJks = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password", "testcert");
 
         // Verify original is JKS
@@ -1350,8 +1349,8 @@ public class K8SJKSStoreTests
     public void CreateOrUpdateJks_RoundTrip_PreservesJksFormat()
     {
         // Arrange - Create initial JKS, add cert, remove cert, verify format is preserved throughout
-        var cert1Info = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cert 1");
-        var cert2Info = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "Cert 2");
+        var cert1Info = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cert 1");
+        var cert2Info = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Cert 2");
 
         // Step 1: Create initial JKS
         var initialJks = CertificateTestHelper.GenerateJks(cert1Info.Certificate, cert1Info.KeyPair, "storepassword", "cert1");
@@ -1480,7 +1479,7 @@ public class K8SJKSStoreTests
         var emptyJksBytes = outStream.ToArray();
 
         // Create a certificate to add
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "New Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "New Cert");
         var newCertPkcs12 = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, password, "newcert");
 
         // Act - Use CreateOrUpdateJks to add the certificate to the empty store
@@ -1500,6 +1499,29 @@ public class K8SJKSStoreTests
         var aliases = loadedStore.Aliases.ToList();
         Assert.Single(aliases);
         Assert.Contains("newcert", aliases);
+    }
+
+    #endregion
+
+    #region RSA 8192 Dedicated Test
+
+    /// <summary>
+    /// Dedicated test for RSA 8192 key type to verify support while keeping it isolated
+    /// from Theory tests for performance reasons (RSA 8192 key generation is slow).
+    /// </summary>
+    [Fact]
+    public void DeserializeRemoteCertificateStore_Rsa8192Key_SuccessfullyLoadsStore()
+    {
+        // Arrange - RSA 8192 is slow to generate, cached so it only generates once across all tests
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa8192, "Test RSA 8192 Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "password");
+
+        // Act
+        var store = _serializer.DeserializeRemoteCertificateStore(jksBytes, "/test/path", "password");
+
+        // Assert
+        Assert.NotNull(store);
+        Assert.NotEmpty(store.Aliases.ToList());
     }
 
     #endregion

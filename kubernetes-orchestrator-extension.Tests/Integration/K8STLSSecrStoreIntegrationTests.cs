@@ -39,7 +39,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
 
     private async Task<V1Secret> CreateTestTlsSecret(string name, KeyType keyType = KeyType.Rsa2048, bool includeChain = false)
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"Integration Test {name}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"Integration Test {name}");
         return await CreateTestTlsSecretFromCertInfo(name, certInfo, keyType, includeChain);
     }
 
@@ -192,7 +192,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-new-tls-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Management Test Add");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Management Test Add");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -287,7 +287,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -357,7 +357,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -430,7 +430,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -507,7 +507,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -622,7 +622,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing TLS secret with certificate
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing TLS Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing TLS Cert");
 
         var secret = new V1Secret
         {
@@ -1089,7 +1089,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-tls-update-certonly-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Original TLS Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Original TLS Cert");
         var pfxPassword = "testpassword";
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, pfxPassword);
 
@@ -1180,7 +1180,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
     private async Task AddAndInventoryCertificate(string secretName, KeyType keyType)
     {
         // Generate certificate with specified key type
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"KeyType Test {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"KeyType Test {keyType}");
         var pfxPassword = "testpassword";
 
         // Calculate expected thumbprint BEFORE deployment

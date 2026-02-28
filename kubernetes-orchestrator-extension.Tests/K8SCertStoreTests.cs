@@ -33,7 +33,7 @@ public class K8SCertStoreTests
         bool includeCertificate = true,
         KeyType keyType = KeyType.Rsa2048)
     {
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"CSR {name}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"CSR {name}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var certBytes = System.Text.Encoding.UTF8.GetBytes(certPem);
 
@@ -170,7 +170,6 @@ public class K8SCertStoreTests
     [InlineData(KeyType.Rsa1024)]
     [InlineData(KeyType.Rsa2048)]
     [InlineData(KeyType.Rsa4096)]
-    [InlineData(KeyType.Rsa8192)]
     [InlineData(KeyType.EcP256)]
     [InlineData(KeyType.EcP384)]
     [InlineData(KeyType.EcP521)]
@@ -415,6 +414,24 @@ public class K8SCertStoreTests
 
         // Assert
         Assert.Empty(issuedCerts);
+    }
+
+    #endregion
+
+    #region RSA 8192 Key Type Test
+
+    [Fact]
+    public void CertificateSigningRequest_Rsa8192KeyType_CanBeCreated()
+    {
+        // Arrange & Act - Use cached provider for expensive RSA 8192 key generation
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa8192, "CSR test-Rsa8192");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        // Assert
+        Assert.NotNull(certInfo);
+        Assert.NotNull(certInfo.Certificate);
+        Assert.NotNull(certPem);
+        Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
     }
 
     #endregion
