@@ -112,8 +112,8 @@ public class Management : JobBase, IManagementJobExtension
         }
         catch (Exception e)
         {
-            var initErrMsg = "Error initializing job. " + e.Message;
-            Logger.LogError(e, initErrMsg);
+            var initErrMsg = $"Error initializing job. {e.Message}";
+            Logger.LogError(e, "Error initializing job: {Message}", e.Message);
             return FailJob(initErrMsg, config.JobHistoryId);
         }
 
@@ -149,29 +149,24 @@ public class Management : JobBase, IManagementJobExtension
                 case CertStoreOperationType.Discovery:
                 case CertStoreOperationType.SetPassword:
                 case CertStoreOperationType.FetchLogs:
-                    Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId +
-                                          $" - OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job. Failed!");
+                    Logger.LogInformation("End MANAGEMENT job {JobId} - OperationType '{OperationType}' not supported. Failed!",
+                        config.JobId, config.OperationType);
                     return FailJob(
-                        $"OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job.",
+                        $"OperationType '{config.OperationType}' not supported by Kubernetes certificate store job.",
                         config.JobHistoryId);
                 default:
                     //Invalid OperationType.  Return error.  Should never happen though
-                    var impError =
-                        $"Invalid OperationType '{config.OperationType.GetType()}' passed to Kubernetes certificate store job.  This should never happen.";
-                    Logger.LogError(impError);
-                    Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId +
-                                          $" - OperationType '{config.OperationType.GetType()}' not supported by Kubernetes certificate store job. Failed!");
+                    var impError = $"Invalid OperationType '{config.OperationType}' passed to Kubernetes certificate store job.";
+                    Logger.LogError("Invalid OperationType {OperationType} - this should never happen", config.OperationType);
+                    Logger.LogInformation("End MANAGEMENT job {JobId} - Invalid OperationType. Failed!", config.JobId);
                     return FailJob(impError, config.JobHistoryId);
             }
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error processing job" + config.JobId);
-            Logger.LogError(ex.Message);
-            Logger.LogTrace(ex.StackTrace);
-            //Status: 2=Success, 3=Warning, 4=Error
-            Logger.LogInformation("End MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId +
-                                  " with failure.");
+            Logger.LogError(ex, "Error processing job {JobId}: {Message}", config.JobId, ex.Message);
+            Logger.LogTrace("Stack trace: {StackTrace}", ex.StackTrace);
+            Logger.LogInformation("End MANAGEMENT job {JobId} with failure", config.JobId);
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
@@ -876,8 +871,8 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace("certAlias: {CertAlias}", certAlias);
         Logger.LogTrace("overwrite: {Overwrite}", overwrite);
         Logger.LogDebug(string.IsNullOrEmpty(jobCertObj.Password)
-            ? "No cert password provided for certificate " + certAlias
-            : "Cert password provided for certificate " + certAlias);
+            ? "No cert password provided for certificate {CertAlias}"
+            : "Cert password provided for certificate {CertAlias}", certAlias);
 
 
         Logger.LogDebug($"Converting certificate '{certAlias}' to Cert object...");
@@ -1106,12 +1101,13 @@ public class Management : JobBase, IManagementJobExtension
         catch (Exception e)
         {
             Logger.LogError(e,
-                $"Error removing certificate '{certAlias}' from Kubernetes client '{kubeHost}' cert store {KubeSecretName} in namespace {KubeNamespace}.");
-            Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Failed!");
+                "Error removing certificate '{CertAlias}' from Kubernetes client '{KubeHost}' cert store {SecretName} in namespace {Namespace}",
+                certAlias, kubeHost, KubeSecretName, KubeNamespace);
+            Logger.LogInformation("End MANAGEMENT job {JobId} Failed!", config.JobId);
             return FailJob(e.Message, config.JobHistoryId);
         }
 
-        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.LogInformation("End MANAGEMENT job {JobId} Success!", config.JobId);
         Logger.MethodExit(MsLogLevel.Debug);
         return SuccessJob(config.JobHistoryId);
     }

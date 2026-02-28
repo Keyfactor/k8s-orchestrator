@@ -543,7 +543,7 @@ public class KubeCertificateManagerClient
                     };
                     var createdPasswordSecret =
                         Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
                 }
 
                 break;
@@ -819,7 +819,7 @@ public class KubeCertificateManagerClient
                     };
                     var createdPasswordSecret =
                         Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
                 }
 
                 break;
@@ -902,7 +902,7 @@ public class KubeCertificateManagerClient
         }
         catch (HttpOperationException e)
         {
-            _logger.LogWarning("Error while attempting to create secret: " + e.Message);
+            _logger.LogWarning("Error while attempting to create secret: {Message}", e.Message);
             if (e.Message.Contains("Conflict") || e.Message.Contains("Unprocessable"))
             {
                 _logger.LogDebug(
@@ -964,7 +964,7 @@ public class KubeCertificateManagerClient
         }
         catch (HttpOperationException e)
         {
-            _logger.LogWarning("Error while attempting to create secret: " + e.Message);
+            _logger.LogWarning("Error while attempting to create secret: {Message}", e.Message);
             if (e.Message.Contains("Conflict"))
             {
                 _logger.LogDebug(
@@ -1061,7 +1061,7 @@ public class KubeCertificateManagerClient
         }
         catch (HttpOperationException e)
         {
-            _logger.LogDebug("Error while attempting to read existing secret: " + e.Message);
+            _logger.LogDebug("Error while attempting to read existing secret: {Message}", e.Message);
             if (e.Message.Contains("Not Found")) _logger.LogDebug("No existing secret found.");
             existingSecret = null;
         }
@@ -1181,7 +1181,7 @@ public class KubeCertificateManagerClient
                     var passwordSecretResponse =
                         Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
                     _logger.LogDebug("Finished calling CreateNamespacedSecret()");
-                    _logger.LogDebug("Successfully created secret " + passwordSecretPath);
+                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
                 }
 
                 break;
@@ -1265,7 +1265,7 @@ public class KubeCertificateManagerClient
                 secretType = "jks";
                 break;
             default:
-                _logger.LogError("Unknown secret type: " + secretType);
+                _logger.LogError("Unknown secret type: {SecretType}", secretType);
                 break;
         }
 
@@ -1438,7 +1438,7 @@ public class KubeCertificateManagerClient
             ? Encoding.UTF8.GetString(existingSecret.Data["certificates"])
             : "";
 
-        _logger.LogTrace("Existing certificates: " + existingCerts);
+        _logger.LogTrace("Existing certificates: {ExistingCerts}", existingCerts);
 
         var existingKeys = existingSecret.Data.ContainsKey("tls.key")
             ? Encoding.UTF8.GetString(existingSecret.Data["tls.key"])
@@ -1592,9 +1592,9 @@ public class KubeCertificateManagerClient
     private V1Secret DeleteCertificateStoreSecret(string secretName, string namespaceName, string alias)
     {
         _logger.LogTrace("Entered DeleteCertificateStoreSecret()");
-        _logger.LogTrace("secretName: " + secretName);
-        _logger.LogTrace("namespaceName: " + namespaceName);
-        _logger.LogTrace("alias: " + alias);
+        _logger.LogTrace("secretName: {SecretName}", secretName);
+        _logger.LogTrace("namespaceName: {NamespaceName}", namespaceName);
+        _logger.LogTrace("alias: {Alias}", alias);
 
         _logger.LogDebug($"Attempting to read secret {secretName} in namespace {namespaceName} from {GetHost()}");
         _logger.LogTrace("Calling ReadNamespacedSecret()");
@@ -1613,27 +1613,23 @@ public class KubeCertificateManagerClient
         foreach (var sKey in existingSecret.Data.Keys)
         {
             var existingCerts = Encoding.UTF8.GetString(existingSecret.Data[sKey]);
-            _logger.LogTrace("existingCerts: " + existingCerts);
+            _logger.LogTrace("existingCerts: {ExistingCerts}", existingCerts);
 
             _logger.LogDebug("Parsing existing private keys from secret into a string.");
             var existingKeys = Encoding.UTF8.GetString(existingSecret.Data["tls.key"]);
-            // Logger.LogTrace("existingKeys: " + existingKeys);
 
             _logger.LogDebug("Splitting existing certificates into an array.");
             var certs = existingCerts.Split(",");
-            _logger.LogTrace("certs: " + certs);
+            _logger.LogTrace("certs count: {CertsCount}", certs.Length);
 
             _logger.LogDebug("Splitting existing private keys into an array.");
             var keys = existingKeys.Split(",");
-            // Logger.LogTrace("keys: " + keys);
 
-            var index = 0; //Currently keys are assumed to be in the same order as certs. 
+            var index = 0; //Currently keys are assumed to be in the same order as certs.
             _logger.LogTrace("Entering foreach loop to remove existing certificate from opaque secret");
             foreach (var cer in certs)
             {
-                _logger.LogTrace("pkey index: " + index);
-                _logger.LogTrace("cer: " + cer);
-                _logger.LogTrace("alias: " + alias);
+                _logger.LogTrace("pkey index: {Index}, alias: {Alias}", index, alias);
                 if (string.IsNullOrEmpty(cer))
                 {
                     _logger.LogDebug("Found empty certificate string. Skipping.");
@@ -1653,7 +1649,7 @@ public class KubeCertificateManagerClient
                     continue;
                 }
 
-                _logger.LogDebug("sCert.Thumbprint: " + sCert.Thumbprint);
+                _logger.LogDebug("sCert.Thumbprint: {Thumbprint}", sCert.Thumbprint);
 
                 if (sCert.Thumbprint == alias)
                 {
@@ -1661,7 +1657,7 @@ public class KubeCertificateManagerClient
                     _logger.LogTrace("Calling CleanOpaqueStore()");
                     existingCerts = CleanOpaqueStore(existingCerts, cer);
                     _logger.LogTrace("Finished calling CleanOpaqueStore()");
-                    _logger.LogTrace("Updated existingCerts: " + existingCerts);
+                    _logger.LogTrace("Updated existingCerts: {ExistingCerts}", existingCerts);
                     _logger.LogTrace("Calling CleanOpaqueStore()");
                     try
                     {
@@ -1741,13 +1737,13 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Calling CertificatesV1.ListCertificateSigningRequest()");
         var csr = Client.CertificatesV1.ListCertificateSigningRequest();
         _logger.LogTrace("Finished calling CertificatesV1.ListCertificateSigningRequest()");
-        _logger.LogTrace("csr.Items.Count: " + csr.Items.Count);
+        _logger.LogTrace("csr.Items.Count: {Count}", csr.Items.Count);
 
         _logger.LogTrace("Entering foreach loop to add certificate locations to list.");
         var clusterName = GetClusterName();
         foreach (var cr in csr)
         {
-            _logger.LogTrace("cr.Metadata.Name: " + cr.Metadata.Name);
+            _logger.LogTrace("cr.Metadata.Name: {Name}", cr.Metadata.Name);
             _logger.LogDebug("Parsing certificate from certificate resource.");
             var utfCert = cr.Status.Certificate != null ? Encoding.UTF8.GetString(cr.Status.Certificate) : "";
             _logger.LogDebug("Parsing certificate signing request from certificate resource.");
@@ -1755,7 +1751,7 @@ public class KubeCertificateManagerClient
                 ? Encoding.UTF8.GetString(cr.Spec.Request, 0, cr.Spec.Request.Length)
                 : "";
 
-            if (utfCsr != "") _logger.LogTrace("utfCsr: " + utfCsr);
+            if (utfCsr != "") _logger.LogTrace("utfCsr length: {Length}", utfCsr.Length);
             if (utfCert == "")
             {
                 _logger.LogWarning("CSR has not been signed yet. Skipping.");
@@ -1764,19 +1760,18 @@ public class KubeCertificateManagerClient
 
             _logger.LogDebug("Parsing certificate using BouncyCastle.");
             var cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(utfCert);
-            _logger.LogTrace("cert: " + cert);
+            _logger.LogTrace("cert subject: {Subject}", cert?.SubjectDN?.ToString());
 
             _logger.LogDebug("Getting certificate Common Name.");
             var certName = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetSubjectCN(cert);
-            _logger.LogTrace("certName: " + certName);
+            _logger.LogTrace("certName: {CertName}", certName);
 
-            _logger.LogDebug($"Adding certificate {certName} discovered location to list.");
+            _logger.LogDebug("Adding certificate {CertName} discovered location to list", certName);
             locations.Add($"{clusterName}/certificate/{certName}");
         }
 
         _logger.LogDebug("Completed discovering certificates from k8s certificate resources.");
-        _logger.LogTrace("locations.Count: " + locations.Count);
-        _logger.LogTrace("locations: " + locations);
+        _logger.LogTrace("locations.Count: {Count}", locations.Count);
         _logger.MethodExit(LogLevel.Debug);
         return locations;
     }
@@ -1793,8 +1788,8 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("CSR Name: {Name}", name);
         _logger.LogDebug("Attempting to read {Name} certificate signing request from {Host}...", name, GetHost());
         var cr = Client.CertificatesV1.ReadCertificateSigningRequest(name);
-        _logger.LogDebug($"Successfully read {name} certificate signing request from {GetHost()}.");
-        _logger.LogTrace("cr: " + cr);
+        _logger.LogDebug("Successfully read {Name} certificate signing request from {Host}", name, GetHost());
+        _logger.LogTrace("cr status: {Status}", cr?.Status?.Conditions?.FirstOrDefault()?.Type);
         _logger.LogTrace("Attempting to parse certificate from certificate resource.");
 
         // Check if CSR has been signed yet
@@ -1806,11 +1801,11 @@ public class KubeCertificateManagerClient
         }
 
         var utfCert = Encoding.UTF8.GetString(cr.Status.Certificate);
-        _logger.LogTrace("utfCert: " + utfCert);
+        _logger.LogTrace("utfCert length: {Length}", utfCert.Length);
 
-        _logger.LogDebug($"Attempting to parse certificate from certificate resource {name}.");
+        _logger.LogDebug("Attempting to parse certificate from certificate resource {Name}", name);
         var cert = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.ParseCertificateFromPem(utfCert);
-        _logger.LogTrace("cert: " + cert);
+        _logger.LogTrace("cert subject: {Subject}", cert?.SubjectDN?.ToString());
         _logger.MethodExit(LogLevel.Debug);
         return new[] { utfCert };
     }
@@ -2263,8 +2258,7 @@ public class KubeCertificateManagerClient
             // Logger.LogTrace("secret.Data: " + secret.Data);
             if (secret.Data != null)
             {
-                _logger.LogTrace("secret.Data.Keys: {Name}", secret.Data.Keys);
-                _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
+                _logger.LogTrace("secret.Data.Keys.Count: {Count}", secret.Data.Keys.Count);
 
                 allowedKeys ??= new List<string> { "jks", "JKS", "Jks" };
 
@@ -2279,9 +2273,9 @@ public class KubeCertificateManagerClient
 
                     if (!isJksField) continue;
 
-                    _logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
+                    _logger.LogTrace("Key {FieldName} is in list of allowed keys", secretFieldName);
                     var data = secret.Data[secretFieldName];
-                    _logger.LogTrace("data: " + data);
+                    _logger.LogTrace("data length: {Length}", data?.Length);
                     secretData.Add(secretFieldName, data);
                 }
 
@@ -2347,28 +2341,24 @@ public class KubeCertificateManagerClient
         {
             var secret = Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
             _logger.LogTrace("Finished calling CoreV1.ReadNamespacedSecret()");
-            // Logger.LogTrace("secret: " + secret);
-            // Logger.LogTrace("secret.Data: " + secret.Data);
-            _logger.LogTrace("secret.Data.Keys: " + secret.Data.Keys);
-            _logger.LogTrace("secret.Data.Keys.Count: " + secret.Data.Keys.Count);
+            _logger.LogTrace("secret.Data.Keys.Count: {Count}", secret.Data.Keys.Count);
 
             allowedKeys ??= new List<string> { "pkcs12", "p12", "P12", "PKCS12", "pfx", "PFX" };
-
 
             var secretData = new Dictionary<string, byte[]>();
 
             foreach (var secretFieldName in secret?.Data.Keys)
             {
-                _logger.LogTrace("secretFieldName: " + secretFieldName);
+                _logger.LogTrace("secretFieldName: {FieldName}", secretFieldName);
                 var sField = secretFieldName;
                 if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
                 var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
 
                 if (!isPkcs12Field) continue;
 
-                _logger.LogTrace("Key " + secretFieldName + " is in list of allowed keys" + allowedKeys);
+                _logger.LogTrace("Key {FieldName} is in list of allowed keys", secretFieldName);
                 var data = secret.Data[secretFieldName];
-                _logger.LogTrace("data: " + data);
+                _logger.LogTrace("data length: {Length}", data?.Length);
                 secretData.Add(secretFieldName, data);
             }
 
@@ -2422,7 +2412,7 @@ public class KubeCertificateManagerClient
                 SignerName = "kubernetes.io/kube-apiserver-client"
             }
         };
-        _logger.LogTrace("request: " + request);
+        _logger.LogTrace("Request: {Request}", request);
         _logger.LogTrace("Calling CertificatesV1.CreateCertificateSigningRequest()");
         var result = Client.CertificatesV1.CreateCertificateSigningRequest(request);
         _logger.MethodExit(LogLevel.Debug);
@@ -2445,14 +2435,14 @@ public class KubeCertificateManagerClient
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("Name: {Name}, KeyType: {KeyType}, KeyBits: {KeyBits}", name, keyType, keyBits);
         var sanBuilder = new SubjectAlternativeNameBuilder();
-        _logger.LogDebug($"Building IP and SAN lists for CSR {name}");
+        _logger.LogDebug("Building IP and SAN lists for CSR {Name}", name);
 
         foreach (var ip in ips) sanBuilder.AddIpAddress(ip);
         foreach (var san in sans) sanBuilder.AddDnsName(san);
 
-        _logger.LogTrace("sanBuilder: " + sanBuilder);
+        _logger.LogTrace("SanBuilder: {SanBuilder}", sanBuilder);
 
-        _logger.LogTrace("Setting DN to CN=" + name);
+        _logger.LogTrace("Setting DN to CN={Name}", name);
         var distinguishedName = new X500DistinguishedName(name);
 
         _logger.LogDebug("Generating private key and CSR");
