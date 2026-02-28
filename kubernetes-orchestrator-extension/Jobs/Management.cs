@@ -111,11 +111,11 @@ public class Management : JobBase, IManagementJobExtension
             return FailJob(initErrMsg, config.JobHistoryId);
         }
 
-        Logger.LogInformation("Begin MANAGEMENT for K8S Orchestrator Extension for job " + config.JobId);
-        Logger.LogInformation($"Management for store type: {config.Capability}");
+        Logger.LogInformation("Begin MANAGEMENT for K8S Orchestrator Extension for job {JobId}", config.JobId);
+        Logger.LogInformation("Management for store type: {Capability}", config.Capability);
 
         var storePath = config.CertificateStoreDetails.StorePath;
-        Logger.LogTrace("StorePath: " + storePath);
+        Logger.LogTrace("StorePath: {StorePath}", storePath);
         Logger.LogDebug($"Canonical Store Path: {GetStorePath()}");
         var certPassword = config.JobCertificate.PrivateKeyPassword ?? string.Empty;
         // Logger.LogTrace("CertPassword: " + certPassword);
@@ -561,13 +561,13 @@ public class Management : JobBase, IManagementJobExtension
                 existingData, sPass, remove, IncludeCertChain);
             if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
             {
-                Logger.LogDebug("k8sData.JksInventory is null or empty so creating new Dictionary...");
+                Logger.LogDebug("k8sData.Inventory is null or empty so creating new Dictionary...");
                 k8sData.Inventory = new Dictionary<string, byte[]>();
                 k8sData.Inventory.Add(existingDataFieldName, newJksStore);
             }
             else
             {
-                Logger.LogDebug("k8sData.JksInventory is not null or empty so updating existing Dictionary...");
+                Logger.LogDebug("k8sData.Inventory is not null or empty so updating existing Dictionary...");
                 k8sData.Inventory[existingDataFieldName] = newJksStore;
             }
 
@@ -715,13 +715,13 @@ public class Management : JobBase, IManagementJobExtension
             alias, existingData, sPass, remove, IncludeCertChain);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
-            Logger.LogDebug("k8sData.Pkcs12Inventory is null or empty so creating new Dictionary...");
+            Logger.LogDebug("k8sData.Inventory is null or empty so creating new Dictionary...");
             k8sData.Inventory = new Dictionary<string, byte[]>();
             k8sData.Inventory.Add(existingDataFieldName, newPkcs12Store);
         }
         else
         {
-            Logger.LogDebug("k8sData.Pkcs12Inventory is not null or empty so updating existing Dictionary...");
+            Logger.LogDebug("k8sData.Inventory is not null or empty so updating existing Dictionary...");
             k8sData.Inventory[existingDataFieldName] = newPkcs12Store;
         }
 
@@ -799,10 +799,9 @@ public class Management : JobBase, IManagementJobExtension
     {
         Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogDebug("Processing TLS secret for certificate: {Alias}", certAlias);
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
+        Logger.LogTrace("certAlias: {CertAlias}", certAlias);
+        Logger.LogTrace("overwrite: {Overwrite}", overwrite);
+        Logger.LogTrace("append: {Append}", append);
 
         // Handle "create store if missing" - when no certificate data is provided
         // If secret already exists and no new certificate data, just return the existing secret
@@ -832,43 +831,11 @@ public class Management : JobBase, IManagementJobExtension
             ValidateNoMismatchedKeyUpdate("TLS");
         }
 
-        try
-        {
-        }
-        catch (Exception ex)
-        {
-            if (!string.IsNullOrEmpty(certAlias))
-                Logger.LogWarning("This is fine");
-            else
-                Logger.LogError(ex,
-                    "Unknown error processing HandleTlsSecret(). Will try to continue as if everything is fine...for now.");
-        }
-
         var pemString = certObj.CertPem;
-        Logger.LogTrace("pemString: " + pemString);
-
-        Logger.LogDebug("Splitting PEM string into array of PEM strings by ';' delimiter...");
-        var certPems = pemString.Split(";");
-        Logger.LogTrace("certPems: " + certPems);
-
-        Logger.LogDebug("Splitting CA PEM string into array of PEM strings by ';' delimiter...");
-        var caPems = "".Split(";");
-        Logger.LogTrace("caPems: " + caPems);
-
-        Logger.LogDebug("Splitting chain PEM string into array of PEM strings by ';' delimiter...");
-        var chainPems = "".Split(";");
-        Logger.LogTrace("chainPems: " + chainPems);
-
-        string[] keyPems = { "" };
+        Logger.LogTrace("pemString: {PemString}", pemString);
 
         Logger.LogInformation(
             $"Secret type is 'tls_secret', so extracting private key from certificate '{certAlias}'...");
-
-        Logger.LogTrace("Calling GetKeyBytes() to extract private key from certificate...");
-        var keyBytes = certObj.PrivateKeyBytes;
-
-        var keyPem = certObj.PrivateKeyPem;
-        if (!string.IsNullOrEmpty(keyPem)) keyPems = new[] { keyPem };
 
         // Preserve existing private key format if updating
         var privateKeyPem = certObj.PrivateKeyPem;
@@ -916,11 +883,15 @@ public class Management : JobBase, IManagementJobExtension
     {
         Logger.MethodEntry(MsLogLevel.Debug);
 
+        // Normalize the secret type to canonical form for consistent handling
+        var normalizedType = SecretTypes.Normalize(secretType);
+        Logger.LogTrace("Original secret type: {Original}, Normalized: {Normalized}", secretType, normalizedType);
+
         // Check for "create store if missing" operation for store types that don't support it
         // K8SNS and K8SCluster are aggregate store types that manage multiple secrets across
         // a namespace or cluster - there's no single "store" to create
         var isCreateStoreIfMissing = string.IsNullOrEmpty(config.JobCertificate?.Contents);
-        if (isCreateStoreIfMissing && (secretType == "namespace" || secretType == "cluster"))
+        if (isCreateStoreIfMissing && SecretTypes.IsAggregateStoreType(normalizedType))
         {
             var storeTypeName = secretType == "namespace" ? "K8SNS" : "K8SCluster";
             var warningMsg = $"'Create store if missing' is not supported for {storeTypeName} store type. " +
@@ -941,10 +912,9 @@ public class Management : JobBase, IManagementJobExtension
             certAlias = jobCertObj.CertThumbprint;
         }
 
-        Logger.LogTrace("secretType: " + secretType);
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("certPassword: " + certPassword);
-        Logger.LogTrace("overwrite: " + overwrite);
+        Logger.LogTrace("secretType: {SecretType}", secretType);
+        Logger.LogTrace("certAlias: {CertAlias}", certAlias);
+        Logger.LogTrace("overwrite: {Overwrite}", overwrite);
         Logger.LogDebug(string.IsNullOrEmpty(jobCertObj.Password)
             ? "No cert password provided for certificate " + certAlias
             : "Cert password provided for certificate " + certAlias);
@@ -963,151 +933,113 @@ public class Management : JobBase, IManagementJobExtension
             Logger.LogTrace($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
         }
 
-        Logger.LogDebug($"Successfully created X509Certificate2 object from job certificate '{certAlias}'.");
-        Logger.LogTrace($"Entering switch statement for secret type: {secretType}...");
-        switch (secretType)
+        Logger.LogDebug("Successfully created certificate object from job certificate {CertAlias}.", certAlias);
+        Logger.LogTrace("Entering switch statement for normalized secret type: {SecretType}...", normalizedType);
+        switch (normalizedType)
         {
-            // Process request based on secret type
-            case "tls_secret":
-            case "tls":
-            case "tlssecret":
-            case "tls_secrets":
-                Logger.LogInformation("Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " +
-                                      certAlias + "...");
+            // Process request based on normalized secret type
+            case SecretTypes.Tls:
+                Logger.LogInformation("Secret type is TLS, calling HandleTlsSecret() for certificate {CertAlias}...", certAlias);
                 _ = HandleTlsSecret(certAlias, jobCertObj, certPassword, overwrite);
-                Logger.LogInformation("Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
+                Logger.LogInformation("Successfully called HandleTlsSecret() for certificate {CertAlias}.", certAlias);
                 break;
-            case "opaque":
-            case "secret":
-            case "secrets":
-                Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " +
-                                      certAlias + "...");
+            case SecretTypes.Opaque:
+                Logger.LogInformation("Secret type is Opaque, calling HandleOpaqueSecret() for certificate {CertAlias}...", certAlias);
                 _ = HandleOpaqueSecret(certAlias, jobCertObj, certPassword, overwrite);
-                Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias + ".");
+                Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate {CertAlias}.", certAlias);
                 break;
-            case "certificate":
-            case "cert":
-            case "csr":
-            case "csrs":
-            case "certs":
-            case "certificates":
+            case SecretTypes.Certificate:
                 const string csrErrorMsg = "ADD operation not supported by Kubernetes CSR type.";
                 Logger.LogError(csrErrorMsg);
-                Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + csrErrorMsg + " Failed!");
+                Logger.LogInformation("End MANAGEMENT job {JobId} - {Message} Failed!", config.JobId, csrErrorMsg);
                 return FailJob(csrErrorMsg, config.JobHistoryId);
-            case "pfx":
-            case "pkcs12":
-                Logger.LogInformation("Secret type is 'pkcs12', calling HandlePKCS12Secret() for certificate " +
-                                      certAlias + "...");
+            case SecretTypes.Pkcs12:
+                Logger.LogInformation("Secret type is PKCS12, calling HandlePkcs12Secret() for certificate {CertAlias}...", certAlias);
                 _ = HandlePkcs12Secret(config);
-                Logger.LogInformation("Successfully called HandlePKCS12Secret() for certificate " + certAlias + ".");
+                Logger.LogInformation("Successfully called HandlePkcs12Secret() for certificate {CertAlias}.", certAlias);
                 break;
-            case "jks":
+            case SecretTypes.Jks:
+                Logger.LogInformation("Secret type is JKS, calling HandleJksSecret() for certificate {CertAlias}...", certAlias);
                 _ = HandleJksSecret(config);
-                Logger.LogInformation("Successfully called HandleJKSSecret() for certificate " + certAlias + ".");
+                Logger.LogInformation("Successfully called HandleJksSecret() for certificate {CertAlias}.", certAlias);
                 break;
-            case "namespace":
-                jobCertObj.Alias = config.JobCertificate.Alias;
-                // Split alias by / and get second to last element KubeSecretType
-                var splitAlias = jobCertObj.Alias.Split("/");
-                if (splitAlias.Length < 2)
-                {
-                    var invalidAliasErrMsg =
-                        "Invalid alias format for K8SNS store type. Alias pattern: `<secret_type>/<secret_name>` where `secret_type` is one of 'opaque' or 'tls' and `secret_name` is the name of the secret.";
-                    Logger.LogError(invalidAliasErrMsg);
-                    Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
-                    return FailJob(invalidAliasErrMsg, config.JobHistoryId);
-                }
-
-                KubeSecretType = splitAlias[^2];
-                KubeSecretName = splitAlias[^1];
-                Logger.LogDebug("Handling management add job for K8SNS secret type '" + KubeSecretType + "(" +
-                                jobCertObj.Alias + ")'...");
-
-                switch (KubeSecretType)
-                {
-                    case "tls":
-                        Logger.LogInformation(
-                            "Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " + certAlias +
-                            "...");
-                        _ = HandleTlsSecret(certAlias, jobCertObj, certPassword, overwrite);
-                        Logger.LogInformation(
-                            "Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
-                        break;
-                    case "opaque":
-                        Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " +
-                                              certAlias + "...");
-                        _ = HandleOpaqueSecret(certAlias, jobCertObj, certPassword, overwrite);
-                        Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias +
-                                              ".");
-                        break;
-                    default:
-                    {
-                        var nsErrMsg = "Unsupported secret type " + KubeSecretType + " for store types of 'K8SNS'.";
-                        Logger.LogError(nsErrMsg);
-                        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + nsErrMsg + " Failed!");
-                        return FailJob(nsErrMsg, config.JobHistoryId);
-                    }
-                }
-
-                break;
-            case "cluster":
-                jobCertObj.Alias = config.JobCertificate.Alias;
-                // Split alias by / and get second to last element KubeSecretType
-                //pattern: namespace/secrets/secret_type/secert_name
-                var clusterSplitAlias = jobCertObj.Alias.Split("/");
-
-                // Check splitAlias length - K8SCluster expects: <namespace>/secrets/<tls|opaque>/<secret_name> (4 parts)
-                if (clusterSplitAlias.Length < 4)
-                {
-                    var invalidAliasErrMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{jobCertObj.Alias}'";
-                    Logger.LogError(invalidAliasErrMsg);
-                    Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
-                    return FailJob(invalidAliasErrMsg, config.JobHistoryId);
-                }
-
-                KubeSecretType = clusterSplitAlias[^2];
-                KubeSecretName = clusterSplitAlias[^1];
-                KubeNamespace = clusterSplitAlias[0];
-                Logger.LogDebug("Handling managment add job for K8SNS secret type '" + KubeSecretType + "(" +
-                                jobCertObj.Alias + ")'...");
-
-                switch (KubeSecretType)
-                {
-                    case "tls":
-                        Logger.LogInformation(
-                            "Secret type is 'tls_secret', calling HandleTlsSecret() for certificate " + certAlias +
-                            "...");
-                        _ = HandleTlsSecret(certAlias, jobCertObj, certPassword, overwrite);
-                        Logger.LogInformation(
-                            "Successfully called HandleTlsSecret() for certificate " + certAlias + ".");
-                        break;
-                    case "opaque":
-                        Logger.LogInformation("Secret type is 'secret', calling HandleOpaqueSecret() for certificate " +
-                                              certAlias + "...");
-                        _ = HandleOpaqueSecret(certAlias, jobCertObj, certPassword, overwrite);
-                        Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate " + certAlias +
-                                              ".");
-                        break;
-                    default:
-                    {
-                        var nsErrMsg = "Unsupported secret type " + KubeSecretType + " for store types of 'K8SNS'.";
-                        Logger.LogError(nsErrMsg);
-                        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + nsErrMsg + " Failed!");
-                        return FailJob(nsErrMsg, config.JobHistoryId);
-                    }
-                }
-
-                break;
+            case SecretTypes.Namespace:
+                return HandleAggregateStoreAdd(config, jobCertObj, certAlias, certPassword, overwrite, isNamespace: true);
+            case SecretTypes.Cluster:
+                return HandleAggregateStoreAdd(config, jobCertObj, certAlias, certPassword, overwrite, isNamespace: false);
             default:
-                var errMsg = $"Unsupported secret type {secretType}.";
+                var errMsg = $"Unsupported secret type {normalizedType} (original: {secretType}).";
                 Logger.LogError(errMsg);
-                Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + errMsg + " Failed!");
+                Logger.LogInformation("End MANAGEMENT job {JobId} - {Message} Failed!", config.JobId, errMsg);
                 return FailJob(errMsg, config.JobHistoryId);
         }
 
-        Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.LogInformation("End MANAGEMENT job {JobId} - Success!", config.JobId);
         Logger.MethodExit(MsLogLevel.Debug);
+        return SuccessJob(config.JobHistoryId);
+    }
+
+    /// <summary>
+    /// Handles Add operations for aggregate store types (K8SNS and K8SCluster).
+    /// Parses the alias to determine the target secret type and name.
+    /// </summary>
+    private JobResult HandleAggregateStoreAdd(
+        ManagementJobConfiguration config,
+        K8SJobCertificate jobCertObj,
+        string certAlias,
+        string certPassword,
+        bool overwrite,
+        bool isNamespace)
+    {
+        var storeTypeName = isNamespace ? "K8SNS" : "K8SCluster";
+        var minParts = isNamespace ? 2 : 4;
+        var aliasPattern = isNamespace
+            ? "<secret_type>/<secret_name>"
+            : "<namespace>/secrets/<tls|opaque>/<secret_name>";
+
+        jobCertObj.Alias = config.JobCertificate.Alias;
+        var splitAlias = jobCertObj.Alias.Split("/");
+
+        if (splitAlias.Length < minParts)
+        {
+            var invalidAliasErrMsg = $"Invalid alias format for {storeTypeName} store type. Expected pattern: '{aliasPattern}' but got '{jobCertObj.Alias}'";
+            Logger.LogError(invalidAliasErrMsg);
+            Logger.LogInformation("End MANAGEMENT job {JobId} - {Message} Failed!", config.JobId, invalidAliasErrMsg);
+            return FailJob(invalidAliasErrMsg, config.JobHistoryId);
+        }
+
+        KubeSecretType = splitAlias[^2];
+        KubeSecretName = splitAlias[^1];
+        if (!isNamespace)
+        {
+            KubeNamespace = splitAlias[0];
+        }
+
+        var innerType = SecretTypes.Normalize(KubeSecretType);
+        Logger.LogDebug("Handling management add job for {StoreType} with inner secret type {InnerType} ({Alias})...",
+            storeTypeName, innerType, jobCertObj.Alias);
+
+        if (SecretTypes.IsTlsType(innerType))
+        {
+            Logger.LogInformation("Inner secret type is TLS, calling HandleTlsSecret() for certificate {CertAlias}...", certAlias);
+            _ = HandleTlsSecret(certAlias, jobCertObj, certPassword, overwrite);
+            Logger.LogInformation("Successfully called HandleTlsSecret() for certificate {CertAlias}.", certAlias);
+        }
+        else if (SecretTypes.IsOpaqueType(innerType))
+        {
+            Logger.LogInformation("Inner secret type is Opaque, calling HandleOpaqueSecret() for certificate {CertAlias}...", certAlias);
+            _ = HandleOpaqueSecret(certAlias, jobCertObj, certPassword, overwrite);
+            Logger.LogInformation("Successfully called HandleOpaqueSecret() for certificate {CertAlias}.", certAlias);
+        }
+        else
+        {
+            var nsErrMsg = $"Unsupported inner secret type '{KubeSecretType}' for store type '{storeTypeName}'. Expected 'tls' or 'opaque'.";
+            Logger.LogError(nsErrMsg);
+            Logger.LogInformation("End MANAGEMENT job {JobId} - {Message} Failed!", config.JobId, nsErrMsg);
+            return FailJob(nsErrMsg, config.JobHistoryId);
+        }
+
+        Logger.LogInformation("End MANAGEMENT job {JobId} - Success!", config.JobId);
         return SuccessJob(config.JobHistoryId);
     }
 
@@ -1122,7 +1054,11 @@ public class Management : JobBase, IManagementJobExtension
     private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogDebug("Processing remove for secret type: {SecretType}", secretType);
+
+        // Normalize the secret type to canonical form
+        var normalizedType = SecretTypes.Normalize(secretType);
+        Logger.LogDebug("Processing remove for secret type: {SecretType} (normalized: {Normalized})", secretType, normalizedType);
+
         var kubeHost = KubeClient.GetHost();
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
@@ -1135,14 +1071,16 @@ public class Management : JobBase, IManagementJobExtension
             StorePasswordPath = StorePasswordPath
         };
 
-        switch (secretType)
+        // Handle keystore types first (they have special remove logic)
+        if (SecretTypes.IsPkcs12Type(normalizedType))
         {
-            case "pkcs12":
-                _ = HandlePkcs12Secret(config, true);
-                return SuccessJob(config.JobHistoryId);
-            case "jks":
-                _ = HandleJksSecret(config, true);
-                return SuccessJob(config.JobHistoryId);
+            _ = HandlePkcs12Secret(config, true);
+            return SuccessJob(config.JobHistoryId);
+        }
+        if (SecretTypes.IsJksType(normalizedType))
+        {
+            _ = HandleJksSecret(config, true);
+            return SuccessJob(config.JobHistoryId);
         }
 
 

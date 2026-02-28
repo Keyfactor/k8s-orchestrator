@@ -1532,55 +1532,53 @@ public abstract class JobBase
         Logger.MethodEntry(MsLogLevel.Debug);
         try
         {
-            var secretType = "";
             var storePath = StorePath;
 
-
+            // Determine secret type from capability first, then fall back to KubeSecretType
+            string secretType;
             if (Capability.Contains("K8SNS"))
-                secretType = "namespace";
+                secretType = SecretTypes.Namespace;
             else if (Capability.Contains("K8SCluster"))
-                secretType = "cluster";
+                secretType = SecretTypes.Cluster;
             else
-                secretType = KubeSecretType.ToLower();
+                secretType = SecretTypes.Normalize(KubeSecretType);
 
             Logger.LogTrace("secretType: {SecretType}", secretType);
-            Logger.LogTrace("Entered switch statement based on secretType");
-            switch (secretType)
-            {
-                case "secret":
-                case "opaque":
-                case "tls":
-                case "tls_secret":
-                    Logger.LogDebug("Kubernetes secret resource type, setting secretType to 'secret'");
-                    secretType = "secret";
-                    break;
-                case "cert":
-                case "certs":
-                case "certificate":
-                case "certificates":
-                    Logger.LogDebug("Kubernetes certificate resource type, setting secretType to 'certificate'");
-                    secretType = "certificate";
-                    break;
-                case "namespace":
-                    Logger.LogDebug("Kubernetes namespace resource type, setting secretType to 'namespace'");
-                    KubeSecretType = "namespace";
 
-                    Logger.LogDebug(
-                        "Setting store path to 'cluster/namespace/namespacename' for 'namespace' secret type");
-                    storePath = $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
-                    Logger.LogDebug("Returning storePath: {StorePath}", storePath);
-                    Logger.MethodExit(MsLogLevel.Debug);
-                    return storePath;
-                case "cluster":
-                    Logger.LogDebug("Kubernetes cluster resource type, setting secretType to 'cluster'");
-                    KubeSecretType = "cluster";
-                    Logger.LogDebug("Returning storePath: {StorePath}", storePath);
-                    Logger.MethodExit(MsLogLevel.Debug);
-                    return storePath;
-                default:
-                    Logger.LogWarning("Unknown secret type '{SecretType}' will use value provided", secretType);
-                    Logger.LogTrace("secretType: {SecretType}", secretType);
-                    break;
+            // Handle aggregate store types (namespace/cluster) specially
+            if (SecretTypes.IsNamespaceType(secretType))
+            {
+                Logger.LogDebug("Kubernetes namespace resource type");
+                KubeSecretType = SecretTypes.Namespace;
+                storePath = $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
+                Logger.LogDebug("Returning storePath: {StorePath}", storePath);
+                Logger.MethodExit(MsLogLevel.Debug);
+                return storePath;
+            }
+
+            if (SecretTypes.IsClusterType(secretType))
+            {
+                Logger.LogDebug("Kubernetes cluster resource type");
+                KubeSecretType = SecretTypes.Cluster;
+                Logger.LogDebug("Returning storePath: {StorePath}", storePath);
+                Logger.MethodExit(MsLogLevel.Debug);
+                return storePath;
+            }
+
+            // For simple secrets (TLS/Opaque), normalize to 'secret' for path construction
+            if (SecretTypes.IsSimpleSecretType(secretType))
+            {
+                Logger.LogDebug("Kubernetes secret resource type (TLS/Opaque), setting secretType to 'secret'");
+                secretType = SecretTypes.Opaque;
+            }
+            else if (SecretTypes.IsCsrType(secretType))
+            {
+                Logger.LogDebug("Kubernetes certificate resource type");
+                secretType = SecretTypes.Certificate;
+            }
+            else if (!SecretTypes.IsKeystoreType(secretType))
+            {
+                Logger.LogWarning("Unknown secret type '{SecretType}' will use value provided", secretType);
             }
 
             Logger.LogDebug("Building StorePath");

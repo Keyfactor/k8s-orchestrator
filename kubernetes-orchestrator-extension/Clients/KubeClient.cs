@@ -46,6 +46,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
 public class KubeCertificateManagerClient
 {
     private readonly ILogger _logger;
+    private readonly KubeconfigParser _kubeconfigParser;
+    private readonly KeystoreManager _keystoreManager;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="KubeCertificateManagerClient"/> class.
@@ -55,6 +57,8 @@ public class KubeCertificateManagerClient
     public KubeCertificateManagerClient(string kubeconfig, bool useSSL = true)
     {
         _logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod()?.DeclaringType);
+        _kubeconfigParser = new KubeconfigParser(_logger);
+        _keystoreManager = new KeystoreManager(_logger);
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
         _logger.LogTrace("UseSSL: {UseSSL}", useSSL);
@@ -63,7 +67,7 @@ public class KubeCertificateManagerClient
         ConfigJson = kubeconfig;
         try
         {
-            ConfigObj = ParseKubeConfig(kubeconfig, !useSSL); // invert useSSL to skip TLS verification
+            ConfigObj = _kubeconfigParser.Parse(kubeconfig, !useSSL); // invert useSSL to skip TLS verification
             _logger.LogDebug("Successfully parsed kubeconfig for cluster: {ClusterName}", ConfigObj.CurrentContext ?? "unknown");
         }
         catch (Exception ex)
@@ -152,184 +156,6 @@ public class KubeCertificateManagerClient
     }
 
     /// <summary>
-    /// Parses a kubeconfig JSON string into a K8SConfiguration object.
-    /// Extracts cluster, user, and context information for API authentication.
-    /// </summary>
-    /// <param name="kubeconfig">JSON-formatted kubeconfig string.</param>
-    /// <param name="skipTLSVerify">When true, skips TLS certificate verification.</param>
-    /// <returns>Parsed K8SConfiguration object.</returns>
-    private K8SConfiguration ParseKubeConfig(string kubeconfig, bool skipTLSVerify = false)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        _logger.LogTrace("Kubeconfig length: {Length}, skipTLSVerify: {SkipTLS}", kubeconfig?.Length ?? 0, skipTLSVerify);
-        _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
-
-        try
-        {
-            var k8SConfiguration = new K8SConfiguration();
-            _logger.LogTrace("K8SConfiguration object created");
-
-        _logger.LogTrace("Checking if kubeconfig is null or empty");
-        if (string.IsNullOrEmpty(kubeconfig))
-        {
-            _logger.LogError("kubeconfig is null or empty");
-            throw new KubeConfigException(
-                "kubeconfig is null or empty, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json");
-        }
-
-        try
-        {
-            // test if kubeconfig is base64 encoded
-            _logger.LogDebug("Testing if kubeconfig is base64 encoded");
-            var decodedKubeconfig = Encoding.UTF8.GetString(Convert.FromBase64String(kubeconfig));
-            kubeconfig = decodedKubeconfig;
-            _logger.LogDebug("Successfully decoded kubeconfig from base64");
-        }
-        catch
-        {
-            _logger.LogTrace("Kubeconfig is not base64 encoded");
-        }
-
-        _logger.LogTrace("Checking if kubeconfig is escaped JSON");
-        if (kubeconfig.StartsWith("\\"))
-        {
-            _logger.LogDebug("Un-escaping kubeconfig JSON");
-            kubeconfig = kubeconfig.Replace("\\", "");
-            kubeconfig = kubeconfig.Replace("\\n", "\n");
-            _logger.LogDebug("Successfully un-escaped kubeconfig JSON");
-        }
-
-        // parse kubeconfig as a dictionary of string, string
-        if (!kubeconfig.StartsWith("{"))
-        {
-            _logger.LogError("kubeconfig is not a JSON object");
-            throw new KubeConfigException(
-                "kubeconfig is not a JSON object, please provide a valid kubeconfig in JSON format. For more information on how to create a kubeconfig file, please visit: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#get_service_account_credssh");
-            // return k8SConfiguration;
-        }
-
-
-        _logger.LogDebug("Parsing kubeconfig as a dictionary of string, string");
-
-        //load json into dictionary of string, string
-        _logger.LogTrace("Deserializing kubeconfig JSON");
-        var configDict = JsonConvert.DeserializeObject<Dictionary<string, object>>(kubeconfig);
-        _logger.LogTrace("Deserialized kubeconfig JSON successfully");
-
-        _logger.LogTrace("Creating K8SConfiguration object");
-        k8SConfiguration = new K8SConfiguration
-        {
-            ApiVersion = configDict["apiVersion"].ToString(),
-            Kind = configDict["kind"].ToString(),
-            CurrentContext = configDict["current-context"].ToString(),
-            Clusters = new List<Cluster>(),
-            Users = new List<User>(),
-            Contexts = new List<Context>()
-        };
-
-        // parse clusters
-        _logger.LogDebug("Parsing clusters");
-        var cl = configDict["clusters"];
-
-        _logger.LogTrace("Entering foreach loop to parse clusters...");
-        foreach (var clusterMetadata in JsonConvert.DeserializeObject<JArray>(cl.ToString() ?? string.Empty))
-        {
-            _logger.LogTrace("Creating Cluster object for cluster '{Name}'", clusterMetadata["name"]?.ToString());
-            // get environment variable for skip tls verify and convert to bool
-            var skipTlsEnvStr = Environment.GetEnvironmentVariable("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY");
-            _logger.LogTrace("KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY environment variable: {SkipTlsVerify}",
-                skipTlsEnvStr);
-            if (!string.IsNullOrEmpty(skipTlsEnvStr) &&
-                (bool.TryParse(skipTlsEnvStr, out var skipTlsVerifyEnv) || skipTlsEnvStr == "1"))
-            {
-                if (skipTlsEnvStr == "1") skipTlsVerifyEnv = true;
-                _logger.LogDebug("Setting skip-tls-verify to {SkipTlsVerify}", skipTlsVerifyEnv);
-                if (skipTlsVerifyEnv && !skipTLSVerify)
-                {
-                    _logger.LogWarning(
-                        "Skipping TLS verification is enabled in environment variable KEYFACTOR_ORCHESTRATOR_SKIP_TLS_VERIFY this takes the highest precedence and verification will be skipped. To disable this, set the environment variable to 'false' or remove it");
-                    skipTLSVerify = true;
-                }
-            }
-
-            var clusterObj = new Cluster
-            {
-                Name = clusterMetadata["name"]?.ToString(),
-                ClusterEndpoint = new ClusterEndpoint
-                {
-                    Server = clusterMetadata["cluster"]?["server"]?.ToString(),
-                    CertificateAuthorityData = clusterMetadata["cluster"]?["certificate-authority-data"]?.ToString(),
-                    SkipTlsVerify = skipTLSVerify
-                }
-            };
-            _logger.LogDebug("Cluster metadata - Name: {Name}, Server: {Server}, SkipTlsVerify: {SkipTls}",
-                clusterObj.Name, clusterObj.ClusterEndpoint?.Server, skipTLSVerify);
-            _logger.LogTrace("Certificate authority data: {CaDataPresence}",
-                LoggingUtilities.GetFieldPresence("certificate-authority-data", clusterObj.ClusterEndpoint?.CertificateAuthorityData));
-            k8SConfiguration.Clusters = new List<Cluster> { clusterObj };
-        }
-
-        _logger.LogTrace("Finished parsing clusters");
-
-        _logger.LogDebug("Parsing users");
-        _logger.LogTrace("Entering foreach loop to parse users...");
-        // parse users
-        foreach (var user in JsonConvert.DeserializeObject<JArray>(configDict["users"].ToString() ?? string.Empty))
-        {
-            var token = user["user"]?["token"]?.ToString();
-            var userObj = new User
-            {
-                Name = user["name"]?.ToString(),
-                UserCredentials = new UserCredentials
-                {
-                    UserName = user["name"]?.ToString(),
-                    Token = token
-                }
-            };
-            _logger.LogDebug("User metadata - Name: {Name}, HasToken: {HasToken}",
-                userObj.Name, !string.IsNullOrEmpty(token));
-            _logger.LogTrace("Token: {Token}", LoggingUtilities.RedactToken(token));
-            k8SConfiguration.Users = new List<User> { userObj };
-        }
-
-        _logger.LogTrace("Finished parsing users");
-
-        _logger.LogDebug("Parsing contexts");
-        _logger.LogTrace("Entering foreach loop to parse contexts...");
-        foreach (var ctx in JsonConvert.DeserializeObject<JArray>(configDict["contexts"].ToString() ?? string.Empty))
-        {
-            _logger.LogTrace("Creating Context object");
-            var contextObj = new Context
-            {
-                Name = ctx["name"]?.ToString(),
-                ContextDetails = new ContextDetails
-                {
-                    Cluster = ctx["context"]?["cluster"]?.ToString(),
-                    Namespace = ctx["context"]?["namespace"]?.ToString(),
-                    User = ctx["context"]?["user"]?.ToString()
-                }
-            };
-            _logger.LogDebug("Context metadata - Name: {Name}, Cluster: {Cluster}, Namespace: {Namespace}, User: {User}",
-                contextObj.Name, contextObj.ContextDetails?.Cluster, contextObj.ContextDetails?.Namespace, contextObj.ContextDetails?.User);
-            k8SConfiguration.Contexts = new List<Context> { contextObj };
-        }
-
-            _logger.LogTrace("Finished parsing contexts");
-            _logger.LogDebug("Finished parsing kubeconfig");
-
-            _logger.MethodExit(LogLevel.Debug);
-            return k8SConfiguration;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "CRITICAL ERROR in ParseKubeConfig: {Message}", ex.Message);
-            _logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
-            _logger.LogError("Stack Trace: {StackTrace}", ex.StackTrace);
-            throw;
-        }
-    }
-
-    /// <summary>
     /// Creates and configures a Kubernetes API client from the provided kubeconfig.
     /// Implements retry logic for transient connection failures.
     /// </summary>
@@ -347,10 +173,11 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Executing assembly directory: {WorkPath}", strWorkPath);
 
         var credentialFileName = kubeconfig;
-        // Logger.LogDebug($"credentialFileName: {credentialFileName}");
-        _logger.LogDebug("Calling ParseKubeConfig()");
-        var k8SConfiguration = ParseKubeConfig(kubeconfig);
-        _logger.LogDebug("Finished calling ParseKubeConfig()");
+        _logger.LogDebug("Calling KubeconfigParser.Parse()");
+        // Use the parser, but handle initialization order (parser may not be set yet in constructor)
+        var parser = _kubeconfigParser ?? new KubeconfigParser(_logger);
+        var k8SConfiguration = parser.Parse(kubeconfig);
+        _logger.LogDebug("Finished calling KubeconfigParser.Parse()");
 
         // use k8sConfiguration over credentialFileName
         KubernetesClientConfiguration config;
