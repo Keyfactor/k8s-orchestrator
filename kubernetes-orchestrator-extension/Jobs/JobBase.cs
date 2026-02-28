@@ -1120,6 +1120,69 @@ public abstract class JobBase
     }
 
     /// <summary>
+    /// Resolves a PAM field with fallback key support.
+    /// Attempts to resolve from primary key, then fallback key if specified.
+    /// </summary>
+    /// <param name="primaryKey">Primary PAM field key (e.g., "ServerPassword").</param>
+    /// <param name="fallbackKey">Fallback PAM field key (e.g., "Server Password").</param>
+    /// <param name="currentValue">Current value to use if PAM resolution fails.</param>
+    /// <param name="defaultValue">Default value if all resolution attempts fail.</param>
+    /// <returns>The resolved value, or default if resolution fails.</returns>
+    private string ResolvePamFieldWithFallback(string primaryKey, string fallbackKey, string currentValue, string defaultValue = "")
+    {
+        try
+        {
+            Logger.LogInformation("Attempting to resolve '{PrimaryKey}' from store properties or PAM provider", primaryKey);
+            var resolved = PAMUtilities.ResolvePAMField(_resolver, Logger, primaryKey, currentValue);
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                Logger.LogInformation("{Key} resolved from PAM provider", primaryKey);
+                return resolved;
+            }
+
+            if (!string.IsNullOrEmpty(fallbackKey))
+            {
+                Logger.LogInformation("{PrimaryKey} not resolved, trying fallback key '{FallbackKey}'", primaryKey, fallbackKey);
+                resolved = PAMUtilities.ResolvePAMField(_resolver, Logger, fallbackKey, currentValue);
+                if (!string.IsNullOrEmpty(resolved))
+                {
+                    Logger.LogInformation("{Key} resolved from PAM provider using fallback key", fallbackKey);
+                    return resolved;
+                }
+            }
+
+            Logger.LogDebug("{Key} not resolved from PAM, using current/default value", primaryKey);
+            return string.IsNullOrEmpty(currentValue) ? defaultValue : currentValue;
+        }
+        catch (Exception e)
+        {
+            Logger.LogError("Error resolving PAM field '{Key}': {Message}", primaryKey, e.Message);
+            Logger.LogTrace("{Exception}", e.ToString());
+            return string.IsNullOrEmpty(currentValue) ? defaultValue : currentValue;
+        }
+    }
+
+    /// <summary>
+    /// Applies parsed store configuration to class properties.
+    /// </summary>
+    /// <param name="config">The parsed store configuration.</param>
+    private void ApplyParsedConfiguration(StoreConfiguration config)
+    {
+        KubeNamespace = config.KubeNamespace;
+        KubeSecretName = config.KubeSecretName;
+        KubeSecretType = config.KubeSecretType;
+        KubeSvcCreds = config.KubeSvcCreds;
+        PasswordIsSeparateSecret = config.PasswordIsSeparateSecret;
+        PasswordFieldName = config.PasswordFieldName;
+        StorePasswordPath = config.StorePasswordPath;
+        CertificateDataFieldName = config.CertificateDataFieldName;
+        PasswordIsK8SSecret = config.PasswordIsK8SSecret;
+        KubeSecretPassword = config.KubeSecretPassword;
+        SeparateChain = config.SeparateChain;
+        IncludeCertChain = config.IncludeCertChain;
+    }
+
+    /// <summary>
     /// Initializes job properties from the store properties dictionary.
     /// Extracts Kubernetes configuration (namespace, secret name, type, credentials),
     /// resolves PAM fields, and creates the Kubernetes client.
@@ -1141,225 +1204,31 @@ public abstract class JobBase
         }
 
 
-        // check if key is present and set values if not
+        // Parse all store properties using centralized parser
         try
         {
-            Logger.LogDebug("Setting K8S values from store properties");
-            Logger.LogTrace("Attempting to get KubeNamespace from storeProperties");
-            KubeNamespace = (storeProperties["KubeNamespace"]?.ToString())?.Trim();
-            Logger.LogDebug("KubeNamespace from store properties: '{Value}'", KubeNamespace ?? "(null)");
-
-            Logger.LogTrace("Attempting to get KubeSecretName from storeProperties");
-            KubeSecretName = (storeProperties["KubeSecretName"]?.ToString())?.Trim();
-            Logger.LogTrace("KubeSecretName retrieved: {Value}", KubeSecretName ?? "null");
-
-            // Derive KubeSecretType from Capability first (preferred method)
-            Logger.LogTrace("Attempting to derive KubeSecretType from Capability: {Capability}", Capability);
-            var derivedSecretType = DeriveSecretTypeFromCapability(Capability);
-            Logger.LogTrace("Derived KubeSecretType from Capability: {Value}", derivedSecretType ?? "null");
-
-            // Check if KubeSecretType is provided in store properties (deprecated)
-            string storePropertySecretType = (storeProperties["KubeSecretType"]?.ToString())?.Trim();
-            if (!string.IsNullOrEmpty(storePropertySecretType))
-            {
-                Logger.LogWarning(
-                    $"DEPRECATION WARNING: The 'KubeSecretType' store property is deprecated and will be removed in a future release. " +
-                    $"The secret type is now derived from the Capability. Property value '{storePropertySecretType}' will be ignored in favor of derived value '{derivedSecretType ?? "null"}'.");
-            }
-
-            // Use derived value if available, otherwise fall back to store property
-            KubeSecretType = derivedSecretType ?? storePropertySecretType;
-            Logger.LogTrace("Final KubeSecretType: {Value}", KubeSecretType ?? "null");
-
-            Logger.LogTrace("Attempting to get KubeSvcCreds from storeProperties");
-            KubeSvcCreds = storeProperties["KubeSvcCreds"];
-            Logger.LogTrace("KubeSvcCreds retrieved: {Present}", !string.IsNullOrEmpty(KubeSvcCreds));
-
-            // check if storeProperties contains PasswordIsSeparateSecret key and if it does, set PasswordIsSeparateSecret to the value of the key
-            if (storeProperties.ContainsKey("PasswordIsSeparateSecret"))
-            {
-                PasswordIsSeparateSecret = storeProperties["PasswordIsSeparateSecret"];
-            }
-            else
-            {
-                Logger.LogDebug("PasswordIsSeparateSecret not found in store properties");
-                PasswordIsSeparateSecret = false;
-            }
-
-            // check if storeProperties contains PasswordFieldName key and if it does, set PasswordFieldName to the value of the key
-            if (storeProperties.ContainsKey("PasswordFieldName"))
-            {
-                PasswordFieldName = storeProperties["PasswordFieldName"];
-            }
-            else
-            {
-                Logger.LogDebug("PasswordFieldName not found in store properties");
-                PasswordFieldName = "";
-            }
-
-            // check if storeProperties contains StorePasswordPath key and if it does, set StorePasswordPath to the value of the key
-            if (storeProperties.ContainsKey("StorePasswordPath"))
-            {
-                StorePasswordPath = storeProperties["StorePasswordPath"];
-            }
-            else
-            {
-                Logger.LogDebug("StorePasswordPath not found in store properties");
-                StorePasswordPath = "";
-            }
-
-            // check if storeProperties contains KubeSecretKey key and if it does, set KubeSecretKey to the value of the key
-            if (storeProperties.ContainsKey("KubeSecretKey"))
-            {
-                CertificateDataFieldName = storeProperties["KubeSecretKey"];
-            }
-            else
-            {
-                Logger.LogDebug("KubeSecretKey not found in store properties");
-                CertificateDataFieldName = "";
-            }
-            
-            if (storeProperties.ContainsKey("SeparateChain"))
-            {
-                SeparateChain = storeProperties["SeparateChain"];
-            }
-
-            if (storeProperties.ContainsKey("IncludeCertChain"))
-            {
-                IncludeCertChain = storeProperties["IncludeCertChain"];
-            }
-
-            // Validate conflicting configuration: SeparateChain=true requires IncludeCertChain=true
-            // If IncludeCertChain=false, there's no chain to separate, so SeparateChain is meaningless
-            if (SeparateChain && !IncludeCertChain)
-            {
-                Logger.LogWarning(
-                    "Invalid configuration: SeparateChain=true but IncludeCertChain=false. " +
-                    "Cannot separate a certificate chain that is not being included. " +
-                    "SeparateChain will be ignored and only the leaf certificate will be deployed");
-                SeparateChain = false;
-            }
+            Logger.LogDebug("Parsing store properties using centralized parser");
+            var config = _configParser.Parse(storeProperties, Capability);
+            ApplyParsedConfiguration(config);
+            Logger.LogDebug("KubeNamespace: '{Value}'", KubeNamespace ?? "(null)");
+            Logger.LogDebug("KubeSecretName: '{Value}'", KubeSecretName ?? "(null)");
+            Logger.LogDebug("KubeSecretType: '{Value}'", KubeSecretType ?? "(null)");
+            Logger.LogTrace("KubeSvcCreds present: {Present}", !string.IsNullOrEmpty(KubeSvcCreds));
         }
         catch (Exception ex)
         {
-            Logger.LogError($"CRITICAL ERROR while parsing store properties: {ex.Message}");
-            Logger.LogError($"Exception Type: {ex.GetType().FullName}");
-            Logger.LogError($"Stack Trace: {ex.StackTrace}");
+            Logger.LogError("CRITICAL ERROR while parsing store properties: {Message}", ex.Message);
+            Logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            Logger.LogTrace("{StackTrace}", ex.StackTrace);
             Logger.LogWarning("Setting KubeSecretType and KubeSvcCreds to empty strings");
             KubeSecretType = "";
             KubeSvcCreds = "";
         }
 
-        //check if storeProperties contains ServerUsername key
-        Logger.LogInformation("Attempting to resolve 'ServerUsername' from store properties or PAM provider");
-        var pamServerUsername =
-            PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerUsername", ServerUsername);
-        if (!string.IsNullOrEmpty(pamServerUsername))
-        {
-            Logger.LogInformation(
-                "ServerUsername resolved from PAM provider, setting 'ServerUsername' to resolved value");
-            Logger.LogTrace("PAMServerUsername: {Username}", pamServerUsername);
-            ServerUsername = pamServerUsername;
-        }
-        else
-        {
-            Logger.LogInformation(
-                "ServerUsername not resolved from PAM provider, attempting to resolve 'Server Username' from store properties");
-            pamServerUsername =
-                PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Username", ServerUsername);
-            if (!string.IsNullOrEmpty(pamServerUsername))
-            {
-                Logger.LogInformation(
-                    "ServerUsername resolved from store properties. Setting ServerUsername to resolved value");
-                Logger.LogTrace("PAMServerUsername: {Username}", pamServerUsername);
-                ServerUsername = pamServerUsername;
-            }
-        }
-
-        if (string.IsNullOrEmpty(ServerUsername))
-        {
-            Logger.LogInformation("ServerUsername is empty, setting 'ServerUsername' to default value: 'kubeconfig'");
-            ServerUsername = "kubeconfig";
-        }
-
-        // Check if ServerPassword is empty and resolve from store properties or PAM provider
-        try
-        {
-            Logger.LogInformation("Attempting to resolve 'ServerPassword' from store properties or PAM provider");
-            var pamServerPassword =
-                PAMUtilities.ResolvePAMField(_resolver, Logger, "ServerPassword", ServerPassword);
-            if (!string.IsNullOrEmpty(pamServerPassword))
-            {
-                Logger.LogInformation(
-                    "ServerPassword resolved from PAM provider, setting 'ServerPassword' to resolved value");
-                // Logger.LogTrace("PAMServerPassword: " + pamServerPassword);
-                ServerPassword = pamServerPassword;
-            }
-            else
-            {
-                Logger.LogInformation(
-                    "ServerPassword not resolved from PAM provider, attempting to resolve 'Server Password' from store properties");
-                pamServerPassword =
-                    PAMUtilities.ResolvePAMField(_resolver, Logger, "Server Password", ServerPassword);
-                if (!string.IsNullOrEmpty(pamServerPassword))
-                {
-                    Logger.LogInformation(
-                        "ServerPassword resolved from store properties, setting 'ServerPassword' to resolved value");
-                    // Logger.LogTrace("PAMServerPassword: " + pamServerPassword);
-                    ServerPassword = pamServerPassword;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            Logger.LogError(
-                "Unable to resolve 'ServerPassword' from store properties or PAM provider, defaulting to empty string");
-            ServerPassword = "";
-            Logger.LogError("{Message}", e.Message);
-            Logger.LogTrace("{Message}", e.ToString());
-            Logger.LogTrace("{Trace}", e.StackTrace);
-            // throw new ConfigurationException("Invalid configuration. ServerPassword not provided or is invalid");
-        }
-
-        try
-        {
-            Logger.LogInformation("Attempting to resolve 'StorePassword' from store properties or PAM provider");
-            var pamStorePassword =
-                PAMUtilities.ResolvePAMField(_resolver, Logger, "StorePassword", StorePassword);
-            if (!string.IsNullOrEmpty(pamStorePassword))
-            {
-                Logger.LogInformation(
-                    "StorePassword resolved from PAM provider, setting 'StorePassword' to resolved value");
-                StorePassword = pamStorePassword;
-            }
-            else
-            {
-                Logger.LogInformation(
-                    "StorePassword not resolved from PAM provider, attempting to resolve 'Store Password' from store properties");
-                pamStorePassword =
-                    PAMUtilities.ResolvePAMField(_resolver, Logger, "Store Password", StorePassword);
-                if (!string.IsNullOrEmpty(pamStorePassword))
-                {
-                    Logger.LogInformation(
-                        "StorePassword resolved from store properties, setting 'StorePassword' to resolved value");
-                    StorePassword = pamStorePassword;
-                }
-            }
-        }
-        catch (Exception e)
-        {
-            if (string.IsNullOrEmpty(StorePassword))
-            {
-                Logger.LogError(
-                    "Unable to resolve 'StorePassword' from store properties or PAM provider, defaulting to empty string");
-                StorePassword = "";
-            }
-
-            Logger.LogError("{Message}", e.Message);
-            Logger.LogTrace("{Message}", e.ToString());
-            Logger.LogTrace("{Trace}", e.StackTrace);
-            // throw new ConfigurationException("Invalid configuration. StorePassword not provided or is invalid");
-        }
+        // Resolve PAM fields using helper method with fallback support
+        ServerUsername = ResolvePamFieldWithFallback("ServerUsername", "Server Username", ServerUsername, "kubeconfig");
+        ServerPassword = ResolvePamFieldWithFallback("ServerPassword", "Server Password", ServerPassword, "");
+        StorePassword = ResolvePamFieldWithFallback("StorePassword", "Store Password", StorePassword, "");
 
         if (ServerUsername == "kubeconfig" || string.IsNullOrEmpty(ServerUsername))
         {

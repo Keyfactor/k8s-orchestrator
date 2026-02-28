@@ -50,6 +50,7 @@ public class KubeCertificateManagerClient
     private readonly KubeconfigParser _kubeconfigParser;
     private readonly KeystoreManager _keystoreManager;
     private readonly PasswordResolver _passwordResolver;
+    private readonly CertificateOperations _certificateOperations;
     private SecretOperations _secretOperations;
 
     /// <summary>
@@ -63,6 +64,7 @@ public class KubeCertificateManagerClient
         _kubeconfigParser = new KubeconfigParser(_logger);
         _keystoreManager = new KeystoreManager(_logger);
         _passwordResolver = new PasswordResolver(_logger);
+        _certificateOperations = new CertificateOperations(_logger);
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("Kubeconfig: {Kubeconfig}", LoggingUtilities.RedactKubeconfig(kubeconfig));
         _logger.LogTrace("UseSSL: {UseSSL}", useSSL);
@@ -1853,42 +1855,14 @@ public class KubeCertificateManagerClient
     /// </summary>
     /// <param name="derString">Base64-encoded DER certificate data.</param>
     /// <returns>Parsed X509Certificate object.</returns>
-    public X509Certificate ReadDerCertificate(string derString)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        var derData = Convert.FromBase64String(derString);
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(derData);
-        _logger.LogDebug("Parsed DER certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
-        _logger.MethodExit(LogLevel.Debug);
-        return cert;
-    }
+    public X509Certificate ReadDerCertificate(string derString) => _certificateOperations.ReadDerCertificate(derString);
 
     /// <summary>
     /// Reads a PEM-encoded certificate from a string.
     /// </summary>
     /// <param name="pemString">PEM-encoded certificate string.</param>
     /// <returns>Parsed X509Certificate object, or null if not a valid certificate.</returns>
-    public X509Certificate ReadPemCertificate(string pemString)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        using var reader = new StringReader(pemString);
-        var pemReader = new PemReader(reader);
-        var pemObject = pemReader.ReadPemObject();
-        if (pemObject is not { Type: "CERTIFICATE" })
-        {
-            _logger.LogDebug("PEM object is not a certificate, returning null");
-            _logger.MethodExit(LogLevel.Debug);
-            return null;
-        }
-
-        var certificateBytes = pemObject.Content;
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(certificateBytes);
-        _logger.LogDebug("Parsed PEM certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
-        _logger.MethodExit(LogLevel.Debug);
-        return cert;
-    }
+    public X509Certificate ReadPemCertificate(string pemString) => _certificateOperations.ReadPemCertificate(pemString);
 
     /// <summary>
     /// Extracts a private key from a PKCS12 store and converts it to PEM format.
@@ -1900,75 +1874,21 @@ public class KubeCertificateManagerClient
     /// <returns>PEM-formatted private key string.</returns>
     /// <exception cref="Exception">Thrown when no private key is found or key type is unsupported.</exception>
     public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password, PrivateKeyFormat format = PrivateKeyFormat.Pkcs8)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        // Get the first private key entry
-        var alias = store.Aliases.FirstOrDefault(entryAlias => store.IsKeyEntry(entryAlias));
-
-        if (alias == null)
-        {
-            _logger.LogError("No private key found in the provided PFX/P12 file");
-            throw new Exception("No private key found in the provided PFX/P12 file.");
-        }
-
-        _logger.LogDebug("Found private key with alias: {Alias}", alias);
-        // Get the private key
-        var keyEntry = store.GetKey(alias);
-        var privateKeyParams = keyEntry.Key;
-
-        var keyTypeName = PrivateKeyFormatUtilities.GetAlgorithmName(privateKeyParams);
-        _logger.LogDebug("Private key type: {KeyType}, requested format: {Format}", keyTypeName, format);
-
-        // Use PrivateKeyFormatUtilities to export in the requested format
-        // It will automatically fall back to PKCS8 if PKCS1 is not supported for the key type
-        var pem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(privateKeyParams, format);
-
-        _logger.LogTrace("Private key: {Key}", LoggingUtilities.RedactPrivateKeyPem(pem));
-        _logger.MethodExit(LogLevel.Debug);
-        return pem;
-    }
+        => _certificateOperations.ExtractPrivateKeyAsPem(store, password, format);
 
     /// <summary>
     /// Loads a certificate chain from PEM data containing multiple certificates.
     /// </summary>
     /// <param name="pemData">PEM string potentially containing multiple certificates.</param>
     /// <returns>List of parsed X509Certificate objects.</returns>
-    public List<X509Certificate> LoadCertificateChain(string pemData)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        var pemReader = new PemReader(new StringReader(pemData));
-        var certificates = new List<X509Certificate>();
-
-        PemObject pemObject;
-        while ((pemObject = pemReader.ReadPemObject()) != null)
-            if (pemObject.Type == "CERTIFICATE")
-            {
-                var certificateParser = new X509CertificateParser();
-                var certificate = certificateParser.ReadCertificate(pemObject.Content);
-                certificates.Add(certificate);
-            }
-
-        _logger.LogDebug("Loaded {Count} certificates from chain", certificates.Count);
-        _logger.MethodExit(LogLevel.Debug);
-        return certificates;
-    }
+    public List<X509Certificate> LoadCertificateChain(string pemData) => _certificateOperations.LoadCertificateChain(pemData);
 
     /// <summary>
     /// Converts a BouncyCastle X509Certificate to PEM format.
     /// </summary>
     /// <param name="certificate">The certificate to convert.</param>
     /// <returns>PEM-formatted certificate string.</returns>
-    public string ConvertToPem(X509Certificate certificate)
-    {
-        _logger.MethodEntry(LogLevel.Debug);
-        var pemObject = new PemObject("CERTIFICATE", certificate.GetEncoded());
-        using var stringWriter = new StringWriter();
-        var pemWriter = new PemWriter(stringWriter);
-        pemWriter.WriteObject(pemObject);
-        pemWriter.Writer.Flush();
-        _logger.MethodExit(LogLevel.Debug);
-        return stringWriter.ToString();
-    }
+    public string ConvertToPem(X509Certificate certificate) => _certificateOperations.ConvertToPem(certificate);
 
     /// <summary>
     /// Discovers secrets across namespaces in the Kubernetes cluster.
