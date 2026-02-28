@@ -1203,7 +1203,7 @@ public class KubeCertificateManagerClient
         var passwordSecretNamespace = splitPasswordPath[0];
         _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
             passwordSecretName, passwordSecretNamespace);
-        var passwordSecretResponse = Client.CoreV1.ReadNamespacedSecret(secretName, passwordSecretNamespace);
+        var passwordSecretResponse = _secretOperations.GetSecret(secretName, passwordSecretNamespace);
         _logger.LogDebug("Successfully found secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
             passwordSecretName, passwordSecretNamespace);
         _logger.MethodExit();
@@ -1215,15 +1215,14 @@ public class KubeCertificateManagerClient
     {
         _logger.LogDebug("Adding password secret path to secret...");
         if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-        // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-        // Lookup password secret path on cluster to see if it exists
-        _logger.LogDebug("Attempting to lookup password secret path on cluster...");
+        // Parse password secret path (namespace/secretName)
         var splitPasswordPath = passwordSecretPath.Split("/");
-        // Assume secret pattern is namespace/secretName
-        var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
+        var passwordSecretName = splitPasswordPath[^1];
         var passwordSecretNamespace = splitPasswordPath[0];
-        _logger.LogDebug($"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
+        _logger.LogDebug("Creating/updating password secret {SecretName} in namespace {Namespace}",
+            passwordSecretName, passwordSecretNamespace);
+
         var passwordSecretData = new V1Secret
         {
             Metadata = new V1ObjectMeta
@@ -1236,27 +1235,9 @@ public class KubeCertificateManagerClient
                 { passwordFieldName, Encoding.UTF8.GetBytes(password) }
             }
         };
-        try
-        {
-            var passwordSecretResponse =
-                Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-            return passwordSecretResponse;
-        }
-        catch (HttpOperationException e)
-        {
-            _logger.LogError($"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-            _logger.LogError(e.Message);
-            // Attempt to create a new secret
-            _logger.LogDebug(
-                $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
 
-            _logger.LogDebug("Calling CreateNamespacedSecret()");
-            var passwordSecretResponse =
-                Client.CoreV1.ReplaceNamespacedSecret(passwordSecretData, secretName, passwordSecretNamespace);
-            _logger.LogDebug("Finished calling CreateNamespacedSecret()");
-            _logger.LogDebug("Successfully created secret " + passwordSecretPath);
-            return passwordSecretResponse;
-        }
+        // Use SecretOperations for upsert
+        return _secretOperations.CreateOrUpdateSecret(passwordSecretData, passwordSecretNamespace);
     }
 
     private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem,
@@ -1571,10 +1552,9 @@ public class KubeCertificateManagerClient
 
     public V1Secret GetCertificateStoreSecret(string secretName, string namespaceName)
     {
-        _logger.LogTrace("Entered GetCertificateStoreSecret()");
-        _logger.LogTrace("Calling ReadNamespacedSecret()");
-        _logger.LogDebug($"Attempting to read secret {secretName} in namespace {namespaceName} from {GetHost()}");
-        return Client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+        _logger.LogDebug("Reading secret {SecretName} in namespace {Namespace} from {Host}",
+            secretName, namespaceName, GetHost());
+        return _secretOperations.GetSecret(secretName, namespaceName);
     }
 
     private string CleanOpaqueStore(string existingEntries, string pemString)
@@ -1727,46 +1707,25 @@ public class KubeCertificateManagerClient
         string alias)
     {
         _logger.LogTrace("Entered DeleteCertificateStoreSecret()");
-        _logger.LogTrace("secretName: " + secretName);
-        _logger.LogTrace("namespaceName: " + namespaceName);
-        _logger.LogTrace("storeType: " + storeType);
-        _logger.LogTrace("alias: " + alias);
-        _logger.LogTrace("Entering switch statement to determine which delete method to use.");
+        _logger.LogDebug("Deleting secret {SecretName} in namespace {Namespace}, type: {StoreType}",
+            secretName, namespaceName, storeType);
+
         switch (storeType)
         {
             case "secret":
             case "opaque":
-                // check the current inventory and only remove the cert if it is found else throw not found exception
-                _logger.LogDebug(
-                    $"Attempting to delete certificate from opaque secret {secretName} in namespace {namespaceName} on {GetHost()}");
-                _logger.LogTrace("Calling DeleteCertificateStoreSecret()");
-                // _ = DeleteCertificateStoreSecret(secretName, namespaceName, alias);
-                return Client.CoreV1.DeleteNamespacedSecret(
-                    secretName,
-                    namespaceName,
-                    new V1DeleteOptions()
-                );
-            // Logger.LogTrace("Finished calling DeleteCertificateStoreSecret()");
-            // return new V1Status("v1", 0, status: "Success");
             case "tls_secret":
             case "tls":
-                _logger.LogDebug($"Deleting TLS secret {secretName} in namespace {namespaceName} on {GetHost()}");
-                _logger.LogTrace("Calling DeleteNamespacedSecret()");
-                return Client.CoreV1.DeleteNamespacedSecret(
-                    secretName,
-                    namespaceName,
-                    new V1DeleteOptions()
-                );
+                _logger.LogDebug("Deleting secret via SecretOperations");
+                return _secretOperations.DeleteSecret(secretName, namespaceName);
+
             case "certificate":
-                _logger.LogDebug($"Deleting Certificate Signing Request {secretName} on {GetHost()}");
-                _logger.LogTrace("Calling CertificatesV1.DeleteCertificateSigningRequest()");
-                _ = Client.CertificatesV1.DeleteCertificateSigningRequest(
-                    secretName,
-                    new V1DeleteOptions()
-                );
+                _logger.LogDebug("Deleting Certificate Signing Request {SecretName} on {Host}", secretName, GetHost());
+                _ = Client.CertificatesV1.DeleteCertificateSigningRequest(secretName, new V1DeleteOptions());
                 var errMsg = "DeleteCertificateStoreSecret not implemented for 'certificate' type.";
                 _logger.LogError(errMsg);
                 throw new NotImplementedException(errMsg);
+
             default:
                 var dErrMsg = $"DeleteCertificateStoreSecret not implemented for type '{storeType}'.";
                 _logger.LogError(dErrMsg);
@@ -2131,7 +2090,7 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Discovering secrets in namespace: {Namespace}", namespaceName);
 
         var secrets = RetryPolicy(() =>
-            Client.CoreV1.ListNamespacedSecret(namespaceName).Items);
+            _secretOperations.ListSecrets(namespaceName).Items);
 
         foreach (var secret in secrets)
             ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations);
@@ -2588,7 +2547,7 @@ public class KubeCertificateManagerClient
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("kubeSecretName: {Name}", kubeSecretName);
         _logger.LogTrace("kubeNamespace: {Namespace}", kubeNamespace);
-        var s1 = new V1Secret
+        var secret = new V1Secret
         {
             ApiVersion = "v1",
             Kind = "Secret",
@@ -2598,36 +2557,19 @@ public class KubeCertificateManagerClient
                 Name = kubeSecretName,
                 NamespaceProperty = kubeNamespace
             },
-            Data = k8SData.Secret?.Data //This preserves any existing data/fields we didn't modify
+            Data = k8SData.Secret?.Data // Preserves any existing data/fields we didn't modify
         };
 
-
         // Update the fields/data we did modify
-        s1.Data ??= new Dictionary<string, byte[]>();
+        secret.Data ??= new Dictionary<string, byte[]>();
         foreach (var inventoryItem in k8SData.Inventory)
         {
             _logger.LogTrace("Adding inventory item {Key} to secret", inventoryItem.Key);
-            s1.Data[inventoryItem.Key] = inventoryItem.Value;
+            secret.Data[inventoryItem.Key] = inventoryItem.Value;
         }
 
-        // Create secret if it doesn't exist
-        try
-        {
-            _logger.LogDebug("Checking if secret {Name} exists in namespace {Namespace}", kubeSecretName,
-                kubeNamespace);
-            Client.CoreV1.ReadNamespacedSecret(kubeSecretName, kubeNamespace);
-        }
-        catch (HttpOperationException e)
-        {
-            if (e.Response.StatusCode == HttpStatusCode.NotFound)
-                return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
-            _logger.LogError("Error checking if secret {Name} exists in namespace {Namespace}: {Message}",
-                kubeSecretName, kubeNamespace, e.Message);
-        }
-
-        // Replace existing secret
-        _logger.LogDebug("Replacing secret {Name} in namespace {Namespace}", kubeSecretName, kubeNamespace);
-        var result = Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        // Use SecretOperations for upsert
+        var result = _secretOperations.CreateOrUpdateSecret(secret, kubeNamespace);
         _logger.MethodExit(LogLevel.Debug);
         return result;
     }
@@ -2644,8 +2586,7 @@ public class KubeCertificateManagerClient
     {
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace("SecretName: {Name}, Namespace: {Namespace}", kubeSecretName, kubeNamespace);
-        // Create V1Secret object and replace existing secret
-        var s1 = new V1Secret
+        var secret = new V1Secret
         {
             ApiVersion = "v1",
             Kind = "Secret",
@@ -2658,23 +2599,12 @@ public class KubeCertificateManagerClient
             Data = k8SData.Secret?.Data
         };
 
-        s1.Data ??= new Dictionary<string, byte[]>();
-        foreach (var inventoryItem in k8SData.Inventory) s1.Data[inventoryItem.Key] = inventoryItem.Value;
+        secret.Data ??= new Dictionary<string, byte[]>();
+        foreach (var inventoryItem in k8SData.Inventory)
+            secret.Data[inventoryItem.Key] = inventoryItem.Value;
 
-        // Create secret if it doesn't exist
-        try
-        {
-            Client.CoreV1.ReadNamespacedSecret(kubeSecretName, kubeNamespace);
-        }
-        catch (HttpOperationException e)
-        {
-            if (e.Response.StatusCode == HttpStatusCode.NotFound)
-                return Client.CoreV1.CreateNamespacedSecret(s1, kubeNamespace);
-        }
-
-        // Replace existing secret
-        _logger.LogDebug("Replacing secret {Name} in namespace {Namespace}", kubeSecretName, kubeNamespace);
-        var result = Client.CoreV1.ReplaceNamespacedSecret(s1, kubeSecretName, kubeNamespace);
+        // Use SecretOperations for upsert
+        var result = _secretOperations.CreateOrUpdateSecret(secret, kubeNamespace);
         _logger.MethodExit(LogLevel.Debug);
         return result;
     }
