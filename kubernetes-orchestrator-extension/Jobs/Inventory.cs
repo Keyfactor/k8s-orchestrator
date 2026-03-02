@@ -78,6 +78,45 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
     /// <summary>
+    /// Ensures KubeNamespace and KubeSecretName are populated.
+    /// Falls back to parsing from StorePath if not already set.
+    /// </summary>
+    /// <remarks>
+    /// This is a safety net for cases where InitializeStore didn't fully resolve the path.
+    /// The logic:
+    /// 1. If namespace is empty, try StorePath.Split("/").First()
+    /// 2. If that equals secret name (common when path is just "secretname"), default to "default"
+    /// 3. If secret name is empty, try StorePath.Split("/").Last()
+    /// </remarks>
+    private void EnsureNamespaceAndSecretResolved()
+    {
+        if (string.IsNullOrEmpty(KubeNamespace))
+        {
+            Logger.LogDebug("KubeNamespace is empty, attempting to parse from StorePath");
+            if (!string.IsNullOrEmpty(StorePath))
+            {
+                KubeNamespace = StorePath.Split("/").First();
+                if (KubeNamespace == KubeSecretName)
+                {
+                    Logger.LogDebug("Namespace equals SecretName, defaulting to 'default'");
+                    KubeNamespace = "default";
+                }
+            }
+            else
+            {
+                KubeNamespace = "default";
+            }
+            Logger.LogDebug("Resolved KubeNamespace: {Namespace}", KubeNamespace);
+        }
+
+        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
+        {
+            KubeSecretName = StorePath.Split("/").Last();
+            Logger.LogDebug("Resolved KubeSecretName: {SecretName}", KubeSecretName);
+        }
+    }
+
+    /// <summary>
     /// Main entry point for the inventory job. Processes the job configuration and returns
     /// all certificates found in the specified Kubernetes certificate store.
     /// </summary>
@@ -125,8 +164,8 @@ public class Inventory : JobBase, IInventoryJobExtension
             // Store the original KubeSecretName for K8SCert cluster-wide mode detection
             _originalKubeSecretName = originalKubeSecretName;
 
-            Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job " + config.JobId);
-            Logger.LogInformation($"Inventory for store type: {config.Capability}");
+            Logger.LogInformation("Begin INVENTORY for K8S Orchestrator Extension for job {JobId}", config.JobId);
+            Logger.LogInformation("Inventory for store type: {Capability}", config.Capability);
 
             Logger.LogTrace("KubeClient is null: {IsNull}", KubeClient == null);
             if (KubeClient == null)
@@ -239,7 +278,7 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "csrs":
                 case "certs":
                 case "certificates":
-                    Logger.LogInformation("Inventorying certificates using " + CertAllowedKeys);
+                    Logger.LogInformation("Inventorying certificates using {AllowedKeys}", CertAllowedKeys);
                     return HandleCertificate(config.JobHistoryId, submitInventory);
                 case "pkcs12":
                 case "p12":
@@ -1176,34 +1215,10 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
 
-        if (string.IsNullOrEmpty(KubeNamespace))
-        {
-            Logger.LogWarning("KubeNamespace is null or empty. Attempting to parse from StorePath...");
-            if (!string.IsNullOrEmpty(StorePath))
-            {
-                KubeNamespace = StorePath.Split("/").First();
-                Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
-                if (KubeNamespace == KubeSecretName)
-                {
-                    Logger.LogWarning("KubeNamespace was equal to KubeSecretName. Setting KubeNamespace to 'default'...");
-                    KubeNamespace = "default";
-                }
-            }
-            else
-            {
-                Logger.LogWarning("StorePath was null or empty. Setting KubeNamespace to 'default'...");
-                KubeNamespace = "default";
-            }
-        }
+        EnsureNamespaceAndSecretResolved();
 
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogWarning("KubeSecretName is null or empty. Attempting to parse from StorePath...");
-            KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        }
-
-        Logger.LogDebug($"Querying Kubernetes opaque secret API for {KubeSecretName} in namespace {KubeNamespace}...");
+        Logger.LogDebug("Querying Kubernetes opaque secret API for {SecretName} in namespace {Namespace}",
+            KubeSecretName, KubeNamespace);
         try
         {
             var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
@@ -1484,38 +1499,11 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
 
-        if (string.IsNullOrEmpty(KubeNamespace))
-        {
-            Logger.LogWarning("KubeNamespace is null or empty.  Attempting to parse from StorePath...");
-            if (!string.IsNullOrEmpty(StorePath))
-            {
-                Logger.LogTrace("StorePath was not null or empty.  Parsing KubeNamespace from StorePath...");
-                KubeNamespace = StorePath.Split("/").First();
-                Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
-                if (KubeNamespace == KubeSecretName)
-                {
-                    Logger.LogWarning(
-                        "KubeNamespace was equal to KubeSecretName.  Setting KubeNamespace to 'default' for job id " +
-                        jobId + "...");
-                    KubeNamespace = "default";
-                }
-            }
-            else
-            {
-                Logger.LogWarning("StorePath was null or empty.  Setting KubeNamespace to 'default' for job id {JobId}...", jobId);
-                KubeNamespace = "default";
-            }
-        }
-
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogWarning("KubeSecretName is null or empty.  Attempting to parse from StorePath...");
-            KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        }
+        EnsureNamespaceAndSecretResolved();
 
         Logger.LogDebug(
-            $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}...");
+            "Querying Kubernetes {SecretType} API for {SecretName} in namespace {Namespace} on host {Host}",
+            KubeSecretType, KubeSecretName, KubeNamespace, KubeClient.GetHost());
         Logger.LogTrace("Entering try block for HandleTlsSecretWithPrivateKeyStatus...");
         try
         {
@@ -1687,34 +1675,10 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
 
-        if (string.IsNullOrEmpty(KubeNamespace))
-        {
-            Logger.LogWarning("KubeNamespace is null or empty. Attempting to parse from StorePath...");
-            if (!string.IsNullOrEmpty(StorePath))
-            {
-                KubeNamespace = StorePath.Split("/").First();
-                Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
-                if (KubeNamespace == KubeSecretName)
-                {
-                    Logger.LogWarning("KubeNamespace was equal to KubeSecretName. Setting KubeNamespace to 'default'...");
-                    KubeNamespace = "default";
-                }
-            }
-            else
-            {
-                Logger.LogWarning("StorePath was null or empty. Setting KubeNamespace to 'default'...");
-                KubeNamespace = "default";
-            }
-        }
+        EnsureNamespaceAndSecretResolved();
 
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogWarning("KubeSecretName is null or empty. Attempting to parse from StorePath...");
-            KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        }
-
-        Logger.LogDebug($"Querying Kubernetes opaque secret API for {KubeSecretName} in namespace {KubeNamespace}...");
+        Logger.LogDebug("Querying Kubernetes opaque secret API for {SecretName} in namespace {Namespace}",
+            KubeSecretName, KubeNamespace);
         try
         {
             var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
@@ -1874,38 +1838,11 @@ public class Inventory : JobBase, IInventoryJobExtension
         Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
         Logger.LogTrace("StorePath: {StorePath}", StorePath);
 
-        if (string.IsNullOrEmpty(KubeNamespace))
-        {
-            Logger.LogWarning("KubeNamespace is null or empty.  Attempting to parse from StorePath...");
-            if (!string.IsNullOrEmpty(StorePath))
-            {
-                Logger.LogTrace("StorePath was not null or empty.  Parsing KubeNamespace from StorePath...");
-                KubeNamespace = StorePath.Split("/").First();
-                Logger.LogTrace("KubeNamespace: {KubeNamespace}", KubeNamespace);
-                if (KubeNamespace == KubeSecretName)
-                {
-                    Logger.LogWarning(
-                        "KubeNamespace was equal to KubeSecretName.  Setting KubeNamespace to 'default' for job id " +
-                        jobId + "...");
-                    KubeNamespace = "default";
-                }
-            }
-            else
-            {
-                Logger.LogWarning("StorePath was null or empty.  Setting KubeNamespace to 'default' for job id {JobId}...", jobId);
-                KubeNamespace = "default";
-            }
-        }
-
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogWarning("KubeSecretName is null or empty.  Attempting to parse from StorePath...");
-            KubeSecretName = StorePath.Split("/").Last();
-            Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        }
+        EnsureNamespaceAndSecretResolved();
 
         Logger.LogDebug(
-            $"Querying Kubernetes {KubeSecretType} API for {KubeSecretName} in namespace {KubeNamespace} on host {KubeClient.GetHost()}...");
+            "Querying Kubernetes {SecretType} API for {SecretName} in namespace {Namespace} on host {Host}",
+            KubeSecretType, KubeSecretName, KubeNamespace, KubeClient.GetHost());
         var hasPrivateKey = true;
         Logger.LogTrace("Entering try block for HandleTlsSecret...");
         try

@@ -236,6 +236,9 @@ public abstract class JobBase
     /// <summary>Parser for extracting store configuration from properties.</summary>
     private StoreConfigurationParser _configParser;
 
+    /// <summary>Resolver for parsing store paths into namespace/secret components.</summary>
+    private StorePathResolver _storePathResolver;
+
     static JobBase()
     {
         CertAllowedKeys = new[] { "cert", "csr" };
@@ -900,217 +903,26 @@ public abstract class JobBase
     protected string ResolveStorePath(string spath)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
-        Logger.LogDebug("Resolving store path: {StorePath}", spath);
-        Logger.LogTrace("Store path: {StorePath}", spath);
 
-        Logger.LogTrace("Attempting to split store path by '/'");
-        var sPathParts = spath.Split("/");
-        Logger.LogTrace("Split count: {Count}", sPathParts.Length);
+        // Initialize the resolver if not already done
+        _storePathResolver ??= new StorePathResolver(Logger);
 
-        switch (sPathParts.Length)
+        // Delegate to the service for path resolution
+        var result = _storePathResolver.Resolve(spath, Capability, KubeNamespace, KubeSecretName);
+
+        // Apply the resolved values
+        KubeNamespace = result.Namespace;
+        KubeSecretName = result.SecretName;
+
+        // Log any warnings from the resolution
+        if (!string.IsNullOrEmpty(result.Warning))
         {
-            case 1 when IsNamespaceStore(Capability):
-                KubeSecretName = "";
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogInformation(
-                        "Store is of type `K8SNS` and `StorePath` is length 1; `KubeNamespace` is empty, setting `KubeNamespace` to `StorePath` value `{StorePath}`",
-                        sPathParts[0]);
-                    KubeNamespace = sPathParts[0];
-                }
-                else
-                {
-                    Logger.LogInformation(
-                        "Store is of type `K8SNS` and `StorePath` is length 1; `KubeNamespace` is already set to `{KubeNamespace}`, ignoring `StorePath` value `{StorePath}`",
-                        KubeNamespace, sPathParts[0]);
-                }
-                break;
-            case 1 when IsClusterStore(Capability):
-                Logger.LogInformation(
-                    "Store is of type `K8SCluster` path is 1 part and capability is cluster, assuming that store path is the cluster name and setting 'KubeSecretName' and 'KubeNamespace' equal empty");
-                if (!string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogWarning(
-                        "`KubeSecretName` is not a valid parameter for store type `K8SCluster` and will be set to empty");
-                    KubeSecretName = "";
-                }
+            Logger.LogWarning("{Warning}", result.Warning);
+        }
 
-                if (!string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogWarning(
-                        "`KubeNamespace` is not a valid parameter for store type `K8SCluster` and will be set to empty");
-                    KubeNamespace = "";
-                }
-
-                break;
-            case 1:
-                if (string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogInformation(
-                        "`StorePath`: `{StorePath}` is 1 part, assuming that it is the k8s secret name and setting 'KubeSecretName' to `{StorePath}`",
-                        sPathParts[0], sPathParts[0]);
-                    KubeSecretName = sPathParts[0];
-                }
-                else
-                {
-                    Logger.LogInformation(
-                        "`StorePath`: `{StorePath}` is 1 part and `KubeSecretName` is not empty, `StorePath` will be ignored",
-                        spath);
-                }
-
-                break;
-            case 2 when IsClusterStore(Capability):
-                Logger.LogWarning(
-                    "`StorePath`: `{StorePath}` is 2 parts this is not a valid combination for `K8SCluster` and will be ignored",
-                    spath);
-                break;
-            case 2 when IsNamespaceStore(Capability):
-                var nsPrefix = sPathParts[0];
-                Logger.LogTrace("nsPrefix: {NsPrefix}", nsPrefix);
-                var nsName = sPathParts[1];
-                Logger.LogTrace("nsName: {NsName}", nsName);
-
-                Logger.LogInformation(
-                    "`StorePath`: `{StorePath}` is 2 parts and store type is `K8SNS`, assuming that store path pattern is either `<cluster_name>/<namespace_name>` or `namespace/<namespace_name>`",
-                    spath);
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogInformation("`KubeNamespace` is empty, setting `KubeNamespace` to `{Namespace}`", nsName);
-                    KubeNamespace = nsName;
-                }
-                else
-                {
-                    Logger.LogInformation(
-                        "`KubeNamespace` parameter is not empty, ignoring `StorePath` value `{StorePath}`", spath);
-                }
-
-                break;
-            case 2:
-                Logger.LogInformation(
-                    "`StorePath`: `{StorePath}` is 2 parts, assuming that store path pattern is the `<cluster>/<secret_name>` ",
-                    spath);
-                var kNs = sPathParts[0];
-                Logger.LogTrace("kNs: {KubeNamespace}", kNs);
-                var kSn = sPathParts[1];
-                Logger.LogTrace("kSn: {KubeSecretName}", kSn);
-
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogInformation("`KubeNamespace` is not set, setting `KubeNamespace` to `{Namespace}`", kNs);
-                    KubeNamespace = kNs;
-                }
-                else
-                {
-                    Logger.LogInformation("`KubeNamespace` is set, ignoring `StorePath` value `{StorePath}`", kNs);
-                }
-
-                if (string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogInformation("`KubeSecretName` is not set, setting `KubeSecretName` to `{Secret}`", kSn);
-                    KubeSecretName = kSn;
-                }
-                else
-                {
-                    Logger.LogInformation("`KubeSecretName` is set, ignoring `StorePath` value `{StorePath}`", kSn);
-                }
-
-                break;
-            case 3 when IsClusterStore(Capability):
-                Logger.LogError(
-                    "`StorePath`: `{StorePath}` is 3 parts and store type is `K8SCluster`, this is not a valid combination and `StorePath` will be ignored",
-                    spath);
-                break;
-            case 3 when IsNamespaceStore(Capability):
-                Logger.LogInformation(
-                    "`StorePath`: `{StorePath}` is 3 parts and store type is `K8SNS`, assuming that store path pattern is `<cluster>/namespace/<namespace_name>`",
-                    spath);
-                var nsCluster = sPathParts[0];
-                Logger.LogTrace("nsCluster: {NsCluster}", nsCluster);
-                var nsClarifier = sPathParts[1];
-                Logger.LogTrace("nsClarifier: {NsClarifier}", nsClarifier);
-                var nsName3 = sPathParts[2];
-                Logger.LogTrace("nsName3: {NsName3}", nsName3);
-
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogInformation("`KubeNamespace` is not set, setting `KubeNamespace` to `{Namespace}`",
-                        nsName3);
-                    KubeNamespace = nsName3;
-                }
-                else
-                {
-                    Logger.LogInformation("`KubeNamespace` is set, ignoring `StorePath` value `{StorePath}`", spath);
-                }
-
-                if (!string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogWarning(
-                        "`KubeSecretName` parameter is not empty, but is not supported for `K8SNS` store type and will be ignored");
-                    KubeSecretName = "";
-                }
-
-                break;
-            case 3:
-                Logger.LogInformation(
-                    "Store path is 3 parts assuming that it is the '<cluster_name>/<namespace_name>/<secret_name>`");
-                var kH = sPathParts[0];
-                Logger.LogTrace("kH: {KubeHost}", kH);
-                var kN = sPathParts[1];
-                Logger.LogTrace("kN: {KubeNamespace}", kN);
-                var kS = sPathParts[2];
-                Logger.LogTrace("kS: {KubeSecretName}", kS);
-
-                if (kN is "secret" or "secrets" or "tls" or "certificate" or "namespace")
-                {
-                    Logger.LogInformation(
-                        "Store path is 3 parts and the second part '{Keyword}' is a reserved keyword, " +
-                        "re-interpreting as '<namespace_name>/{Keyword}/<secret_name>' pattern",
-                        kN, kN);
-                    kN = sPathParts[0];
-                    kS = sPathParts[2];
-                }
-
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogTrace("No 'KubeNamespace' set, setting 'KubeNamespace' to store path");
-                    KubeNamespace = kN;
-                }
-
-                if (string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogTrace("No 'KubeSecretName' set, setting 'KubeSecretName' to store path");
-                    KubeSecretName = kS;
-                }
-
-                break;
-            case 4 when Capability.Contains("Cluster") || Capability.Contains("NS"):
-                Logger.LogError("Store path is 4 parts and capability is {Capability}. This is not a valid combination",
-                    Capability);
-                break;
-            case 4:
-                Logger.LogTrace(
-                    "Store path is 4 parts assuming that it is the cluster/namespace/secret type/secret name");
-                var kHN = sPathParts[0];
-                var kNN = sPathParts[1];
-                var kST = sPathParts[2];
-                var kSN = sPathParts[3];
-                if (string.IsNullOrEmpty(KubeNamespace))
-                {
-                    Logger.LogTrace("No 'KubeNamespace' set, setting 'KubeNamespace' to store path");
-                    KubeNamespace = kNN;
-                }
-
-                if (string.IsNullOrEmpty(KubeSecretName))
-                {
-                    Logger.LogTrace("No 'KubeSecretName' set, setting 'KubeSecretName' to store path");
-                    KubeSecretName = kSN;
-                }
-
-                break;
-            default:
-                Logger.LogWarning("Unable to resolve store path, please check the store path and try again");
-                //todo: does anything need to be handled because of this error?
-                break;
+        if (!result.Success)
+        {
+            Logger.LogError("Failed to resolve store path: {StorePath}", spath);
         }
 
         var resolvedPath = GetStorePath();
@@ -1242,10 +1054,11 @@ public abstract class JobBase
             }
             catch (Exception ex)
             {
-                Logger.LogError($"CRITICAL ERROR setting KubeSvcCreds: {ex.Message}");
-                Logger.LogError($"storeProperties is null: {storeProperties == null}");
-                var propsType = storeProperties != null ? storeProperties.GetType().FullName : "null";
-                Logger.LogError($"storeProperties type: {propsType}");
+                var isNull = (bool)(storeProperties == null);
+                var propsType = (string)(storeProperties != null ? storeProperties.GetType().FullName : "null");
+                Logger.LogError("CRITICAL ERROR setting KubeSvcCreds: {Message}", ex.Message);
+                Logger.LogError("storeProperties is null: {IsNull}", isNull);
+                Logger.LogError("storeProperties type: {Type}", propsType);
                 throw;
             }
         }
@@ -1261,8 +1074,24 @@ public abstract class JobBase
         // Apply keystore-specific defaults using centralized configuration parser
         ApplyKeystoreDefaultsFromParser(storeProperties);
 
+        // Initialize the Kubernetes client
+        InitializeKubeClient();
+
+        // Resolve store path and apply namespace defaults
+        ResolveStorePathAndApplyDefaults();
+
+        Logger.MethodExit(MsLogLevel.Debug);
+    }
+
+    /// <summary>
+    /// Initializes the Kubernetes client and retrieves cluster information.
+    /// </summary>
+    /// <exception cref="ConfigurationException">Thrown when client creation fails.</exception>
+    private void InitializeKubeClient()
+    {
         Logger.LogTrace("Creating new KubeCertificateManagerClient object");
         Logger.LogTrace("KubeSvcCreds length: {Length}", KubeSvcCreds?.Length ?? 0);
+
         try
         {
             KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
@@ -1270,64 +1099,56 @@ public abstract class JobBase
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "CRITICAL ERROR creating KubeCertificateManagerClient: {Message}", ex.Message);
-            Logger.LogError("Exception Type: {Type}", ex.GetType().FullName);
+            Logger.LogError(ex, "Failed to create KubeCertificateManagerClient: {Message}", ex.Message);
             throw;
         }
 
-        Logger.LogTrace("Getting KubeHost and KubeCluster from KubeClient");
         try
         {
             KubeHost = KubeClient.GetHost();
-            Logger.LogTrace("KubeHost: {KubeHost}", KubeHost);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "CRITICAL ERROR calling KubeClient.GetHost(): {Message}", ex.Message);
-            throw;
-        }
-
-        Logger.LogTrace("Getting cluster name from KubeClient");
-        try
-        {
             KubeCluster = KubeClient.GetClusterName();
-            Logger.LogTrace("KubeCluster: {KubeCluster}", KubeCluster);
+            Logger.LogTrace("KubeHost: {KubeHost}, KubeCluster: {KubeCluster}", KubeHost, KubeCluster);
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "CRITICAL ERROR calling KubeClient.GetClusterName(): {Message}", ex.Message);
+            Logger.LogError(ex, "Failed to retrieve cluster information: {Message}", ex.Message);
             throw;
         }
+    }
 
-        if (string.IsNullOrEmpty(KubeSecretName) && !string.IsNullOrEmpty(StorePath) &&
-            !string.IsNullOrEmpty(Capability) && !Capability.Contains("NS") && !Capability.Contains("Cluster"))
+    /// <summary>
+    /// Resolves the store path and applies default values for namespace and secret name.
+    /// </summary>
+    private void ResolveStorePathAndApplyDefaults()
+    {
+        // Determine if we need to resolve path components
+        var isAggregate = !string.IsNullOrEmpty(Capability) &&
+            (Capability.Contains("NS") || Capability.Contains("Cluster"));
+        var needsResolution = !string.IsNullOrEmpty(StorePath) &&
+            (string.IsNullOrEmpty(KubeSecretName) && !isAggregate || string.IsNullOrEmpty(KubeNamespace));
+
+        if (needsResolution)
         {
-            Logger.LogDebug("KubeSecretName is empty, attempting to set 'KubeSecretName' from StorePath");
+            Logger.LogDebug("Resolving StorePath: {StorePath}", StorePath);
             ResolveStorePath(StorePath);
         }
 
-        if (string.IsNullOrEmpty(KubeNamespace) && !string.IsNullOrEmpty(StorePath))
-        {
-            Logger.LogDebug("KubeNamespace is empty, attempting to set 'KubeNamespace' from StorePath");
-            ResolveStorePath(StorePath);
-        }
-
+        // Apply default namespace if still empty
         if (string.IsNullOrEmpty(KubeNamespace))
         {
-            Logger.LogDebug("KubeNamespace is empty, setting 'KubeNamespace' to 'default'");
+            Logger.LogDebug("KubeNamespace is empty, setting to 'default'");
             KubeNamespace = "default";
         }
 
-        Logger.LogDebug("KubeNamespace: {KubeNamespace}", KubeNamespace);
-        Logger.LogDebug("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        Logger.LogDebug("KubeSecretType: {KubeSecretType}", KubeSecretName);
+        // Apply StorePath as secret name if still empty and not aggregate store
+        if (string.IsNullOrEmpty(KubeSecretName) && !isAggregate)
+        {
+            Logger.LogWarning("KubeSecretName is empty, setting to StorePath");
+            KubeSecretName = StorePath;
+        }
 
-        if (!string.IsNullOrEmpty(KubeSecretName)) return;
-        // KubeSecretName = StorePath.Split("/").Last();
-        Logger.LogWarning("KubeSecretName is empty, setting 'KubeSecretName' to StorePath");
-        KubeSecretName = StorePath;
-        Logger.LogTrace("KubeSecretName: {KubeSecretName}", KubeSecretName);
-        Logger.MethodExit(MsLogLevel.Debug);
+        Logger.LogDebug("Final values - Namespace: {Namespace}, SecretName: {SecretName}, SecretType: {SecretType}",
+            KubeNamespace, KubeSecretName, KubeSecretType);
     }
 
     /// <summary>
@@ -1831,7 +1652,7 @@ public abstract class JobBase
             if (storePasswordBytes == null)
             {
                 Logger.LogError("Password not found in K8S secret");
-                throw new InvalidK8SSecretException("Password not found in K8S secret"); // todo: should this be thrown?
+                throw new InvalidK8SSecretException("Password not found in K8S secret");
             }
 
             Logger.LogDebug("Password read successfully");

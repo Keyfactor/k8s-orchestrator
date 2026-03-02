@@ -495,59 +495,13 @@ public class KubeCertificateManagerClient
                 when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8SSecret
                 : // password is not empty and passwordSecretPath is not empty
             {
-                _logger.LogDebug("Adding password secret path to secret...");
+                // Store reference to buddy secret in main secret
+                _logger.LogDebug("Adding password secret path reference to secret");
                 if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[^1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
-                {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                    _logger.LogDebug(
-                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    // Update secret
-                    _logger.LogDebug(
-                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
-                        passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug(
-                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    var passwordSecretData = new V1Secret
-                    {
-                        Metadata = new V1ObjectMeta
-                        {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
-                        {
-                            { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
-                        }
-                    };
-                    var createdPasswordSecret =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
-                }
-
+                // Create or update the buddy password secret
+                CreateOrUpdateBuddyPass(secretName, passwordFieldName, passwordSecretPath, storePasswd);
                 break;
             }
         }
@@ -771,59 +725,13 @@ public class KubeCertificateManagerClient
                 when !string.IsNullOrEmpty(passwordSecretPath) && passwdIsK8sSecret
                 : // password is not empty and passwordSecretPath is not empty
             {
-                _logger.LogDebug("Adding password secret path to secret...");
+                // Store reference to buddy secret in main secret
+                _logger.LogDebug("Adding password secret path reference to secret");
                 if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "passwordSecretPath";
                 secret.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[^1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
-                {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    // storePasswd = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                    _logger.LogDebug(
-                        $"Successfully found secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    // Update secret
-                    _logger.LogDebug(
-                        $"Attempting to update secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    passwordSecret.Data[passwordFieldName] = Encoding.UTF8.GetBytes(storePasswd);
-                    var updatedPasswordSecret = Client.CoreV1.ReplaceNamespacedSecret(passwordSecret,
-                        passwordSecretName, passwordSecretNamespace);
-                    _logger.LogDebug(
-                        $"Successfully updated secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    var passwordSecretData = new V1Secret
-                    {
-                        Metadata = new V1ObjectMeta
-                        {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
-                        {
-                            { passwordFieldName, Encoding.UTF8.GetBytes(storePasswd) }
-                        }
-                    };
-                    var createdPasswordSecret =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
-                }
-
+                // Create or update the buddy password secret
+                CreateOrUpdateBuddyPass(secretName, passwordFieldName, passwordSecretPath, storePasswd);
                 break;
             }
         }
@@ -866,7 +774,6 @@ public class KubeCertificateManagerClient
             secretName, namespaceName, secretType, remove);
         var storePasswd = string.IsNullOrEmpty(password) ? jobCertificate.Password : password;
         _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(storePasswd));
-        _logger.LogTrace("Calling CreateNewSecret()");
         V1Secret k8SSecretData;
         switch (secretType)
         {
@@ -889,8 +796,6 @@ public class KubeCertificateManagerClient
                 k8SSecretData = new V1Secret();
                 break;
         }
-
-        _logger.LogTrace("Finished calling CreateNewSecret()");
 
         _logger.LogTrace("Entering try/catch block to create secret...");
         try
@@ -946,10 +851,8 @@ public class KubeCertificateManagerClient
     {
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
 
-        _logger.LogDebug($"Attempting to create new secret {secretName} in namespace {namespaceName}");
-        _logger.LogTrace("Calling CreateNewSecret()");
-        var k8SSecretData = CreateNewSecret(secretName, namespaceName, keyPem, certPem, chainPem, secretType, separateChain, includeChain);
-        _logger.LogTrace("Finished calling CreateNewSecret()");
+        _logger.LogDebug("Attempting to create new secret {SecretName} in namespace {Namespace}", secretName, namespaceName);
+        var k8SSecretData = _secretOperations.BuildNewSecret(secretName, namespaceName, secretType, keyPem, certPem, chainPem, separateChain, includeChain);
 
         _logger.LogTrace("Entering try/catch block to create secret...");
         try
@@ -1140,78 +1043,49 @@ public class KubeCertificateManagerClient
             }
             case false when !string.IsNullOrEmpty(passwordSecretPath):
             {
-                _logger.LogDebug("Adding password secret path to secret...");
+                // Buddy secret path specified - create or update it with the password
+                _logger.LogDebug("Password secret path specified, ensuring buddy secret exists");
                 if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-                // k8SSecretData.Data.Add(passwordFieldName, Encoding.UTF8.GetBytes(passwordSecretPath));
 
-                // Lookup password secret path on cluster to see if it exists
-                _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-                var splitPasswordPath = passwordSecretPath.Split("/");
-                // Assume secret pattern is namespace/secretName
-                var passwordSecretName = splitPasswordPath[splitPasswordPath.Length - 1];
-                var passwordSecretNamespace = splitPasswordPath[0];
-                _logger.LogDebug(
-                    $"Attempting to lookup secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                try
-                {
-                    var passwordSecret =
-                        Client.CoreV1.ReadNamespacedSecret(passwordSecretName, passwordSecretNamespace);
-                    password = Encoding.UTF8.GetString(passwordSecret.Data[passwordFieldName]);
-                }
-                catch (HttpOperationException e)
-                {
-                    _logger.LogError(
-                        $"Unable to find secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    _logger.LogError(e.Message);
-                    // Attempt to create a new secret
-                    _logger.LogDebug(
-                        $"Attempting to create secret {passwordSecretName} in namespace {passwordSecretNamespace}");
-                    // var passwordToWrite = !string.IsNullOrEmpty(certObj.StorePassword) ? certObj.StorePassword : password;
-                    var passwordSecretData = new V1Secret
-                    {
-                        Metadata = new V1ObjectMeta
-                        {
-                            Name = passwordSecretName,
-                            NamespaceProperty = passwordSecretNamespace
-                        },
-                        Data = new Dictionary<string, byte[]>
-                        {
-                            { passwordFieldName, Encoding.UTF8.GetBytes(passwordToWrite) }
-                        }
-                    };
-                    _logger.LogDebug("Calling CreateNamespacedSecret()");
-                    var passwordSecretResponse =
-                        Client.CoreV1.CreateNamespacedSecret(passwordSecretData, passwordSecretNamespace);
-                    _logger.LogDebug("Finished calling CreateNamespacedSecret()");
-                    _logger.LogDebug("Successfully created secret {PasswordSecretPath}", passwordSecretPath);
-                }
-
+                // Create or update the buddy password secret
+                CreateOrUpdateBuddyPass(secretName, passwordFieldName, passwordSecretPath, passwordToWrite);
                 break;
             }
         }
 
-        _logger.LogTrace("Exiting CreateNewSecret()");
+        _logger.LogTrace("Exiting CreateOrUpdatePKCS12Secret()");
         return k8SSecretData;
+    }
+
+    /// <summary>
+    /// Parses a password secret path into namespace and secret name components.
+    /// </summary>
+    /// <param name="passwordSecretPath">Path in format "namespace/secretName".</param>
+    /// <returns>Tuple of (namespace, secretName).</returns>
+    private (string Namespace, string SecretName) ParsePasswordSecretPath(string passwordSecretPath)
+    {
+        var parts = passwordSecretPath.Split("/");
+        var secretNamespace = parts[0];
+        var secretName = parts[^1];
+        _logger.LogTrace("Parsed password path: {Namespace}/{SecretName}", secretNamespace, secretName);
+        return (secretNamespace, secretName);
     }
 
     public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
     {
         _logger.MethodEntry();
-        // Lookup password secret path on cluster to see if it exists
-        _logger.LogDebug("Attempting to lookup password secret path on cluster...");
-        var splitPasswordPath = passwordSecretPath.Split("/");
-        _logger.LogDebug("Split password secret path: {SplitPasswordPath}", string.Join("/", splitPasswordPath));
-        var passwordSecretName = splitPasswordPath[^1];
-        var passwordSecretNamespace = splitPasswordPath[0];
-        _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
-            passwordSecretName, passwordSecretNamespace);
-        var passwordSecretResponse = _secretOperations.GetSecret(secretName, passwordSecretNamespace);
+        var (passwordNamespace, passwordSecretName) = ParsePasswordSecretPath(passwordSecretPath);
+        _logger.LogDebug("Looking up buddy secret {SecretName} in namespace {Namespace}",
+            passwordSecretName, passwordNamespace);
+
+        var passwordSecretResponse = _secretOperations.GetSecret(secretName, passwordNamespace);
         if (passwordSecretResponse == null)
         {
-            throw new StoreNotFoundException($"K8S password secret NotFound: {passwordSecretNamespace}/secrets/{secretName}");
+            throw new StoreNotFoundException($"K8S password secret NotFound: {passwordNamespace}/secrets/{secretName}");
         }
-        _logger.LogDebug("Successfully found secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
-            passwordSecretName, passwordSecretNamespace);
+
+        _logger.LogDebug("Successfully found buddy secret {SecretName} in namespace {Namespace}",
+            passwordSecretName, passwordNamespace);
         _logger.MethodExit();
         return passwordSecretResponse;
     }
@@ -1219,22 +1093,17 @@ public class KubeCertificateManagerClient
     public V1Secret CreateOrUpdateBuddyPass(string secretName, string passwordFieldName, string passwordSecretPath,
         string password)
     {
-        _logger.LogDebug("Adding password secret path to secret...");
         if (string.IsNullOrEmpty(passwordFieldName)) passwordFieldName = "password";
-
-        // Parse password secret path (namespace/secretName)
-        var splitPasswordPath = passwordSecretPath.Split("/");
-        var passwordSecretName = splitPasswordPath[^1];
-        var passwordSecretNamespace = splitPasswordPath[0];
-        _logger.LogDebug("Creating/updating password secret {SecretName} in namespace {Namespace}",
-            passwordSecretName, passwordSecretNamespace);
+        var (passwordNamespace, passwordSecretName) = ParsePasswordSecretPath(passwordSecretPath);
+        _logger.LogDebug("Creating/updating buddy secret {SecretName} in namespace {Namespace}",
+            passwordSecretName, passwordNamespace);
 
         var passwordSecretData = new V1Secret
         {
             Metadata = new V1ObjectMeta
             {
                 Name = passwordSecretName,
-                NamespaceProperty = passwordSecretNamespace
+                NamespaceProperty = passwordNamespace
             },
             Data = new Dictionary<string, byte[]>
             {
@@ -1243,137 +1112,7 @@ public class KubeCertificateManagerClient
         };
 
         // Use SecretOperations for upsert
-        return _secretOperations.CreateOrUpdateSecret(passwordSecretData, passwordSecretNamespace);
-    }
-
-    private V1Secret CreateNewSecret(string secretName, string namespaceName, string keyPem, string certPem,
-        List<string> chainPem, string secretType, bool separateChain = true, bool includeChain = true)
-    {
-        _logger.LogTrace("Entered CreateNewSecret()");
-        _logger.LogDebug("Attempting to create new secret...");
-
-        switch (secretType)
-        {
-            case "secret":
-            case "opaque":
-            case "opaque_secret":
-                secretType = "secret";
-                break;
-            case "tls_secret":
-            case "tls":
-                secretType = "tls_secret";
-                break;
-            case "pfx":
-            case "pkcs12":
-                secretType = "pkcs12";
-                break;
-            case "jks":
-                secretType = "jks";
-                break;
-            default:
-                _logger.LogError("Unknown secret type: {SecretType}", secretType);
-                break;
-        }
-
-        var k8SSecretData = new V1Secret();
-
-        switch (secretType)
-        {
-            case "secret":
-                // Opaque secrets can store certificate-only (no private key)
-                var opaqueData = new Dictionary<string, byte[]>
-                {
-                    { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
-                };
-                if (!string.IsNullOrEmpty(keyPem))
-                {
-                    opaqueData["tls.key"] = Encoding.UTF8.GetBytes(keyPem);
-                }
-                else
-                {
-                    _logger.LogDebug("No private key provided for Opaque secret - storing certificate only");
-                }
-                k8SSecretData = new V1Secret
-                {
-                    Metadata = new V1ObjectMeta
-                    {
-                        Name = secretName,
-                        NamespaceProperty = namespaceName
-                    },
-                    Data = opaqueData
-                };
-                break;
-            case "tls_secret":
-                // TLS secrets require both tls.crt and tls.key per Kubernetes specification
-                if (string.IsNullOrEmpty(keyPem))
-                {
-                    _logger.LogWarning("TLS secrets require a private key. Certificate was provided without private key - creating with empty tls.key field");
-                }
-                k8SSecretData = new V1Secret
-                {
-                    Metadata = new V1ObjectMeta
-                    {
-                        Name = secretName,
-                        NamespaceProperty = namespaceName
-                    },
-
-                    Type = "kubernetes.io/tls",
-
-                    Data = new Dictionary<string, byte[]>
-                    {
-                        { "tls.key", Encoding.UTF8.GetBytes(keyPem ?? "") },
-                        { "tls.crt", Encoding.UTF8.GetBytes(certPem ?? "") }
-                    }
-                };
-                break;
-            case "pkcs12":
-            case "pfx":
-                // PKCS12/PFX secrets are stored as Opaque secrets with the keystore data
-                // For "create store if missing", create an empty Opaque secret
-                _logger.LogDebug("Creating empty Opaque secret for PKCS12/PFX store");
-                k8SSecretData = new V1Secret
-                {
-                    Metadata = new V1ObjectMeta
-                    {
-                        Name = secretName,
-                        NamespaceProperty = namespaceName
-                    },
-                    Type = "Opaque",
-                    Data = new Dictionary<string, byte[]>()
-                };
-                break;
-            case "jks":
-                // JKS secrets are stored as Opaque secrets with the keystore data
-                // For "create store if missing", create an empty Opaque secret
-                _logger.LogDebug("Creating empty Opaque secret for JKS store");
-                k8SSecretData = new V1Secret
-                {
-                    Metadata = new V1ObjectMeta
-                    {
-                        Name = secretName,
-                        NamespaceProperty = namespaceName
-                    },
-                    Type = "Opaque",
-                    Data = new Dictionary<string, byte[]>()
-                };
-                break;
-            default:
-                throw new NotImplementedException(
-                    $"Secret type {secretType} not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.");
-        }
-
-        if (chainPem is { Count: > 0 } && includeChain)
-        {
-            var caCert = chainPem.Where(cer => cer != certPem).Aggregate("", (current, cer) => current + cer);
-            if (separateChain)
-                k8SSecretData.Data.Add("ca.crt", Encoding.UTF8.GetBytes(caCert));
-            else
-                //update tls.crt w/ full chain
-                k8SSecretData.Data["tls.crt"] = Encoding.UTF8.GetBytes(certPem + caCert);
-        }
-
-        _logger.LogTrace("Exiting CreateNewSecret()");
-        return k8SSecretData;
+        return _secretOperations.CreateOrUpdateSecret(passwordSecretData, passwordNamespace);
     }
 
     private V1Secret UpdateOpaqueSecret(string secretName, string namespaceName, V1Secret existingSecret,

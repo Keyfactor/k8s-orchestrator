@@ -50,6 +50,47 @@ public class Discovery : JobBase, IDiscoveryJobExtension
     }
 
     /// <summary>
+    /// Executes discovery for a specific secret type with the given parameters.
+    /// </summary>
+    private List<string> DiscoverSecretsForType(
+        string secretType,
+        string[] baseAllowedKeys,
+        string[] additionalAllowedKeys,
+        string namespacesCsv)
+    {
+        var combinedKeys = baseAllowedKeys.Concat(additionalAllowedKeys).Distinct().ToArray();
+        Logger.LogInformation("Discovering secrets with allowed keys: {AllowedKeys} and type: {SecretType}",
+            string.Join(",", combinedKeys), secretType);
+        return KubeClient.DiscoverSecrets(combinedKeys, secretType, namespacesCsv);
+    }
+
+    /// <summary>
+    /// Builds the allowed keys array for keystore discovery (JKS/PKCS12).
+    /// </summary>
+    private string[] BuildKeystoreAllowedKeys(
+        DiscoveryJobConfiguration config,
+        string[] defaultKeys,
+        string[] keystoreKeys)
+    {
+        var extensionsStr = config.JobProperties["extensions"].ToString();
+        var patternsStr = config.JobProperties["patterns"].ToString();
+
+        var patterns = string.IsNullOrEmpty(patternsStr)
+            ? defaultKeys
+            : patternsStr.Split(',');
+
+        var extensions = string.IsNullOrEmpty(extensionsStr)
+            ? defaultKeys
+            : extensionsStr.Split(',');
+
+        return extensions
+            .Concat(patterns)
+            .Concat(keystoreKeys)
+            .Distinct()
+            .ToArray();
+    }
+
+    /// <summary>
     /// Main entry point for the discovery job. Searches for certificate stores
     /// in Kubernetes based on the job configuration.
     /// </summary>
@@ -121,112 +162,29 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             //      c) Directories to ignore
             //      d) File name patterns to match
             // 3) Place found and validated store locations (path and file name) in "locations" collection instantiated above
+            var namespacesCsv = string.Join(",", namespaces);
             switch (config.Capability)
             {
                 case "CertStores.K8SCluster.Discovery":
-                    // Combine the allowed keys with the default keys
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
-
-                    Logger.LogInformation(
-                        "Discovering k8s secrets for cluster `{ClusterName}` with allowed keys: `{AllowedKeys}` and secret types: `kubernetes.io/tls, Opaque`",
-                        KubeHost, string.Join(",", secretAllowedKeys));
-                    Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "cluster", string.Join(",", namespaces));
-                    Logger.LogDebug("Returned from KubeClient.DiscoverSecrets()");
-
+                    locations = DiscoverSecretsForType("cluster", secretAllowedKeys, TLSAllowedKeys, namespacesCsv);
                     break;
                 case "CertStores.K8SNS.Discovery":
-                    // Combine the allowed keys with the default keys
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
-                    Logger.LogInformation(
-                        "Discovering k8s secrets in k8s namespaces `{Namespaces}` with allowed keys: `{AllowedKeys}` and secret types: `kubernetes.io/tls, Opaque`",
-                        string.Join(",", namespaces), string.Join(",", secretAllowedKeys));
-                    Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "namespace",
-                        string.Join(",", namespaces));
-                    Logger.LogDebug("Returned from KubeClient.DiscoverSecrets()");
+                    locations = DiscoverSecretsForType("namespace", secretAllowedKeys, TLSAllowedKeys, namespacesCsv);
                     break;
                 case "CertStores.K8STLSSecr.Discovery":
-                    // Combine the allowed keys with the default keys
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-                    secretAllowedKeys = secretAllowedKeys.Concat(TLSAllowedKeys).ToArray();
-                    Logger.LogInformation(
-                        "Discovering k8s secrets in k8s namespaces `{Namespaces}` with allowed keys: `{AllowedKeys}` and secret type: `kubernetes.io/tls`",
-                        string.Join(",", namespaces), string.Join(",", secretAllowedKeys));
-                    Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "kubernetes.io/tls",
-                        string.Join(",", namespaces));
-                    Logger.LogDebug("Returned from KubeClient.DiscoverSecrets()");
+                    locations = DiscoverSecretsForType("kubernetes.io/tls", secretAllowedKeys, TLSAllowedKeys, namespacesCsv);
                     break;
                 case "CertStores.K8SSecret.Discovery":
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-                    secretAllowedKeys = secretAllowedKeys.Concat(OpaqueAllowedKeys).ToArray();
-                    Logger.LogInformation("Discovering secrets with allowed keys: `{AllowedKeys}` and type: `Opaque`",
-                        string.Join(",", secretAllowedKeys));
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "Opaque", string.Join(",", namespaces));
+                    locations = DiscoverSecretsForType("Opaque", secretAllowedKeys, OpaqueAllowedKeys, namespacesCsv);
                     break;
                 case "CertStores.K8SPFX.Discovery":
                 case "CertStores.K8SPKCS12.Discovery":
-                    // config.JobProperties["dirs"] - Directories to search
-                    // config.JobProperties["extensions"] - Extensions to search
-                    // config.JobProperties["ignoreddirs"] - Directories to ignore
-                    // config.JobProperties["patterns"] - File name patterns to match
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-
-                    var secretAllowedKeysStr = config.JobProperties["extensions"].ToString();
-                    var allowedPatterns = config.JobProperties["patterns"].ToString();
-
-                    var additionalKeyPatterns = string.IsNullOrEmpty(allowedPatterns)
-                        ? new[] { "p12" }
-                        : allowedPatterns.Split(',');
-                    secretAllowedKeys = string.IsNullOrEmpty(secretAllowedKeysStr)
-                        ? new[] { "p12" }
-                        : secretAllowedKeysStr.Split(',');
-
-                    //append pkcs12AllowedKeys to secretAllowedKeys
-                    secretAllowedKeys = secretAllowedKeys.Concat(additionalKeyPatterns).ToArray();
-                    secretAllowedKeys = secretAllowedKeys.Concat(Pkcs12AllowedKeys).ToArray();
-
-                    //make secretAllowedKeys unique
-                    secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
-
-                    Logger.LogInformation(
-                        "Discovering k8s secrets with allowed keys: `{AllowedKeys}` and type: `pkcs12`",
-                        string.Join(",", secretAllowedKeys));
-                    Logger.LogDebug("Calling KubeClient.DiscoverSecrets()");
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "pkcs12",
-                        string.Join(",", namespaces));
-                    Logger.LogDebug("Returned from KubeClient.DiscoverSecrets()");
+                    var pkcs12Keys = BuildKeystoreAllowedKeys(config, new[] { "p12" }, Pkcs12AllowedKeys);
+                    locations = DiscoverSecretsForType("pkcs12", pkcs12Keys, Array.Empty<string>(), namespacesCsv);
                     break;
                 case "CertStores.K8SJKS.Discovery":
-                    // config.JobProperties["dirs"] - Directories to search
-                    // config.JobProperties["extensions"] - Extensions to search
-                    // config.JobProperties["ignoreddirs"] - Directories to ignore
-                    // config.JobProperties["patterns"] - File name patterns to match
-
-                    Logger.LogTrace("Entering case: {Capability}", config.Capability);
-                    var jksSecretAllowedKeysStr = config.JobProperties["extensions"].ToString();
-                    var jksAllowedPatterns = config.JobProperties["patterns"].ToString();
-
-                    var jksAdditionalKeyPatterns = string.IsNullOrEmpty(jksAllowedPatterns)
-                        ? new[] { "jks" }
-                        : jksAllowedPatterns.Split(',');
-                    secretAllowedKeys = string.IsNullOrEmpty(jksSecretAllowedKeysStr)
-                        ? new[] { "jks" }
-                        : jksSecretAllowedKeysStr.Split(',');
-
-                    //append pkcs12AllowedKeys to secretAllowedKeys
-                    secretAllowedKeys = secretAllowedKeys.Concat(jksAdditionalKeyPatterns).ToArray();
-                    secretAllowedKeys = secretAllowedKeys.Concat(JksAllowedKeys).ToArray();
-
-                    //make secretAllowedKeys unique
-                    secretAllowedKeys = secretAllowedKeys.Distinct().ToArray();
-
-                    Logger.LogInformation("Discovering k8s secrets with allowed keys: `{AllowedKeys}` and type: `jks`",
-                        string.Join(",", secretAllowedKeys));
-                    locations = KubeClient.DiscoverSecrets(secretAllowedKeys, "jks", string.Join(",", namespaces));
+                    var jksKeys = BuildKeystoreAllowedKeys(config, new[] { "jks" }, JksAllowedKeys);
+                    locations = DiscoverSecretsForType("jks", jksKeys, Array.Empty<string>(), namespacesCsv);
                     break;
                 case "CertStores.K8SCert.Discovery":
                     Logger.LogError("Capability not supported: CertStores.K8SCert.Discovery");
