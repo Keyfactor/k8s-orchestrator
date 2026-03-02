@@ -2045,7 +2045,7 @@ public class Inventory : JobBase, IInventoryJobExtension
             Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job {JobId} with failure.", jobId);
             throw new StoreNotFoundException(certDataErrorMsg);
         }
-        catch (Exception e)
+        catch (Exception e) when (e is not StoreNotFoundException && e is not InvalidOperationException)
         {
             Logger.LogError(e.Message);
             Logger.LogTrace(e.ToString());

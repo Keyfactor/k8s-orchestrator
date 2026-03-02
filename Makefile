@@ -226,6 +226,22 @@ test-watch: ## Run tests in watch mode (auto-rerun on file changes)
 	source .test.env; \
 	dotnet watch test
 
+.PHONY: test-single
+test-single: ## Run a single integration test by filter (usage: make test-single FILTER=Inventory_OpaqueSecretWithCertificate)
+	@if [ -z "$(FILTER)" ]; then \
+		echo "ERROR: FILTER parameter required"; \
+		echo "Usage: make test-single FILTER=<test-name-pattern>"; \
+		echo "Example: make test-single FILTER=Inventory_OpaqueSecretWithCertificate"; \
+		exit 1; \
+	fi
+	@echo "=== Cleaning build artifacts ==="
+	@rm -rf */bin */obj
+	@echo "=== Running test matching '$(FILTER)' ==="
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	dotnet test --filter "FullyQualifiedName~$(FILTER)" --verbosity normal 2>&1 | tail -60
+
 .PHONY: test-store-jks
 test-store-jks: ## Run K8SJKS store type integration tests
 	@source .env; \

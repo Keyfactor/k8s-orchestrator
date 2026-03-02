@@ -1206,6 +1206,10 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Attempting to lookup secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
             passwordSecretName, passwordSecretNamespace);
         var passwordSecretResponse = _secretOperations.GetSecret(secretName, passwordSecretNamespace);
+        if (passwordSecretResponse == null)
+        {
+            throw new StoreNotFoundException($"K8S password secret NotFound: {passwordSecretNamespace}/secrets/{secretName}");
+        }
         _logger.LogDebug("Successfully found secret {PasswordSecretName} in namespace {PasswordSecretNamespace}",
             passwordSecretName, passwordSecretNamespace);
         _logger.MethodExit();
@@ -1556,7 +1560,12 @@ public class KubeCertificateManagerClient
     {
         _logger.LogDebug("Reading secret {SecretName} in namespace {Namespace} from {Host}",
             secretName, namespaceName, GetHost());
-        return _secretOperations.GetSecret(secretName, namespaceName);
+        var secret = _secretOperations.GetSecret(secretName, namespaceName);
+        if (secret == null)
+        {
+            throw new StoreNotFoundException($"K8S secret NotFound: {namespaceName}/secrets/{secretName}");
+        }
+        return secret;
     }
 
     private string CleanOpaqueStore(string existingEntries, string pemString)
