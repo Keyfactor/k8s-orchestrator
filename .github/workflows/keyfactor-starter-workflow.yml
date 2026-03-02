@@ -11,7 +11,7 @@ on:
 
 jobs:
   call-starter-workflow:
-    uses: keyfactor/actions/.github/workflows/starter.yml@v4
+    uses: keyfactor/actions/.github/workflows/starter.yml@v6
     with:
       command_token_url: ${{ vars.COMMAND_TOKEN_URL }}
       command_hostname: ${{ vars.COMMAND_HOSTNAME }}
