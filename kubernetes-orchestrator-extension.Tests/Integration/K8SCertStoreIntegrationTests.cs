@@ -166,6 +166,42 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         return created;
     }
 
+    /// <summary>
+    /// Waits for a CSR to have a certificate issued (status.certificate populated).
+    /// Uses polling with exponential backoff instead of fixed delays.
+    /// </summary>
+    /// <param name="csrName">Name of the CSR to wait for.</param>
+    /// <param name="timeoutMs">Maximum time to wait in milliseconds (default 10000ms).</param>
+    /// <returns>True if certificate was issued, false if timeout.</returns>
+    private async Task<bool> WaitForCsrCertificateAsync(string csrName, int timeoutMs = 10000)
+    {
+        var startTime = DateTime.UtcNow;
+        var pollInterval = 100; // Start with 100ms
+        const int maxPollInterval = 1000; // Cap at 1 second
+
+        while ((DateTime.UtcNow - startTime).TotalMilliseconds < timeoutMs)
+        {
+            try
+            {
+                var csr = await _k8sClient.CertificatesV1.ReadCertificateSigningRequestAsync(csrName);
+                if (csr.Status?.Certificate != null && csr.Status.Certificate.Length > 0)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                // CSR may not exist yet or other transient error, continue polling
+            }
+
+            await Task.Delay(pollInterval);
+            // Exponential backoff, capped at maxPollInterval
+            pollInterval = Math.Min(pollInterval * 2, maxPollInterval);
+        }
+
+        return false;
+    }
+
     #region Single CSR Mode Tests (Legacy Behavior)
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
@@ -174,7 +210,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var csrName = $"test-single-approved-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: true);
-        await Task.Delay(2000); // Wait for certificate to be issued
+        await WaitForCsrCertificateAsync(csrName); // Wait for certificate to be issued
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -278,7 +314,10 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         await CreateTestCsr(approvedCsr1, approve: true);
         await CreateTestCsr(approvedCsr2, approve: true);
         await CreateTestCsr(pendingCsr, approve: false);
-        await Task.Delay(2000); // Wait for certificates to be issued
+        // Wait for approved CSRs to get certificates issued
+        await Task.WhenAll(
+            WaitForCsrCertificateAsync(approvedCsr1),
+            WaitForCsrCertificateAsync(approvedCsr2));
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
@@ -324,7 +363,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var approvedCsr = $"test-wc-approved-{Guid.NewGuid():N}";
         await CreateTestCsr(approvedCsr, approve: true);
-        await Task.Delay(2000);
+        await WaitForCsrCertificateAsync(approvedCsr);
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
@@ -364,7 +403,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var csrName = $"test-no-pk-cw-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: true);
-        await Task.Delay(2000);
+        await WaitForCsrCertificateAsync(csrName);
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
