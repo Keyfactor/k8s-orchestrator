@@ -128,6 +128,181 @@ public class Inventory : JobBase, IInventoryJobExtension
     }
 
     /// <summary>
+    /// Helper to process inventory for simple secret types (opaque, tls, pkcs12, jks).
+    /// Handles the common pattern of: call handler, handle empty results, handle StoreNotFoundException.
+    /// </summary>
+    /// <param name="jobHistoryId">Job history ID for tracking.</param>
+    /// <param name="submitInventory">Callback to submit inventory.</param>
+    /// <param name="getInventory">Function that retrieves the certificate list.</param>
+    /// <param name="secretTypeName">Human-readable name for logging (e.g., "Opaque secret").</param>
+    /// <returns>JobResult indicating success or failure.</returns>
+    private JobResult ProcessSimpleSecretInventory(
+        long jobHistoryId,
+        SubmitInventoryUpdate submitInventory,
+        Func<long, List<string>> getInventory,
+        string secretTypeName)
+    {
+        try
+        {
+            var inventory = getInventory(jobHistoryId);
+            Logger.LogDebug("Returned inventory count: {Count}", inventory.Count);
+            if (inventory.Count == 0)
+            {
+                Logger.LogInformation("No certificates found in {TypeName} {Namespace}/{Name}",
+                    secretTypeName, KubeNamespace, KubeSecretName);
+                submitInventory.Invoke(new List<CurrentInventoryItem>());
+                return SuccessJob(jobHistoryId, $"No certificates found in {secretTypeName}");
+            }
+            return PushInventory(inventory, jobHistoryId, submitInventory, true);
+        }
+        catch (StoreNotFoundException)
+        {
+            Logger.LogWarning("Unable to locate {TypeName} {Namespace}/{Name}. Sending empty inventory.",
+                secretTypeName, KubeNamespace, KubeSecretName);
+            return PushInventory(new List<string>(), jobHistoryId, submitInventory, false,
+                $"WARNING: {secretTypeName} not found in Kubernetes cluster. Assuming empty inventory.");
+        }
+    }
+
+    /// <summary>
+    /// Helper to process inventory for keystore types (JKS, PKCS12) that return dictionaries.
+    /// </summary>
+    private JobResult ProcessKeystoreInventory(
+        long jobHistoryId,
+        SubmitInventoryUpdate submitInventory,
+        Func<Dictionary<string, List<string>>> getInventory,
+        string secretTypeName)
+    {
+        try
+        {
+            var inventory = getInventory();
+            Logger.LogDebug("Returned inventory count: {Count}", inventory.Count);
+            if (inventory.Count == 0)
+            {
+                Logger.LogInformation("No certificates found in {TypeName} {Namespace}/{Name}",
+                    secretTypeName, KubeNamespace, KubeSecretName);
+                submitInventory.Invoke(new List<CurrentInventoryItem>());
+                return SuccessJob(jobHistoryId, $"No certificates found in {secretTypeName}");
+            }
+            return PushInventory(inventory, jobHistoryId, submitInventory, true);
+        }
+        catch (StoreNotFoundException)
+        {
+            Logger.LogWarning("Unable to locate {TypeName} {Namespace}/{Name}. Sending empty inventory.",
+                secretTypeName, KubeNamespace, KubeSecretName);
+            return PushInventory(new List<string>(), jobHistoryId, submitInventory, false,
+                $"WARNING: {secretTypeName} not found in Kubernetes cluster. Assuming empty inventory.");
+        }
+    }
+
+    /// <summary>
+    /// Processes inventory for multi-secret stores (cluster/namespace).
+    /// Discovers secrets, processes each one, and aggregates results.
+    /// </summary>
+    private JobResult ProcessMultiSecretInventory(
+        long jobHistoryId,
+        SubmitInventoryUpdate submitInventory,
+        string scope,
+        string namespaceFilter)
+    {
+        var opaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", namespaceFilter);
+        var tlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", namespaceFilter);
+        var entries = new List<InventoryEntry>();
+        var errors = new List<string>();
+
+        // Number of path segments to remove when building alias
+        // Cluster: remove 1 (cluster prefix), Namespace: remove 2 (cluster + namespace)
+        var segmentsToRemove = scope == "cluster" ? 1 : 2;
+
+        // Process opaque secrets
+        foreach (var secretPath in opaqueSecrets)
+        {
+            ProcessMultiSecretEntry(secretPath, "secret", "opaque", segmentsToRemove, entries, errors, jobHistoryId);
+        }
+
+        // Process TLS secrets
+        foreach (var secretPath in tlsSecrets)
+        {
+            ProcessMultiSecretEntry(secretPath, "tls_secret", "tls", segmentsToRemove, entries, errors, jobHistoryId);
+        }
+
+        Logger.LogDebug("{Scope} inventory complete: {Count} secrets with per-item private key status",
+            scope, entries.Count);
+        return PushInventory(entries, jobHistoryId, submitInventory);
+    }
+
+    /// <summary>
+    /// Processes a single secret entry for multi-secret inventory (cluster/namespace).
+    /// </summary>
+    private void ProcessMultiSecretEntry(
+        string secretPath,
+        string secretType,
+        string aliasTypeMarker,
+        int segmentsToRemove,
+        List<InventoryEntry> entries,
+        List<string> errors,
+        long jobHistoryId)
+    {
+        var originalSecretName = KubeSecretName;
+        var originalNamespace = KubeNamespace;
+        var originalSecretType = KubeSecretType;
+
+        try
+        {
+            KubeSecretName = "";
+            if (segmentsToRemove == 1) KubeNamespace = ""; // Only reset for cluster scope
+            KubeSecretType = secretType;
+
+            // Parse path: format is cluster/namespace/secrets/secretname
+            var pathParts = secretPath.Split('/');
+            if (pathParts.Length >= 4)
+            {
+                if (segmentsToRemove == 1) KubeNamespace = pathParts[1]; // Set namespace for cluster scope
+                KubeSecretName = pathParts[pathParts.Length - 1];
+                Logger.LogDebug("Multi-secret inventory: Parsed namespace={Namespace}, secretName={SecretName} from path {Path}",
+                    KubeNamespace, KubeSecretName, secretPath);
+            }
+            else
+            {
+                ResolveStorePath(secretPath);
+            }
+
+            // Build alias by removing leading segments and inserting type marker
+            StorePath = secretPath.Replace("secrets", $"secrets/{aliasTypeMarker}");
+            var storePathParts = StorePath.Split('/').ToList();
+            for (var i = 0; i < segmentsToRemove && storePathParts.Count > 0; i++)
+            {
+                storePathParts.RemoveAt(0);
+            }
+            var alias = string.Join("/", storePathParts);
+
+            // Get inventory entry based on secret type
+            InventoryEntry entry;
+            if (secretType == "secret")
+            {
+                entry = HandleOpaqueSecretAsEntry(jobHistoryId, alias);
+            }
+            else
+            {
+                entry = HandleTlsSecretAsEntry(jobHistoryId, alias);
+            }
+
+            if (entry.Certificates.Count > 0)
+            {
+                entries.Add(entry);
+                Logger.LogDebug("Multi-secret inventory: Added {Type} '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
+                    aliasTypeMarker, entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError("Error processing {Type} secret: {Secret} - {Message}\n\t{StackTrace}",
+                aliasTypeMarker, secretPath, ex.Message, ex.StackTrace);
+            errors.Add(ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Main entry point for the inventory job. Processes the job configuration and returns
     /// all certificates found in the specified Kubernetes certificate store.
     /// </summary>
@@ -221,40 +396,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "opaque":
                     Logger.LogInformation("Inventorying opaque secrets using the following allowed keys: {Keys}",
                         OpaqueAllowedKeys?.ToString());
-                    try
-                    {
-                        var opaqueInventory = HandleOpaqueSecretAsList(config.JobHistoryId);
-                        Logger.LogDebug("Returned inventory count: {Count}", opaqueInventory.Count.ToString());
-                        if (opaqueInventory.Count == 0)
-                        {
-                            Logger.LogInformation("No certificates found in Opaque secret {Namespace}/{Name}",
-                                KubeNamespace, KubeSecretName);
-                            submitInventory.Invoke(new List<CurrentInventoryItem>());
-                            return SuccessJob(config.JobHistoryId, "No certificates found in Opaque secret");
-                        }
-                        return PushInventory(opaqueInventory, config.JobHistoryId, submitInventory, true);
-                    }
-                    catch (StoreNotFoundException)
-                    {
-                        Logger.LogWarning("Unable to locate Opaque secret {Namespace}/{Name}. Sending empty inventory.",
-                            KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: Opaque secret not found in Kubernetes cluster. Assuming empty inventory.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Logger.LogError("Inventory failed with exception: {Message}", ex.Message);
-                        Logger.LogTrace("{Message}", ex.Message);
-                        Logger.LogTrace("{StackTrace}", ex.StackTrace);
-                        //Status: 2=Success, 3=Warning, 4=Error
-                        Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job {JobId} with failure.", config.JobId);
-                        return new JobResult
-                        {
-                            Result = OrchestratorJobStatusJobResult.Failure,
-                            JobHistoryId = config.JobHistoryId,
-                            FailureMessage = ex.Message
-                        };
-                    }
+                    return ProcessSimpleSecretInventory(config.JobHistoryId, submitInventory,
+                        HandleOpaqueSecretAsList, "Opaque secret");
 
                 case "tls_secret":
                 case "tls":
@@ -262,26 +405,8 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "tls_secrets":
                     Logger.LogInformation("Inventorying TLS secrets using the following allowed keys: {Keys}",
                         TLSAllowedKeys?.ToString());
-                    try
-                    {
-                        var tlsCertsInv = HandleTlsSecret(config.JobHistoryId);
-                        Logger.LogDebug("Returned inventory count: {Count}", tlsCertsInv.Count.ToString());
-                        if (tlsCertsInv.Count == 0)
-                        {
-                            Logger.LogInformation("No certificates found in TLS secret {Namespace}/{Name}",
-                                KubeNamespace, KubeSecretName);
-                            submitInventory.Invoke(new List<CurrentInventoryItem>());
-                            return SuccessJob(config.JobHistoryId, "No certificates found in TLS secret");
-                        }
-                        return PushInventory(tlsCertsInv, config.JobHistoryId, submitInventory, true);
-                    }
-                    catch (StoreNotFoundException)
-                    {
-                        Logger.LogWarning("Unable to locate TLS secret {Namespace}/{Name}. Sending empty inventory.",
-                            KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: TLS secret not found in Kubernetes cluster. Assuming empty inventory.");
-                    }
+                    return ProcessSimpleSecretInventory(config.JobHistoryId, submitInventory,
+                        HandleTlsSecret, "TLS secret");
 
                 case "certificate":
                 case "cert":
@@ -291,282 +416,30 @@ public class Inventory : JobBase, IInventoryJobExtension
                 case "certificates":
                     Logger.LogInformation("Inventorying certificates using {AllowedKeys}", CertAllowedKeys);
                     return HandleCertificate(config.JobHistoryId, submitInventory);
+
                 case "pkcs12":
                 case "p12":
                 case "pfx":
-                    //combine allowed keys and CertificateDataFields into one list
                     allowedKeys.AddRange(Pkcs12AllowedKeys);
                     Logger.LogInformation("Inventorying PKCS12 using the following allowed keys: {Keys}", allowedKeys);
-                    try
-                    {
-                        var pkcs12Inventory = HandlePkcs12Secret(config, allowedKeys);
-                        Logger.LogDebug("Returned inventory count: {Count}", pkcs12Inventory.Count.ToString());
-                        if (pkcs12Inventory.Count == 0)
-                        {
-                            Logger.LogInformation("No certificates found in PKCS12 keystore {Namespace}/{Name}",
-                                KubeNamespace, KubeSecretName);
-                            submitInventory.Invoke(new List<CurrentInventoryItem>());
-                            return SuccessJob(config.JobHistoryId, "No certificates found in PKCS12 keystore");
-                        }
-                        return PushInventory(pkcs12Inventory, config.JobHistoryId, submitInventory, true);
-                    }
-                    catch (StoreNotFoundException)
-                    {
-                        Logger.LogWarning("Unable to locate PKCS12 secret {Namespace}/{Name}. Sending empty inventory.",
-                            KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: PKCS12 store not found in Kubernetes cluster. Assuming empty inventory.");
-                    }
+                    return ProcessKeystoreInventory(config.JobHistoryId, submitInventory,
+                        () => HandlePkcs12Secret(config, allowedKeys), "PKCS12 keystore");
+
                 case "jks":
                     allowedKeys.AddRange(JksAllowedKeys);
                     Logger.LogInformation("Inventorying JKS using the following allowed keys: {Keys}", allowedKeys);
-                    try
-                    {
-                        var jksInventory = HandleJKSSecret(config, allowedKeys);
-                        Logger.LogDebug("Returned inventory count: {Count}", jksInventory.Count.ToString());
-                        if (jksInventory.Count == 0)
-                        {
-                            Logger.LogInformation("No certificates found in JKS keystore {Namespace}/{Name}",
-                                KubeNamespace, KubeSecretName);
-                            submitInventory.Invoke(new List<CurrentInventoryItem>());
-                            return SuccessJob(config.JobHistoryId, "No certificates found in JKS keystore");
-                        }
-                        return PushInventory(jksInventory, config.JobHistoryId, submitInventory, true);
-                    }
-                    catch (StoreNotFoundException)
-                    {
-                        Logger.LogWarning("Unable to locate JKS secret {Namespace}/{Name}. Sending empty inventory.",
-                            KubeNamespace, KubeSecretName);
-                        return PushInventory(new List<string>(), config.JobHistoryId, submitInventory, false,
-                            "WARNING: JKS store not found in Kubernetes cluster. Assuming empty inventory.");
-                    }
+                    return ProcessKeystoreInventory(config.JobHistoryId, submitInventory,
+                        () => HandleJKSSecret(config, allowedKeys), "JKS keystore");
 
                 case "cluster":
-                    var clusterOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", "all");
-                    var clusterTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", "all");
-                    var errors = new List<string>();
+                    return ProcessMultiSecretInventory(config.JobHistoryId, submitInventory, "cluster", "all");
 
-                    // Use List<InventoryEntry> to track per-secret private key status and full certificate chains
-                    var clusterInventoryEntries = new List<InventoryEntry>();
-                    foreach (var opaqueSecret in clusterOpaqueSecrets)
-                    {
-                        KubeSecretName = "";
-                        KubeNamespace = "";
-                        KubeSecretType = "secret";
-                        try
-                        {
-                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
-                            // Parse the path directly since ResolveStorePath doesn't handle cluster stores with 4 parts
-                            var pathParts = opaqueSecret.Split('/');
-                            if (pathParts.Length >= 4)
-                            {
-                                // Format: cluster/namespace/secrets/secretname
-                                KubeNamespace = pathParts[1];
-                                KubeSecretName = pathParts[pathParts.Length - 1];
-                                Logger.LogDebug("Cluster inventory: Parsed namespace={Namespace}, secretName={SecretName} from path {Path}",
-                                    KubeNamespace, KubeSecretName, opaqueSecret);
-                            }
-                            else
-                            {
-                                // Fallback to ResolveStorePath for other formats
-                                ResolveStorePath(opaqueSecret);
-                            }
-                            StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
-                            //Split storepath by / and remove first 1 elements
-                            var storePathSplit = StorePath.Split('/');
-                            var storePathSplitList = storePathSplit.ToList();
-                            storePathSplitList.RemoveAt(0);
-                            var alias = string.Join("/", storePathSplitList);
-
-                            var entry = HandleOpaqueSecretAsEntry(config.JobHistoryId, alias);
-                            if (entry.Certificates.Count > 0)
-                            {
-                                clusterInventoryEntries.Add(entry);
-                                Logger.LogDebug("Cluster inventory: Added opaque secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
-                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
-                                Logger.LogTrace("Cluster inventory: Alias '{Alias}' certificate chain:\n{Chain}",
-                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("Error processing Opaque Secret: {Secret} - {Message}\n\t{StackTrace}",
-                                opaqueSecret, ex.Message, ex.StackTrace);
-                            errors.Add(ex.Message);
-                        }
-                    }
-
-                    foreach (var tlsSecret in clusterTlsSecrets)
-                    {
-                        KubeSecretName = "";
-                        KubeNamespace = "";
-                        KubeSecretType = "tls_secret";
-                        try
-                        {
-                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
-                            // Parse the path directly since ResolveStorePath doesn't handle cluster stores with 4 parts
-                            var pathParts = tlsSecret.Split('/');
-                            if (pathParts.Length >= 4)
-                            {
-                                // Format: cluster/namespace/secrets/secretname
-                                KubeNamespace = pathParts[1];
-                                KubeSecretName = pathParts[pathParts.Length - 1];
-                                Logger.LogDebug("Cluster inventory: Parsed namespace={Namespace}, secretName={SecretName} from path {Path}",
-                                    KubeNamespace, KubeSecretName, tlsSecret);
-                            }
-                            else
-                            {
-                                // Fallback to ResolveStorePath for other formats
-                                ResolveStorePath(tlsSecret);
-                            }
-                            StorePath = tlsSecret.Replace("secrets", "secrets/tls");
-                            //Split storepath by / and remove first 1 elements
-                            var storePathSplit = StorePath.Split('/');
-                            var storePathSplitList = storePathSplit.ToList();
-                            storePathSplitList.RemoveAt(0);
-                            var alias = string.Join("/", storePathSplitList);
-
-                            var entry = HandleTlsSecretAsEntry(config.JobHistoryId, alias);
-                            if (entry.Certificates.Count > 0)
-                            {
-                                clusterInventoryEntries.Add(entry);
-                                Logger.LogDebug("Cluster inventory: Added TLS secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
-                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
-                                Logger.LogTrace("Cluster inventory: Alias '{Alias}' certificate chain:\n{Chain}",
-                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("Error processing TLS Secret: {Secret} - {Message}\n\t{StackTrace}",
-                                tlsSecret, ex.Message, ex.StackTrace);
-                            errors.Add(ex.Message);
-                        }
-                    }
-
-                    Logger.LogDebug("Cluster inventory complete: {Count} secrets with per-item private key status", clusterInventoryEntries.Count);
-                    return PushInventory(clusterInventoryEntries, config.JobHistoryId, submitInventory);
                 case "namespace":
-                    var namespaceOpaqueSecrets = KubeClient.DiscoverSecrets(OpaqueAllowedKeys, "Opaque", KubeNamespace);
-                    var namespaceTlsSecrets = KubeClient.DiscoverSecrets(TLSAllowedKeys, "tls", KubeNamespace);
-                    var namespaceErrors = new List<string>();
-
-                    // Use List<InventoryEntry> to track per-secret private key status and full certificate chains
-                    var namespaceInventoryEntries = new List<InventoryEntry>();
-                    foreach (var opaqueSecret in namespaceOpaqueSecrets)
-                    {
-                        KubeSecretName = "";
-                        // KubeNamespace = "";
-                        KubeSecretType = "secret";
-                        try
-                        {
-                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
-                            // Parse the path directly since ResolveStorePath doesn't handle NS stores with 4 parts
-                            var pathParts = opaqueSecret.Split('/');
-                            if (pathParts.Length >= 4)
-                            {
-                                // Format: cluster/namespace/secrets/secretname
-                                // KubeNamespace is already set from store config, just need secret name
-                                KubeSecretName = pathParts[pathParts.Length - 1];
-                                Logger.LogDebug("Namespace inventory: Parsed secretName={SecretName} from path {Path}",
-                                    KubeSecretName, opaqueSecret);
-                            }
-                            else
-                            {
-                                // Fallback to ResolveStorePath for other formats
-                                ResolveStorePath(opaqueSecret);
-                            }
-                            StorePath = opaqueSecret.Replace("secrets", "secrets/opaque");
-                            //Split storepath by / and remove first 2 elements
-                            var storePathSplit = StorePath.Split('/');
-                            var storePathSplitList = storePathSplit.ToList();
-                            storePathSplitList.RemoveAt(0);
-                            storePathSplitList.RemoveAt(0);
-                            var alias = string.Join("/", storePathSplitList);
-
-                            var entry = HandleOpaqueSecretAsEntry(config.JobHistoryId, alias);
-                            if (entry.Certificates.Count > 0)
-                            {
-                                namespaceInventoryEntries.Add(entry);
-                                Logger.LogDebug("Namespace inventory: Added opaque secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
-                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
-                                Logger.LogTrace("Namespace inventory: Alias '{Alias}' certificate chain:\n{Chain}",
-                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("Error processing Opaque Secret: {Secret} - {Message}\n\t{StackTrace}",
-                                opaqueSecret, ex.Message, ex.StackTrace);
-                            namespaceErrors.Add(ex.Message);
-                        }
-                    }
-
-                    foreach (var tlsSecret in namespaceTlsSecrets)
-                    {
-                        KubeSecretName = "";
-                        // KubeNamespace = "";
-                        KubeSecretType = "tls_secret";
-                        try
-                        {
-                            // DiscoverSecrets returns format: cluster/namespace/secrets/secretname
-                            // Parse the path directly since ResolveStorePath doesn't handle NS stores with 4 parts
-                            var pathParts = tlsSecret.Split('/');
-                            if (pathParts.Length >= 4)
-                            {
-                                // Format: cluster/namespace/secrets/secretname
-                                // KubeNamespace is already set from store config, just need secret name
-                                KubeSecretName = pathParts[pathParts.Length - 1];
-                                Logger.LogDebug("Namespace inventory: Parsed secretName={SecretName} from path {Path}",
-                                    KubeSecretName, tlsSecret);
-                            }
-                            else
-                            {
-                                // Fallback to ResolveStorePath for other formats
-                                ResolveStorePath(tlsSecret);
-                            }
-                            StorePath = tlsSecret.Replace("secrets", "secrets/tls");
-
-                            //Split storepath by / and remove first 2 elements
-                            var storePathSplit = StorePath.Split('/');
-                            var storePathSplitList = storePathSplit.ToList();
-                            storePathSplitList.RemoveAt(0);
-                            storePathSplitList.RemoveAt(0);
-                            var alias = string.Join("/", storePathSplitList);
-
-                            var entry = HandleTlsSecretAsEntry(config.JobHistoryId, alias);
-                            if (entry.Certificates.Count > 0)
-                            {
-                                namespaceInventoryEntries.Add(entry);
-                                Logger.LogDebug("Namespace inventory: Added TLS secret '{Alias}' with HasPrivateKey={HasPrivateKey}, CertCount={CertCount}",
-                                    entry.Alias, entry.HasPrivateKey, entry.Certificates.Count);
-                                Logger.LogTrace("Namespace inventory: Alias '{Alias}' certificate chain:\n{Chain}",
-                                    entry.Alias, string.Join("\n---\n", entry.Certificates));
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError("Error processing TLS Secret: {Secret} - {Message}\n\t{StackTrace}",
-                                tlsSecret, ex.Message, ex.StackTrace);
-                            namespaceErrors.Add(ex.Message);
-                        }
-                    }
-
-                    Logger.LogDebug("Namespace inventory complete: {Count} secrets with per-item private key status", namespaceInventoryEntries.Count);
-                    return PushInventory(namespaceInventoryEntries, config.JobHistoryId, submitInventory);
+                    return ProcessMultiSecretInventory(config.JobHistoryId, submitInventory, "namespace", KubeNamespace);
 
                 default:
-                    Logger.LogError("Inventory failed with exception: {KubeSecretType} not supported.", KubeSecretType);
-                    var errorMsg = $"{KubeSecretType} not supported.";
-                    Logger.LogError(errorMsg);
-                    Logger.LogInformation("End INVENTORY for K8S Orchestrator Extension for job " + config.JobId +
-                                          " with failure.");
-                    return new JobResult
-                    {
-                        Result = OrchestratorJobStatusJobResult.Failure,
-                        JobHistoryId = config.JobHistoryId,
-                        FailureMessage = errorMsg
-                    };
+                    Logger.LogError("Inventory failed: {KubeSecretType} not supported.", KubeSecretType);
+                    return FailJob($"{KubeSecretType} not supported.", config.JobHistoryId);
             }
         }
         catch (Exception ex)
