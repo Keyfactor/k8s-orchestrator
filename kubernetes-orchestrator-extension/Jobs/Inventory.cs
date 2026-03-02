@@ -69,6 +69,11 @@ public class Inventory : JobBase, IInventoryJobExtension
     private string _originalKubeSecretName;
 
     /// <summary>
+    /// Helper service for extracting certificate chains from secret data.
+    /// </summary>
+    private Services.CertificateChainExtractor _certExtractor;
+
+    /// <summary>
     /// Initializes a new instance of the Inventory job with the specified PAM resolver.
     /// </summary>
     /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
@@ -76,6 +81,12 @@ public class Inventory : JobBase, IInventoryJobExtension
     {
         _resolver = resolver;
     }
+
+    /// <summary>
+    /// Gets the certificate chain extractor, initializing it if necessary.
+    /// </summary>
+    private Services.CertificateChainExtractor CertExtractor =>
+        _certExtractor ??= new Services.CertificateChainExtractor(KubeClient, Logger);
 
     /// <summary>
     /// Ensures KubeNamespace and KubeSecretName are populated.
@@ -1222,108 +1233,13 @@ public class Inventory : JobBase, IInventoryJobExtension
         try
         {
             var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
-            var certsList = new List<string>();
 
-            // First, process the primary certificate field (tls.crt, cert, etc.) - excludes ca.crt
-            var primaryCertKeys = OpaqueAllowedKeys.Where(k => k != "ca.crt").ToArray();
-            foreach (var allowedKey in primaryCertKeys)
-            {
-                if (!certData.Data.ContainsKey(allowedKey)) continue;
-
-                Logger.LogDebug("Found certificate data in key: {Key}", allowedKey);
-                var certificatesBytes = certData.Data[allowedKey];
-
-                // Skip empty certificate data
-                if (certificatesBytes == null || certificatesBytes.Length == 0)
-                {
-                    Logger.LogDebug("Certificate data in key '{Key}' is empty, skipping", allowedKey);
-                    continue;
-                }
-
-                var certPemData = Encoding.UTF8.GetString(certificatesBytes);
-
-                // Skip empty or whitespace-only certificate data
-                if (string.IsNullOrWhiteSpace(certPemData))
-                {
-                    Logger.LogDebug("Certificate data in key '{Key}' is empty or whitespace, skipping", allowedKey);
-                    continue;
-                }
-
-                // Use LoadCertificateChain to handle multiple certificates in the field
-                var certChain = KubeClient.LoadCertificateChain(certPemData);
-                if (certChain != null && certChain.Count > 0)
-                {
-                    Logger.LogDebug("Found {Count} certificate(s) in key '{Key}'", certChain.Count, allowedKey);
-                    foreach (var cert in certChain)
-                    {
-                        var certPem = KubeClient.ConvertToPem(cert);
-                        Logger.LogTrace("Adding certificate from '{Key}': {Subject}", allowedKey, cert.SubjectDN);
-                        certsList.Add(certPem);
-                    }
-                    // Found certificates in this key, don't process other primary keys
-                    break;
-                }
-                else
-                {
-                    // Try to parse as single DER certificate
-                    Logger.LogDebug("Failed to parse as PEM chain. Attempting to parse as DER...");
-                    var certObj = KubeClient.ReadDerCertificate(certPemData);
-                    if (certObj != null)
-                    {
-                        var certPem = KubeClient.ConvertToPem(certObj);
-                        certsList.Add(certPem);
-                        break;
-                    }
-                    else
-                    {
-                        Logger.LogWarning(
-                            "Failed to parse certificate from secret '{SecretName}' key '{Key}' in namespace '{Namespace}'. " +
-                            "The certificate data could not be parsed as PEM or DER format. Skipping this key.",
-                            KubeSecretName, allowedKey, KubeNamespace);
-                    }
-                }
-            }
-
-            // Then, process ca.crt separately to add chain certificates
-            if (certData.Data.TryGetValue("ca.crt", out var caBytes))
-            {
-                if (caBytes != null && caBytes.Length > 0)
-                {
-                    var caCertPemData = Encoding.UTF8.GetString(caBytes);
-                    if (!string.IsNullOrWhiteSpace(caCertPemData))
-                    {
-                        // ca.crt can contain multiple certificates (intermediate + root)
-                        var caCertChain = KubeClient.LoadCertificateChain(caCertPemData);
-                        if (caCertChain != null && caCertChain.Count > 0)
-                        {
-                            Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
-                            foreach (var caCert in caCertChain)
-                            {
-                                var caPem = KubeClient.ConvertToPem(caCert);
-                                // Avoid duplicates - check if certificate is already in the list
-                                if (!certsList.Contains(caPem))
-                                {
-                                    Logger.LogTrace("Adding CA certificate from ca.crt: {Subject}", caCert.SubjectDN);
-                                    certsList.Add(caPem);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // Fallback: try to read as a single DER certificate
-                            var caObj = KubeClient.ReadDerCertificate(caCertPemData);
-                            if (caObj != null)
-                            {
-                                var caPem = KubeClient.ConvertToPem(caObj);
-                                if (!certsList.Contains(caPem))
-                                {
-                                    certsList.Add(caPem);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // Use CertExtractor to handle PEM/DER parsing and ca.crt chain extraction
+            var certsList = CertExtractor.ExtractFromSecretData(
+                certData.Data,
+                OpaqueAllowedKeys,
+                KubeSecretName,
+                KubeNamespace);
 
             Logger.LogTrace("CertsList count: {Count}", certsList.Count);
             Logger.MethodExit(MsLogLevel.Debug);
@@ -1542,95 +1458,24 @@ public class Inventory : JobBase, IInventoryJobExtension
                 hasPrivateKey = false;
             }
 
-            byte[] caBytes = null;
-            var certsList = new List<string>();
+            // Extract certificates from tls.crt (handles PEM chains and single DER)
+            var sourceDesc = $"secret '{KubeSecretName}' key 'tls.crt' in namespace '{KubeNamespace}'";
+            var certsList = CertExtractor.ExtractCertificates(certificatesBytes, sourceDesc);
 
-            var certPem = Encoding.UTF8.GetString(certificatesBytes);
-
-            // Check if the certificate data is empty or whitespace-only
-            if (string.IsNullOrWhiteSpace(certPem))
+            if (certsList.Count == 0)
             {
-                Logger.LogWarning("Secret '{SecretName}' in namespace '{Namespace}' has empty certificate data. Returning empty inventory.",
-                    KubeSecretName, KubeNamespace);
-                return new List<string>();
+                throw new InvalidOperationException(
+                    $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
+                    "The certificate data could not be parsed as PEM or DER format.");
             }
 
-            Logger.LogTrace("CertPem: {CertPem}", certPem);
-            var certObj = KubeClient.ReadPemCertificate(certPem);
-            if (certObj == null)
+            // Add CA chain certificates from ca.crt if present (avoiding duplicates)
+            if (certData.Data.TryGetValue("ca.crt", out var caBytes))
             {
-                Logger.LogDebug(
-                    "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
-                // Attempt to read data as DER
-                certObj = KubeClient.ReadDerCertificate(certPem);
-                if (certObj != null)
-                {
-                    certPem = KubeClient.ConvertToPem(certObj);
-                    Logger.LogTrace("CertPem: {CertPem}", certPem);
-                }
-                else
-                {
-                    // Both PEM and DER parsing failed - throw a meaningful error
-                    throw new InvalidOperationException(
-                        $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
-                        "The certificate data could not be parsed as PEM or DER format.");
-                }
-
-                Logger.LogTrace("CertPem: {CertPem}", certPem);
-            }
-            else
-            {
-                certPem = KubeClient.ConvertToPem(certObj);
-                Logger.LogTrace("CertPem: {CertPem}", certPem);
-            }
-
-            if (!string.IsNullOrEmpty(certPem)) certsList.Add(certPem);
-
-            if (certData.Data.TryGetValue("ca.crt", out var value))
-            {
-                caBytes = value;
-                Logger.LogTrace("caBytes length: {Length}", caBytes?.Length ?? 0);
-
-                // ca.crt can contain multiple certificates (e.g., intermediate + root)
-                // Use LoadCertificateChain to parse all certificates
-                var caCertChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(caBytes));
-                if (caCertChain != null && caCertChain.Count > 0)
-                {
-                    Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
-                    foreach (var caCert in caCertChain)
-                    {
-                        var caPem = KubeClient.ConvertToPem(caCert);
-                        Logger.LogTrace("Adding CA certificate to inventory: {Subject}", caCert.SubjectDN);
-                        certsList.Add(caPem);
-                    }
-                }
-                else
-                {
-                    Logger.LogDebug("Failed to parse certificate chain from ca.crt as PEM. Attempting to parse as single DER certificate");
-                    // Fallback: try to read as a single DER certificate
-                    var caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(caBytes));
-                    if (caObj != null)
-                    {
-                        var caPem = KubeClient.ConvertToPem(caObj);
-                        Logger.LogTrace("CaPem: {CaPem}", caPem);
-                        certsList.Add(caPem);
-                    }
-                }
-            }
-            else
-            {
-                // Determine if chain is present in tls.crt
-                var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(certificatesBytes));
-                if (certChain != null && certChain.Count > 1)
-                {
-                    certsList.Clear();
-                    Logger.LogDebug("Certificate chain detected in tls.crt.  Attempting to parse chain...");
-                    foreach (var cert in certChain)
-                    {
-                        Logger.LogTrace("Cert: {Cert}", cert);
-                        certsList.Add(KubeClient.ConvertToPem(cert));
-                    }
-                }
+                CertExtractor.ExtractAndAppendUnique(
+                    caBytes,
+                    certsList,
+                    $"secret '{KubeSecretName}' key 'ca.crt' in namespace '{KubeNamespace}'");
             }
 
             Logger.LogTrace("CertsList: {CertsList}", certsList);
@@ -1682,7 +1527,6 @@ public class Inventory : JobBase, IInventoryJobExtension
         try
         {
             var certData = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
-            var certsList = new List<string>();
 
             // Check for private key in common key field names
             var privateKeyFields = new[] { "tls.key", "key", "private.key", "privateKey", "key.pem" };
@@ -1701,106 +1545,12 @@ public class Inventory : JobBase, IInventoryJobExtension
                 }
             }
 
-            // First, process the primary certificate field (tls.crt, cert, etc.) - excludes ca.crt
-            var primaryCertKeys = OpaqueAllowedKeys.Where(k => k != "ca.crt").ToArray();
-            foreach (var allowedKey in primaryCertKeys)
-            {
-                if (!certData.Data.ContainsKey(allowedKey)) continue;
-
-                Logger.LogDebug("Found certificate data in key: {Key}", allowedKey);
-                var certificatesBytes = certData.Data[allowedKey];
-
-                // Skip empty certificate data
-                if (certificatesBytes == null || certificatesBytes.Length == 0)
-                {
-                    Logger.LogDebug("Certificate data in key '{Key}' is empty, skipping", allowedKey);
-                    continue;
-                }
-
-                var certPemData = Encoding.UTF8.GetString(certificatesBytes);
-
-                // Skip empty or whitespace-only certificate data
-                if (string.IsNullOrWhiteSpace(certPemData))
-                {
-                    Logger.LogDebug("Certificate data in key '{Key}' is empty or whitespace, skipping", allowedKey);
-                    continue;
-                }
-
-                // Use LoadCertificateChain to handle multiple certificates in the field
-                var certChain = KubeClient.LoadCertificateChain(certPemData);
-                if (certChain != null && certChain.Count > 0)
-                {
-                    Logger.LogDebug("Found {Count} certificate(s) in key '{Key}'", certChain.Count, allowedKey);
-                    foreach (var cert in certChain)
-                    {
-                        var certPem = KubeClient.ConvertToPem(cert);
-                        Logger.LogTrace("Adding certificate from '{Key}': {Subject}", allowedKey, cert.SubjectDN);
-                        certsList.Add(certPem);
-                    }
-                    // Found certificates in this key, don't process other primary keys
-                    break;
-                }
-                else
-                {
-                    // Try to parse as single DER certificate
-                    Logger.LogDebug("Failed to parse as PEM chain. Attempting to parse as DER...");
-                    var certObj = KubeClient.ReadDerCertificate(certPemData);
-                    if (certObj != null)
-                    {
-                        var certPem = KubeClient.ConvertToPem(certObj);
-                        certsList.Add(certPem);
-                        break;
-                    }
-                    else
-                    {
-                        Logger.LogWarning(
-                            "Failed to parse certificate from secret '{SecretName}' key '{Key}' in namespace '{Namespace}'. " +
-                            "The certificate data could not be parsed as PEM or DER format. Skipping this key.",
-                            KubeSecretName, allowedKey, KubeNamespace);
-                    }
-                }
-            }
-
-            // Then, process ca.crt separately to add chain certificates
-            if (certData.Data.TryGetValue("ca.crt", out var caBytes))
-            {
-                if (caBytes != null && caBytes.Length > 0)
-                {
-                    var caCertPemData = Encoding.UTF8.GetString(caBytes);
-                    if (!string.IsNullOrWhiteSpace(caCertPemData))
-                    {
-                        // ca.crt can contain multiple certificates (intermediate + root)
-                        var caCertChain = KubeClient.LoadCertificateChain(caCertPemData);
-                        if (caCertChain != null && caCertChain.Count > 0)
-                        {
-                            Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
-                            foreach (var caCert in caCertChain)
-                            {
-                                var caPem = KubeClient.ConvertToPem(caCert);
-                                // Avoid duplicates - check if certificate is already in the list
-                                if (!certsList.Contains(caPem))
-                                {
-                                    Logger.LogTrace("Adding CA certificate from ca.crt: {Subject}", caCert.SubjectDN);
-                                    certsList.Add(caPem);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            // Fallback: try to read as a single DER certificate
-                            var caObj = KubeClient.ReadDerCertificate(caCertPemData);
-                            if (caObj != null)
-                            {
-                                var caPem = KubeClient.ConvertToPem(caObj);
-                                if (!certsList.Contains(caPem))
-                                {
-                                    certsList.Add(caPem);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            // Use CertExtractor to handle PEM/DER parsing and ca.crt chain extraction
+            var certsList = CertExtractor.ExtractFromSecretData(
+                certData.Data,
+                OpaqueAllowedKeys,
+                KubeSecretName,
+                KubeNamespace);
 
             Logger.LogTrace("CertsList count: {Count}", certsList.Count);
             Logger.LogDebug("Returning certificate list with {Count} certificates and HasPrivateKey={HasPrivateKey}", certsList.Count, hasPrivateKey);
@@ -1864,102 +1614,29 @@ public class Inventory : JobBase, IInventoryJobExtension
                 return new List<string>();
             }
 
-            Logger.LogTrace("CertificatesBytes: {CertificatesBytes}", certificatesBytes);
-
             // Check if tls.key exists (may be empty for cert-only secrets)
             certData.Data.TryGetValue("tls.key", out var privateKeyBytes);
-            byte[] caBytes = null;
-            var certsList = new List<string>();
 
-            var certPem = Encoding.UTF8.GetString(certificatesBytes);
+            // Extract certificates from tls.crt (handles PEM chains and single DER)
+            var sourceDesc = $"secret '{KubeSecretName}' key 'tls.crt' in namespace '{KubeNamespace}'";
+            var certsList = CertExtractor.ExtractCertificates(certificatesBytes, sourceDesc);
 
-            // Check if the certificate data is empty or whitespace-only
-            if (string.IsNullOrWhiteSpace(certPem))
+            if (certsList.Count == 0)
             {
-                Logger.LogWarning("Secret '{SecretName}' in namespace '{Namespace}' has empty certificate data. Returning empty inventory.",
-                    KubeSecretName, KubeNamespace);
-                return new List<string>();
+                throw new InvalidOperationException(
+                    $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
+                    "The certificate data could not be parsed as PEM or DER format.");
             }
 
-            Logger.LogTrace("CertPem: {CertPem}", certPem);
-            var certObj = KubeClient.ReadPemCertificate(certPem);
-            if (certObj == null)
+            // Add CA chain certificates from ca.crt if present (avoiding duplicates)
+            if (certData.Data.TryGetValue("ca.crt", out var caBytes))
             {
-                Logger.LogDebug(
-                    "Failed to parse certificate from opaque secret data as PEM. Attempting to parse as DER");
-                // Attempt to read data as DER
-                certObj = KubeClient.ReadDerCertificate(certPem);
-                if (certObj != null)
-                {
-                    certPem = KubeClient.ConvertToPem(certObj);
-                    Logger.LogTrace("CertPem: {CertPem}", certPem);
-                }
-                else
-                {
-                    // Both PEM and DER parsing failed - throw a meaningful error
-                    throw new InvalidOperationException(
-                        $"Failed to parse certificate from secret '{KubeSecretName}' in namespace '{KubeNamespace}'. " +
-                        "The certificate data could not be parsed as PEM or DER format.");
-                }
-
-                Logger.LogTrace("CertPem: {CertPem}", certPem);
-            }
-            else
-            {
-                certPem = KubeClient.ConvertToPem(certObj);
-                Logger.LogTrace("CertPem: {CertPem}", certPem);
+                CertExtractor.ExtractAndAppendUnique(
+                    caBytes,
+                    certsList,
+                    $"secret '{KubeSecretName}' key 'ca.crt' in namespace '{KubeNamespace}'");
             }
 
-            if (!string.IsNullOrEmpty(certPem)) certsList.Add(certPem);
-
-            if (certData.Data.TryGetValue("ca.crt", out var value))
-            {
-                caBytes = value;
-                Logger.LogTrace("caBytes length: {Length}", caBytes?.Length ?? 0);
-
-                // ca.crt can contain multiple certificates (e.g., intermediate + root)
-                // Use LoadCertificateChain to parse all certificates
-                var caCertChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(caBytes));
-                if (caCertChain != null && caCertChain.Count > 0)
-                {
-                    Logger.LogDebug("Found {Count} certificate(s) in ca.crt", caCertChain.Count);
-                    foreach (var caCert in caCertChain)
-                    {
-                        var caPem = KubeClient.ConvertToPem(caCert);
-                        Logger.LogTrace("Adding CA certificate to inventory: {Subject}", caCert.SubjectDN);
-                        certsList.Add(caPem);
-                    }
-                }
-                else
-                {
-                    Logger.LogDebug("Failed to parse certificate chain from ca.crt as PEM. Attempting to parse as single DER certificate");
-                    // Fallback: try to read as a single DER certificate
-                    var caObj = KubeClient.ReadDerCertificate(Encoding.UTF8.GetString(caBytes));
-                    if (caObj != null)
-                    {
-                        var caPem = KubeClient.ConvertToPem(caObj);
-                        Logger.LogTrace("CaPem: {CaPem}", caPem);
-                        certsList.Add(caPem);
-                    }
-                }
-            }
-            else
-            {
-                // Determine if chain is present in tls.crt
-                var certChain = KubeClient.LoadCertificateChain(Encoding.UTF8.GetString(certificatesBytes));
-                if (certChain != null && certChain.Count > 1)
-                {
-                    certsList.Clear();
-                    Logger.LogDebug("Certificate chain detected in tls.crt.  Attempting to parse chain...");
-                    foreach (var cert in certChain)
-                    {
-                        Logger.LogTrace("Cert: {Cert}", cert);
-                        certsList.Add(KubeClient.ConvertToPem(cert));
-                    }
-                }
-            }
-
-            // Logger.LogTrace("privateKeyBytes: " + privateKeyBytes);
             if (privateKeyBytes == null)
             {
                 Logger.LogDebug("privateKeyBytes was null.  Setting hasPrivateKey to false for job id {JobId}...", jobId);
