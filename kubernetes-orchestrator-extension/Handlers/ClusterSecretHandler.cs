@@ -1,0 +1,307 @@
+// Copyright 2024 Keyfactor
+// Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
+// and limitations under the License.
+
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Orchestrators.Extensions;
+using Microsoft.Extensions.Logging;
+
+namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers;
+
+/// <summary>
+/// Handler for cluster-wide certificate management.
+/// Discovers and manages all TLS and Opaque secrets across all namespaces.
+/// </summary>
+public class ClusterSecretHandler : SecretHandlerBase
+{
+    /// <summary>
+    /// Allowed keys for both TLS and Opaque secrets.
+    /// </summary>
+    private static readonly string[] DefaultAllowedKeys =
+    {
+        "tls.crt", "tls.key", "ca.crt",
+        "certificate", "cert", "crt", "cert.pem"
+    };
+
+    /// <inheritdoc />
+    public override string[] AllowedKeys => DefaultAllowedKeys;
+
+    /// <inheritdoc />
+    public override string SecretTypeName => "cluster";
+
+    /// <inheritdoc />
+    public override bool SupportsManagement => true;
+
+    /// <summary>
+    /// Initializes a new instance of the ClusterSecretHandler.
+    /// </summary>
+    public ClusterSecretHandler(
+        KubeCertificateManagerClient kubeClient,
+        ILogger logger,
+        ISecretOperationContext context)
+        : base(kubeClient, logger, context)
+    {
+    }
+
+    #region Inventory Operations
+
+    /// <inheritdoc />
+    public override List<string> GetCertificates(long jobId)
+    {
+        var entries = GetInventoryEntries(jobId);
+        return entries.SelectMany(e => e.Certificates).ToList();
+    }
+
+    /// <inheritdoc />
+    public override Dictionary<string, List<string>> GetCertificatesWithAliases(long jobId)
+    {
+        var entries = GetInventoryEntries(jobId);
+        return entries.ToDictionary(e => e.Alias, e => e.Certificates);
+    }
+
+    /// <inheritdoc />
+    public override List<InventoryEntry> GetInventoryEntries(long jobId)
+    {
+        LogMethodEntry(nameof(GetInventoryEntries));
+
+        try
+        {
+            var entries = new List<InventoryEntry>();
+            var errors = new List<string>();
+
+            // Discover TLS secrets
+            var tlsSecrets = KubeClient.DiscoverSecrets(
+                new[] { "tls.crt" },
+                "kubernetes.io/tls",
+                "all");
+
+            foreach (var secretPath in tlsSecrets)
+            {
+                ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
+            }
+
+            // Discover Opaque secrets
+            var opaqueSecrets = KubeClient.DiscoverSecrets(
+                new[] { "tls.crt", "certificate", "cert", "crt" },
+                "Opaque",
+                "all");
+
+            foreach (var secretPath in opaqueSecrets)
+            {
+                ProcessSecretEntry(secretPath, "opaque", entries, errors, jobId);
+            }
+
+            if (errors.Count > 0)
+            {
+                Logger.LogWarning("Errors processing {Count} secrets: {Errors}",
+                    errors.Count, string.Join("; ", errors));
+            }
+
+            return entries;
+        }
+        finally
+        {
+            LogMethodExit(nameof(GetInventoryEntries));
+        }
+    }
+
+    /// <inheritdoc />
+    public override bool HasPrivateKey()
+    {
+        // Cluster-level handler - depends on individual secrets
+        return true;
+    }
+
+    #endregion
+
+    #region Management Operations
+
+    /// <inheritdoc />
+    public override V1Secret HandleAdd(K8SJobCertificate certObj, string alias, bool overwrite)
+    {
+        LogMethodEntry(nameof(HandleAdd));
+
+        try
+        {
+            // Parse alias to determine target secret: namespace/secrets/type/name
+            var (ns, secretType, secretName) = ParseClusterAlias(alias);
+
+            // Create context for inner handler
+            var innerContext = CreateInnerContext(ns, secretName);
+            var handler = CreateInnerHandler(secretType, innerContext);
+
+            return handler.HandleAdd(certObj, alias, overwrite);
+        }
+        finally
+        {
+            LogMethodExit(nameof(HandleAdd));
+        }
+    }
+
+    /// <inheritdoc />
+    public override V1Secret HandleRemove(string alias)
+    {
+        LogMethodEntry(nameof(HandleRemove));
+
+        try
+        {
+            var (ns, secretType, secretName) = ParseClusterAlias(alias);
+
+            var innerContext = CreateInnerContext(ns, secretName);
+            var handler = CreateInnerHandler(secretType, innerContext);
+
+            return handler.HandleRemove(alias);
+        }
+        finally
+        {
+            LogMethodExit(nameof(HandleRemove));
+        }
+    }
+
+    /// <inheritdoc />
+    public override V1Secret CreateEmptyStore()
+    {
+        throw new NotSupportedException(
+            "Cluster-wide stores cannot be created as empty stores. " +
+            "Create individual secrets in specific namespaces instead.");
+    }
+
+    #endregion
+
+    #region Discovery Operations
+
+    /// <inheritdoc />
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    {
+        LogMethodEntry(nameof(DiscoverStores));
+
+        try
+        {
+            var stores = new List<string>();
+
+            // Discover TLS secrets
+            stores.AddRange(KubeClient.DiscoverSecrets(
+                new[] { "tls.crt" },
+                "kubernetes.io/tls",
+                "all"));
+
+            // Discover Opaque secrets with cert data
+            stores.AddRange(KubeClient.DiscoverSecrets(
+                new[] { "tls.crt", "certificate", "cert", "crt" },
+                "Opaque",
+                "all"));
+
+            return stores.Distinct().ToList();
+        }
+        finally
+        {
+            LogMethodExit(nameof(DiscoverStores));
+        }
+    }
+
+    #endregion
+
+    #region Private Helpers
+
+    private void ProcessSecretEntry(
+        string secretPath,
+        string secretType,
+        List<InventoryEntry> entries,
+        List<string> errors,
+        long jobId)
+    {
+        try
+        {
+            // secretPath format: namespace/secretname
+            var parts = secretPath.Split('/');
+            if (parts.Length < 2) return;
+
+            var ns = parts[0];
+            var name = parts[^1];
+
+            var innerContext = CreateInnerContext(ns, name);
+            var handler = CreateInnerHandler(secretType, innerContext);
+
+            var innerEntries = handler.GetInventoryEntries(jobId);
+
+            // Modify aliases to include full path for cluster view
+            foreach (var entry in innerEntries)
+            {
+                entry.Alias = $"{ns}/secrets/{secretType}/{name}";
+                entries.Add(entry);
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"{secretPath}: {ex.Message}");
+        }
+    }
+
+    private (string Namespace, string SecretType, string SecretName) ParseClusterAlias(string alias)
+    {
+        // Expected format: namespace/secrets/type/name
+        var parts = alias.Split('/');
+        if (parts.Length < 4)
+        {
+            throw new ArgumentException(
+                $"Invalid cluster alias format: '{alias}'. Expected: namespace/secrets/type/name");
+        }
+
+        return (parts[0], parts[2], parts[3]);
+    }
+
+    private ISecretOperationContext CreateInnerContext(string ns, string name)
+    {
+        return new SimpleSecretOperationContext
+        {
+            KubeNamespace = ns,
+            KubeSecretName = name,
+            StorePath = $"{ns}/{name}",
+            StorePassword = Context.StorePassword,
+            PasswordSecretPath = Context.PasswordSecretPath,
+            PasswordFieldName = Context.PasswordFieldName,
+            SeparateChain = Context.SeparateChain,
+            IncludeCertChain = Context.IncludeCertChain,
+            CertificateDataFieldName = Context.CertificateDataFieldName
+        };
+    }
+
+    private ISecretHandler CreateInnerHandler(string secretType, ISecretOperationContext innerContext)
+    {
+        var normalizedType = SecretTypes.Normalize(secretType);
+
+        return normalizedType switch
+        {
+            SecretTypes.Tls => new TlsSecretHandler(KubeClient, Logger, innerContext),
+            SecretTypes.Opaque => new OpaqueSecretHandler(KubeClient, Logger, innerContext),
+            _ => throw new NotSupportedException($"Inner secret type '{secretType}' not supported")
+        };
+    }
+
+    #endregion
+}
+
+/// <summary>
+/// Simple implementation of ISecretOperationContext for inner handlers.
+/// </summary>
+internal class SimpleSecretOperationContext : ISecretOperationContext
+{
+    public string KubeNamespace { get; init; } = string.Empty;
+    public string KubeSecretName { get; init; } = string.Empty;
+    public string StorePath { get; init; } = string.Empty;
+    public string StorePassword { get; init; } = string.Empty;
+    public string PasswordSecretPath { get; init; } = string.Empty;
+    public string PasswordFieldName { get; init; } = string.Empty;
+    public bool SeparateChain { get; init; }
+    public bool IncludeCertChain { get; init; }
+    public string CertificateDataFieldName { get; init; } = string.Empty;
+}

@@ -291,6 +291,14 @@ test-store-cert: ## Run K8SCert store type integration tests
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SCertStoreIntegrationTests" --logger "console;verbosity=minimal"
 
+.PHONY: test-handlers
+test-handlers: ## Run handler unit tests
+	@dotnet test --filter "FullyQualifiedName~Handler" --logger "console;verbosity=minimal"
+
+.PHONY: test-base-jobs
+test-base-jobs: ## Run base job class unit tests
+	@dotnet test --filter "FullyQualifiedName~Jobs.Base" --logger "console;verbosity=minimal"
+
 .PHONY: test-cluster-setup
 test-cluster-setup: ## Display instructions for setting up test cluster
 	@echo "=== Kubernetes Test Cluster Setup ==="
