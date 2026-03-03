@@ -117,9 +117,9 @@ test-unit: ## Run unit tests only (excludes integration tests)
 	dotnet test --filter "FullyQualifiedName!~Integration"
 
 .PHONY: test-integration
-test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=true)
-	@source .env; \
-	source .test.env; \
+test-integration: test-cluster-cleanup ## Run integration tests only (requires RUN_INTEGRATION_TESTS=true)
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
@@ -127,7 +127,7 @@ test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=
 	dotnet test --filter "FullyQualifiedName~Integration"
 
 .PHONY: test-integration-fast
-test-integration-fast: ## Run integration tests on single framework (net8.0 only, ~50% faster)
+test-integration-fast: test-cluster-cleanup ## Run integration tests on single framework (net8.0 only, ~50% faster)
 	@source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
@@ -137,7 +137,7 @@ test-integration-fast: ## Run integration tests on single framework (net8.0 only
 	dotnet test -f net8.0 --filter "FullyQualifiedName~Integration"
 
 .PHONY: test-integration-full
-test-integration-full: ## Run integration tests on all frameworks (net8.0 + net10.0)
+test-integration-full: test-cluster-cleanup ## Run integration tests on all frameworks (net8.0 + net10.0)
 	@source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
@@ -168,7 +168,7 @@ test-ci: ## Run CI-optimized tests (fast on PRs, full on main branch)
 	fi
 
 .PHONY: test-coverage
-test-coverage: ## Run all tests with code coverage and generate HTML report
+test-coverage: test-cluster-cleanup ## Run all tests with code coverage and generate HTML report
 	@echo "Running all tests with coverage..."; \
 	source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
@@ -243,51 +243,51 @@ test-single: ## Run a single integration test by filter (usage: make test-single
 	dotnet test --filter "FullyQualifiedName~$(FILTER)" --verbosity normal 2>&1 | tail -60
 
 .PHONY: test-store-jks
-test-store-jks: ## Run K8SJKS store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-jks: test-cluster-cleanup ## Run K8SJKS store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SJKSStoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-pkcs12
-test-store-pkcs12: ## Run K8SPKCS12 store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-pkcs12: test-cluster-cleanup ## Run K8SPKCS12 store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SPKCS12StoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-secret
-test-store-secret: ## Run K8SSecret store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-secret: test-cluster-cleanup ## Run K8SSecret store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SSecretStoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-tls
-test-store-tls: ## Run K8STLSSecr store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-tls: test-cluster-cleanup ## Run K8STLSSecr store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8STLSSecrStoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-cluster
-test-store-cluster: ## Run K8SCluster store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-cluster: test-cluster-cleanup ## Run K8SCluster store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SClusterStoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-ns
-test-store-ns: ## Run K8SNS store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-ns: test-cluster-cleanup ## Run K8SNS store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SNSStoreIntegrationTests" --logger "console;verbosity=minimal"
 
 .PHONY: test-store-cert
-test-store-cert: ## Run K8SCert store type integration tests
-	@source .env; \
-	source .test.env; \
+test-store-cert: test-cluster-cleanup ## Run K8SCert store type integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SCertStoreIntegrationTests" --logger "console;verbosity=minimal"
 

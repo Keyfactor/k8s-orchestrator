@@ -638,6 +638,7 @@ public abstract class JobBase
                 jobCertObject.CertThumbprint = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetThumbprint(x509Obj.Certificate);
                 jobCertObject.ChainPem = chainList;
                 jobCertObject.CertPem = KubeClient.ConvertToPem(x509Obj.Certificate);
+                jobCertObject.Pkcs12 = certBytes;
 
                 Logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(x509Obj.Certificate));
                 Logger.LogDebug("Certificate chain: {Count} certificates", chain?.Length ?? 0);
@@ -1122,8 +1123,9 @@ public abstract class JobBase
     private void ResolveStorePathAndApplyDefaults()
     {
         // Determine if we need to resolve path components
+        // K8SCert is also treated as aggregate-like because empty KubeSecretName means "all CSRs"
         var isAggregate = !string.IsNullOrEmpty(Capability) &&
-            (Capability.Contains("NS") || Capability.Contains("Cluster"));
+            (Capability.Contains("NS") || Capability.Contains("Cluster") || Capability.Contains("Cert"));
         var needsResolution = !string.IsNullOrEmpty(StorePath) &&
             (string.IsNullOrEmpty(KubeSecretName) && !isAggregate || string.IsNullOrEmpty(KubeNamespace));
 

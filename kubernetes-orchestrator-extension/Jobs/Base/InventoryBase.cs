@@ -71,7 +71,7 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
             Logger.LogWarning("Store not found: {Message}", ex.Message);
             // Return empty inventory for not found stores (common during initial setup)
             submitInventory.Invoke(new List<CurrentInventoryItem>());
-            return SuccessJob(config.JobHistoryId);
+            return SuccessJob(config.JobHistoryId, $"Store not found: {ex.Message}");
         }
         catch (Exception ex)
         {

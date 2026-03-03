@@ -92,15 +92,33 @@ public class Pkcs12SecretHandler : SecretHandlerBase
 
                 foreach (var alias in store.Aliases)
                 {
-                    var certChain = store.GetCertificateChain(alias);
-                    if (certChain == null) continue;
-
                     var certsList = new List<string>();
-                    foreach (var cert in certChain)
+
+                    // For key entries, get the certificate chain
+                    // For certificate-only entries (trusted certs), get the single certificate
+                    if (store.IsKeyEntry(alias))
                     {
+                        var certChain = store.GetCertificateChain(alias);
+                        if (certChain == null) continue;
+
+                        foreach (var cert in certChain)
+                        {
+                            var pem = new StringBuilder();
+                            pem.AppendLine("-----BEGIN CERTIFICATE-----");
+                            pem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                            pem.AppendLine("-----END CERTIFICATE-----");
+                            certsList.Add(pem.ToString());
+                        }
+                    }
+                    else
+                    {
+                        // Certificate-only entry (trusted cert)
+                        var certEntry = store.GetCertificate(alias);
+                        if (certEntry == null) continue;
+
                         var pem = new StringBuilder();
                         pem.AppendLine("-----BEGIN CERTIFICATE-----");
-                        pem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                        pem.AppendLine(Convert.ToBase64String(certEntry.Certificate.GetEncoded()));
                         pem.AppendLine("-----END CERTIFICATE-----");
                         certsList.Add(pem.ToString());
                     }
@@ -126,20 +144,82 @@ public class Pkcs12SecretHandler : SecretHandlerBase
     /// <inheritdoc />
     public override List<InventoryEntry> GetInventoryEntries(long jobId)
     {
-        var aliasedCerts = GetCertificatesWithAliases(jobId);
-        var entries = new List<InventoryEntry>();
+        LogMethodEntry(nameof(GetInventoryEntries));
 
-        foreach (var kvp in aliasedCerts)
+        try
         {
-            entries.Add(new InventoryEntry
-            {
-                Alias = kvp.Key,
-                Certificates = kvp.Value,
-                HasPrivateKey = true // PKCS12 entries typically have private keys
-            });
-        }
+            var keys = BuildAllowedKeys(DefaultAllowedKeys);
+            var k8sData = KubeClient.GetPkcs12Secret(
+                Context.KubeSecretName,
+                Context.KubeNamespace,
+                "", "",
+                keys.ToList());
 
-        return entries;
+            var serializer = new Pkcs12CertificateStoreSerializer(null);
+            var entries = new List<InventoryEntry>();
+
+            foreach (var (keyName, keyBytes) in k8sData.Inventory)
+            {
+                var password = ResolvePassword(k8sData.Secret);
+                var store = serializer.DeserializeRemoteCertificateStore(keyBytes, keyName, password);
+
+                // Check if ANY entry in the store has a private key (global flag)
+                var storeHasPrivateKey = store.Aliases.Any(a => store.IsKeyEntry(a));
+
+                foreach (var alias in store.Aliases)
+                {
+                    var certsList = new List<string>();
+                    var isKeyEntry = store.IsKeyEntry(alias);
+
+                    if (isKeyEntry)
+                    {
+                        var certChain = store.GetCertificateChain(alias);
+                        if (certChain == null) continue;
+
+                        foreach (var cert in certChain)
+                        {
+                            var pem = new StringBuilder();
+                            pem.AppendLine("-----BEGIN CERTIFICATE-----");
+                            pem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
+                            pem.AppendLine("-----END CERTIFICATE-----");
+                            certsList.Add(pem.ToString());
+                        }
+                    }
+                    else
+                    {
+                        var certEntry = store.GetCertificate(alias);
+                        if (certEntry == null) continue;
+
+                        var pem = new StringBuilder();
+                        pem.AppendLine("-----BEGIN CERTIFICATE-----");
+                        pem.AppendLine(Convert.ToBase64String(certEntry.Certificate.GetEncoded()));
+                        pem.AppendLine("-----END CERTIFICATE-----");
+                        certsList.Add(pem.ToString());
+                    }
+
+                    var fullAlias = $"{keyName}/{alias}";
+                    entries.Add(new InventoryEntry
+                    {
+                        Alias = fullAlias,
+                        Certificates = certsList,
+                        // PKCS12 inventory uses a global flag: if ANY entry has a private key,
+                        // ALL entries report HasPrivateKey=true
+                        HasPrivateKey = storeHasPrivateKey
+                    });
+                }
+            }
+
+            return entries;
+        }
+        catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
+        {
+            throw new StoreNotFoundException(
+                $"PKCS12 keystore secret '{Context.KubeSecretName}' was not found in namespace '{Context.KubeNamespace}'.");
+        }
+        finally
+        {
+            LogMethodExit(nameof(GetInventoryEntries));
+        }
     }
 
     /// <inheritdoc />
@@ -169,20 +249,33 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             var keys = BuildAllowedKeys(DefaultAllowedKeys);
             var serializer = new Pkcs12CertificateStoreSerializer(null);
 
-            // Get existing keystore data
-            var k8sData = KubeClient.GetPkcs12Secret(
-                Context.KubeSecretName,
-                Context.KubeNamespace,
-                Context.PasswordSecretPath ?? "",
-                Context.PasswordFieldName ?? "",
-                keys.ToList());
+            // Get existing keystore data (or create empty if not found)
+            KubeCertificateManagerClient.Pkcs12Secret k8sData;
+            try
+            {
+                k8sData = KubeClient.GetPkcs12Secret(
+                    Context.KubeSecretName,
+                    Context.KubeNamespace,
+                    Context.PasswordSecretPath ?? "",
+                    Context.PasswordFieldName ?? "",
+                    keys.ToList());
+            }
+            catch (StoreNotFoundException)
+            {
+                Logger.LogDebug("Secret not found, will create new PKCS12 store");
+                k8sData = new KubeCertificateManagerClient.Pkcs12Secret
+                {
+                    Secret = null,
+                    Inventory = new Dictionary<string, byte[]>()
+                };
+            }
 
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
 
             // Get existing store bytes (first key in inventory or null)
             byte[] existingData = null;
-            string existingKeyName = "keystore.p12";
+            string existingKeyName = "keystore.pfx";
             if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
             {
                 var firstKey = k8sData.Inventory.Keys.First();
@@ -190,8 +283,10 @@ public class Pkcs12SecretHandler : SecretHandlerBase
                 existingKeyName = firstKey;
             }
 
-            // Convert cert to PKCS12 bytes for the serializer
-            byte[] newCertBytes = certObj.PrivateKeyBytes;
+            // Get certificate bytes for the serializer
+            // Use PKCS12 if available (for certificates with private keys), otherwise use raw cert bytes
+            // (for certificate-only entries like trusted CA certs)
+            byte[] newCertBytes = certObj.Pkcs12 ?? certObj.CertBytes;
 
             // Use serializer to update the PKCS12 store
             var newPkcs12Bytes = serializer.CreateOrUpdatePkcs12(
@@ -242,7 +337,7 @@ public class Pkcs12SecretHandler : SecretHandlerBase
 
             // Get existing store bytes
             byte[] existingData = null;
-            string existingKeyName = "keystore.p12";
+            string existingKeyName = "keystore.pfx";
             if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
             {
                 var firstKey = k8sData.Inventory.Keys.First();
@@ -297,7 +392,7 @@ public class Pkcs12SecretHandler : SecretHandlerBase
                 Secret = null,
                 Inventory = new Dictionary<string, byte[]>
                 {
-                    { "keystore.p12", pkcs12Bytes }
+                    { "keystore.pfx", pkcs12Bytes }
                 }
             };
 

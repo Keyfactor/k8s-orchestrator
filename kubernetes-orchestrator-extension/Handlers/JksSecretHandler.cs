@@ -168,13 +168,26 @@ public class JksSecretHandler : SecretHandlerBase
             var keys = BuildAllowedKeys(DefaultAllowedKeys);
             var serializer = new JksCertificateStoreSerializer(null);
 
-            // Get existing keystore data
-            var k8sData = KubeClient.GetJksSecret(
-                Context.KubeSecretName,
-                Context.KubeNamespace,
-                Context.PasswordSecretPath ?? "",
-                Context.PasswordFieldName ?? "",
-                keys.ToList());
+            // Get existing keystore data (or create empty if not found)
+            KubeCertificateManagerClient.JksSecret k8sData;
+            try
+            {
+                k8sData = KubeClient.GetJksSecret(
+                    Context.KubeSecretName,
+                    Context.KubeNamespace,
+                    Context.PasswordSecretPath ?? "",
+                    Context.PasswordFieldName ?? "",
+                    keys.ToList());
+            }
+            catch (StoreNotFoundException)
+            {
+                Logger.LogDebug("Secret not found, will create new JKS store");
+                k8sData = new KubeCertificateManagerClient.JksSecret
+                {
+                    Secret = null,
+                    Inventory = new Dictionary<string, byte[]>()
+                };
+            }
 
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
@@ -189,8 +202,10 @@ public class JksSecretHandler : SecretHandlerBase
                 existingKeyName = firstKey;
             }
 
-            // Convert cert to PKCS12 bytes for the serializer
-            byte[] newCertBytes = certObj.PrivateKeyBytes;
+            // Get certificate bytes for the serializer
+            // Use PKCS12 if available (for certificates with private keys), otherwise use raw cert bytes
+            // (for certificate-only entries like trusted CA certs)
+            byte[] newCertBytes = certObj.Pkcs12 ?? certObj.CertBytes;
 
             // Use serializer to update the JKS store
             var newJksBytes = serializer.CreateOrUpdateJks(

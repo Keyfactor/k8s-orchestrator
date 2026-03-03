@@ -1256,43 +1256,36 @@ public class KubeCertificateManagerClient
             throw new Exception(errMsg);
         }
 
-        _logger.LogTrace($"Entering switch statement for secret type {secretType}");
-        switch (secretType)
+        // Normalize the secret type to handle variants (e.g., "opaque" -> "secret", "tls" stays "tls")
+        var normalizedType = SecretTypes.Normalize(secretType);
+        _logger.LogTrace("Entering switch statement for secret type {OriginalType} (normalized: {NormalizedType})",
+            secretType, normalizedType);
+
+        // Route based on normalized type using SecretTypes helpers
+        if (SecretTypes.IsOpaqueType(normalizedType))
         {
-            // check if certificate already exists in "certificates" field
-            // case "secret" when !overwrite:
-            //     Logger.LogInformation($"Attempting to create opaque secret {secretName} in namespace {namespaceName}");
-            //     Logger.LogInformation("Overwrite is not specified, checking if certificate already exists in secret");
-            //     
-            //     
-            //     return CreateNewSecret(secretName, namespaceName, keyPem,certPem,"","",secretType);
-            case "secret":
-            {
-                _logger.LogInformation($"Attempting to update opaque secret {secretName} in namespace {namespaceName}");
-                _logger.LogTrace("Calling UpdateOpaqueSecret()");
-                return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, newData);
-            }
-            // case "tls_secret" when !overwrite:
-            //     var errMsg = "Overwrite is not specified, cannot add multiple certificates to a Kubernetes secret type 'tls_secret'.";
-            //     Logger.LogError(errMsg);
-            //     Logger.LogTrace("Exiting UpdateSecretStore()");
-            //     throw new Exception(errMsg);
-            case "tls_secret":
-            {
-                _logger.LogInformation($"Attempting to update tls secret {secretName} in namespace {namespaceName}");
-                _logger.LogTrace("Calling ReplaceNamespacedSecret()");
-                var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
-                _logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
-                _logger.LogTrace("Exiting UpdateSecretStore()");
-                return secretResponse;
-            }
-            default:
-                var dErrMsg =
-                    $"Secret type not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.";
-                _logger.LogError(dErrMsg);
-                _logger.LogTrace("Exiting UpdateSecretStore()");
-                throw new NotImplementedException(dErrMsg);
+            _logger.LogInformation("Attempting to update opaque secret {SecretName} in namespace {Namespace}",
+                secretName, namespaceName);
+            _logger.LogTrace("Calling UpdateOpaqueSecret()");
+            return UpdateOpaqueSecret(secretName, namespaceName, existingSecret, newData);
         }
+
+        if (SecretTypes.IsTlsType(normalizedType))
+        {
+            _logger.LogInformation("Attempting to update tls secret {SecretName} in namespace {Namespace}",
+                secretName, namespaceName);
+            _logger.LogTrace("Calling ReplaceNamespacedSecret()");
+            var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(newData, secretName, namespaceName);
+            _logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
+            _logger.LogTrace("Exiting UpdateSecretStore()");
+            return secretResponse;
+        }
+
+        var dErrMsg =
+            $"Secret type '{secretType}' not implemented. Unable to create or update certificate store {secretName} in {namespaceName} on {GetHost()}.";
+        _logger.LogError(dErrMsg);
+        _logger.LogTrace("Exiting UpdateSecretStore()");
+        throw new NotImplementedException(dErrMsg);
     }
 
     public V1Secret GetCertificateStoreSecret(string secretName, string namespaceName)

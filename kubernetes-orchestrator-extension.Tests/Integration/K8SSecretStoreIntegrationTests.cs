@@ -11,7 +11,7 @@ using System.Text;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SSecret;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
@@ -90,7 +90,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -121,7 +121,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -152,7 +152,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -250,7 +250,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -1319,6 +1319,138 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
 
         Assert.True(expectedThumbprint == inventoriedThumbprint,
             $"Inventoried certificate thumbprint doesn't match. Expected: {expectedThumbprint}, Got: {inventoriedThumbprint}");
+    }
+
+    #endregion
+
+    #region Implicit Default Namespace Tests
+
+    /// <summary>
+    /// Tests that when KubeNamespace is not specified in Properties and StorePath is a single part (just secret name),
+    /// the orchestrator correctly uses the "default" namespace.
+    /// This validates the documented StorePath pattern: &lt;secret_name&gt; uses default namespace.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ImplicitDefaultNamespace_FindsSecretInDefaultNamespace()
+    {
+        // Arrange - Create a secret directly in the "default" namespace
+        var secretName = $"test-default-ns-{Guid.NewGuid():N}";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Default Namespace Test Cert");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = secretName },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        try
+        {
+            // Create secret in "default" namespace
+            await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, "default");
+
+            // Configure job with single-part StorePath and NO KubeNamespace in Properties
+            // This should implicitly use "default" namespace
+            var jobConfig = new InventoryJobConfiguration
+            {
+                Capability = "K8SSecret",
+                CertificateStoreDetails = new CertificateStore
+                {
+                    ClientMachine = "default",
+                    StorePath = secretName,  // Single part - just the secret name
+                    Properties = "{\"KubeSecretType\":\"opaque\"}"  // No KubeNamespace specified
+                },
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true
+            };
+
+            var inventory = new Inventory(MockPamResolver.Object);
+            var inventoriedCerts = new List<CurrentInventoryItem>();
+
+            // Act
+            var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+            {
+                inventoriedCerts.AddRange(items);
+                return true;
+            }));
+
+            // Assert
+            Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+            Assert.NotEmpty(inventoriedCerts);
+            Assert.Single(inventoriedCerts);
+
+            // Verify the certificate matches what we created
+            var expectedThumbprint = CertificateUtilities.GetThumbprint(certInfo.Certificate);
+            var inventoriedCertPem = inventoriedCerts[0].Certificates.First();
+            using var reader = new System.IO.StringReader(inventoriedCertPem);
+            var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+            var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+            var actualThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
+
+            Assert.Equal(expectedThumbprint, actualThumbprint);
+        }
+        finally
+        {
+            // Cleanup - delete the secret from "default" namespace
+            try
+            {
+                await K8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, "default");
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tests that when KubeNamespace is not specified and StorePath is two parts (namespace/secret),
+    /// the namespace is correctly inferred from the StorePath.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_StorePathWithNamespace_InfersNamespaceFromPath()
+    {
+        // Arrange
+        var secretName = $"test-inferred-ns-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048, includePrivateKey: true);
+
+        // Use two-part StorePath: namespace/secretname - namespace should be inferred
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SSecret",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",  // Two parts: namespace/secret
+                Properties = "{\"KubeSecretType\":\"opaque\"}"  // No KubeNamespace - should infer from path
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        var inventoriedCerts = new List<CurrentInventoryItem>();
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoriedCerts.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotEmpty(inventoriedCerts);
     }
 
     #endregion

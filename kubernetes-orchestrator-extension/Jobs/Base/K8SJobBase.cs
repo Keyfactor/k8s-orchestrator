@@ -111,13 +111,15 @@ public abstract class K8SJobBase : JobBase
     /// Creates a success job result.
     /// </summary>
     /// <param name="jobHistoryId">The job history ID.</param>
+    /// <param name="message">Optional message to include in the result.</param>
     /// <returns>A successful JobResult.</returns>
-    protected JobResult SuccessJob(long jobHistoryId)
+    protected new JobResult SuccessJob(long jobHistoryId, string message = null)
     {
         return new JobResult
         {
             Result = OrchestratorJobStatusJobResult.Success,
-            JobHistoryId = jobHistoryId
+            JobHistoryId = jobHistoryId,
+            FailureMessage = message
         };
     }
 

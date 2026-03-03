@@ -221,12 +221,12 @@ public class ClusterSecretHandler : SecretHandlerBase
     {
         try
         {
-            // secretPath format: namespace/secretname
+            // secretPath format from DiscoverSecrets: cluster/namespace/secrets/secretname
             var parts = secretPath.Split('/');
-            if (parts.Length < 2) return;
+            if (parts.Length < 4) return;
 
-            var ns = parts[0];
-            var name = parts[^1];
+            var ns = parts[1];  // Namespace is the second part
+            var name = parts[^1];  // Secret name is the last part
 
             var innerContext = CreateInnerContext(ns, name);
             var handler = CreateInnerHandler(secretType, innerContext);

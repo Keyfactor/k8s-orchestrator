@@ -45,6 +45,12 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
             Logger.LogDebug("Initializing store for management job {JobId}", config.JobId);
             InitializeStore(config);
 
+            // Ensure StorePassword is set from config (Management jobs need this for keystore types)
+            if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.StorePassword))
+            {
+                StorePassword = config.CertificateStoreDetails.StorePassword;
+            }
+
             Logger.LogDebug("Initializing handler for store type: {StoreType}", KubeSecretType);
             InitializeHandler(config);
 
@@ -95,6 +101,9 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
     protected virtual JobResult HandleAdd(ManagementJobConfiguration config)
     {
         Logger.LogDebug("Processing Add operation");
+
+        // Initialize certificate from job configuration (parses PKCS12, extracts keys, etc.)
+        K8SCertificate = InitJobCertificate(config);
 
         // Parse certificate from job configuration
         var certObj = ParseCertificate(config);

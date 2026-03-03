@@ -250,15 +250,17 @@ public class NamespaceSecretHandler : SecretHandlerBase
 
     private (string SecretType, string SecretName) ParseNamespaceAlias(string alias)
     {
-        // Expected format: type/name
+        // Expected format: [secrets/]<type>/<name> - uses last two parts
+        // Examples: "opaque/my-secret" or "secrets/opaque/my-secret"
         var parts = alias.Split('/');
         if (parts.Length < 2)
         {
             throw new ArgumentException(
-                $"Invalid namespace alias format: '{alias}'. Expected: type/name");
+                $"Invalid namespace alias format: '{alias}'. Expected: <type>/<name> or secrets/<type>/<name>");
         }
 
-        return (parts[0], parts[1]);
+        // Use ^2 and ^1 to get second-to-last (type) and last (name)
+        return (parts[^2], parts[^1]);
     }
 
     private ISecretOperationContext CreateInnerContext(string name)
