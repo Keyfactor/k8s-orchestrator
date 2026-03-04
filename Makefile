@@ -182,6 +182,7 @@ test-coverage: test-setup ## Run all tests with code coverage and generate HTML 
 	export RUN_INTEGRATION_TESTS=true; \
 	rm -rf ./coverage; \
 	dotnet test \
+		--framework net8.0 \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
@@ -207,6 +208,7 @@ test-coverage-unit: ## Run unit tests only with code coverage
 	@echo "Running unit tests with coverage..."; \
 	rm -rf ./coverage/unit; \
 	dotnet test \
+		--framework net8.0 \
 		--filter "Category!=Integration" \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage/unit \
