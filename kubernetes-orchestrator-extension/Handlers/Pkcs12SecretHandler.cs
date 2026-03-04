@@ -448,9 +448,14 @@ public class Pkcs12SecretHandler : SecretHandlerBase
         // Try to get password from buddy secret first
         if (!string.IsNullOrEmpty(Context.PasswordSecretPath))
         {
+            // Parse the path to extract namespace and secret name
+            var pathParts = Context.PasswordSecretPath.Split('/');
+            var passwordNamespace = pathParts.Length > 1 ? pathParts[0] : Context.KubeNamespace;
+            var passwordSecretName = pathParts.Length > 1 ? pathParts[^1] : pathParts[0];
+
             var buddySecret = KubeClient.ReadBuddyPass(
-                Context.PasswordSecretPath,
-                Context.PasswordFieldName ?? "password");
+                passwordSecretName,
+                passwordNamespace);
 
             if (buddySecret?.Data != null)
             {
