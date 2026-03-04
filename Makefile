@@ -167,34 +167,59 @@ test-ci: ## Run CI-optimized tests (fast on PRs, full on main branch)
 		$(MAKE) test-integration-smoke-net10; \
 	fi
 
+.PHONY: test-setup
+test-setup: test-cluster-cleanup ## Set up test environment (clean + create CSRs for K8SCert tests)
+	@echo "=== Setting up test environment ==="
+	@echo "Creating CSRs with certificates for K8SCert tests..."
+	@$(MAKE) csr-create-batch-with-chain COUNT=3
+	@echo "Test environment ready"
+
 .PHONY: test-coverage
-test-coverage: test-cluster-cleanup ## Run all tests with code coverage and generate HTML report
+test-coverage: test-setup ## Run all tests with code coverage and generate HTML report
 	@echo "Running all tests with coverage..."; \
 	source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
+	rm -rf ./coverage; \
 	dotnet test \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
+	echo "Generating HTML coverage report..."; \
+	~/.dotnet/tools/reportgenerator \
+		"-reports:./coverage/*/coverage.cobertura.xml" \
+		"-targetdir:./coverage/html" \
+		"-reporttypes:Html" 2>/dev/null || \
 	reportgenerator \
-		-reports:./coverage/**/coverage.cobertura.xml \
-		-targetdir:./coverage/html \
-		-reporttypes:Html; \
+		"-reports:./coverage/*/coverage.cobertura.xml" \
+		"-targetdir:./coverage/html" \
+		"-reporttypes:Html"; \
 	echo "Coverage report generated at ./coverage/html/index.html"
+
+.PHONY: test-coverage-install
+test-coverage-install: ## Install reportgenerator tool for coverage reports
+	@dotnet tool install --global dotnet-reportgenerator-globaltool 2>/dev/null || \
+		dotnet tool update --global dotnet-reportgenerator-globaltool 2>/dev/null || \
+		echo "reportgenerator already installed"
 
 .PHONY: test-coverage-unit
 test-coverage-unit: ## Run unit tests only with code coverage
 	@echo "Running unit tests with coverage..."; \
+	rm -rf ./coverage/unit; \
 	dotnet test \
 		--filter "Category!=Integration" \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage/unit \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
+	echo "Generating HTML coverage report..."; \
+	~/.dotnet/tools/reportgenerator \
+		"-reports:./coverage/unit/*/coverage.cobertura.xml" \
+		"-targetdir:./coverage/unit/html" \
+		"-reporttypes:Html;MarkdownSummary" 2>/dev/null || \
 	reportgenerator \
-		-reports:./coverage/unit/**/coverage.cobertura.xml \
-		-targetdir:./coverage/unit/html \
-		-reporttypes:"Html;MarkdownSummary"; \
+		"-reports:./coverage/unit/*/coverage.cobertura.xml" \
+		"-targetdir:./coverage/unit/html" \
+		"-reporttypes:Html;MarkdownSummary"; \
 	echo "Unit test coverage report generated at ./coverage/unit/html/index.html"
 
 .PHONY: test-coverage-summary
