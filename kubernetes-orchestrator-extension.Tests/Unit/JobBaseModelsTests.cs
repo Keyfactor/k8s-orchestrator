@@ -303,4 +303,70 @@ public class JobBaseModelsTests
     }
 
     #endregion
+
+    #region StoreNotFoundException Tests
+
+    [Fact]
+    public void StoreNotFoundException_DefaultConstructor_CreatesException()
+    {
+        // Arrange & Act
+        var ex = new StoreNotFoundException();
+
+        // Assert
+        Assert.NotNull(ex);
+        Assert.IsType<StoreNotFoundException>(ex);
+    }
+
+    [Fact]
+    public void StoreNotFoundException_WithMessage_ContainsMessage()
+    {
+        // Arrange
+        const string message = "Certificate store 'my-secret' not found in namespace 'default'";
+
+        // Act
+        var ex = new StoreNotFoundException(message);
+
+        // Assert
+        Assert.Equal(message, ex.Message);
+    }
+
+    [Fact]
+    public void StoreNotFoundException_WithMessageAndInnerException_ContainsBoth()
+    {
+        // Arrange
+        const string message = "Store not found";
+        var inner = new InvalidOperationException("K8s API error");
+
+        // Act
+        var ex = new StoreNotFoundException(message, inner);
+
+        // Assert
+        Assert.Equal(message, ex.Message);
+        Assert.Same(inner, ex.InnerException);
+    }
+
+    [Fact]
+    public void StoreNotFoundException_CanBeThrown()
+    {
+        // Arrange & Act & Assert
+        var ex = Assert.Throws<StoreNotFoundException>(() => ThrowStoreNotFoundException());
+        Assert.Equal("Test store not found", ex.Message);
+    }
+
+    private static void ThrowStoreNotFoundException()
+    {
+        throw new StoreNotFoundException("Test store not found");
+    }
+
+    [Fact]
+    public void StoreNotFoundException_InheritsFromException()
+    {
+        // Arrange & Act
+        var ex = new StoreNotFoundException("test");
+
+        // Assert
+        Assert.IsAssignableFrom<Exception>(ex);
+    }
+
+    #endregion
 }
