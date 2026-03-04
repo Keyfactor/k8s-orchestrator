@@ -9,7 +9,6 @@ This document describes how to build and test the Kubernetes Orchestrator Extens
   - [Unit Tests](#unit-tests)
   - [Integration Tests](#integration-tests)
   - [Store-Type Specific Tests](#store-type-specific-tests)
-- [TestConsole (Legacy)](#testconsole-legacy)
 - [Architecture](#architecture)
 
 ## Prerequisites
@@ -121,44 +120,6 @@ make test-coverage-unit
 
 # View coverage report
 make test-coverage-open
-```
-
-## TestConsole (Legacy)
-
-The `TestConsole` application provides manual integration testing against a Keyfactor Command instance.
-
-### Environment Variables
-
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `KEYFACTOR_HOSTNAME` | Keyfactor Command hostname | `my.keyfactor.kfdelivery.com` |
-| `KEYFACTOR_DOMAIN` | Authentication domain | `command` |
-| `KEYFACTOR_USERNAME` | Service account username | `k8s-agent-sa` |
-| `KEYFACTOR_PASSWORD` | Service account password | |
-| `TEST_KUBECONFIG` | Full kubeconfig JSON (single line or base64) | See scripts/kubernetes/README.md |
-| `TEST_KUBE_NAMESPACE` | Target namespace | `default` |
-| `TEST_MANUAL` | Enable manual mode | `true`/`false` |
-| `TEST_CERT_MGMT_TYPE` | Operation type | `inv`, `add`, `remove` |
-| `TEST_ORCH_OPERATION` | Job operation | `inventory`, `management` |
-
-### Running TestConsole
-
-```bash
-dotnet build
-
-# Set environment variables
-export KEYFACTOR_HOSTNAME=my.keyfactor.kfdelivery.com
-export KEYFACTOR_DOMAIN=command
-export KEYFACTOR_USERNAME=k8s-agent-sa
-export KEYFACTOR_PASSWORD=<password>
-export TEST_KUBECONFIG='<kubeconfig-json>'
-export TEST_KUBE_NAMESPACE=default
-export TEST_MANUAL=false
-export TEST_CERT_MGMT_TYPE=inv
-export TEST_ORCH_OPERATION=inventory
-
-# Run
-./TestConsole/bin/Debug/net8.0/TestConsole
 ```
 
 ## Architecture
