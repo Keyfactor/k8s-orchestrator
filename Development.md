@@ -1,191 +1,214 @@
 # Developer Guide
 
-This document describes how to build and test the KubeTest project.
+This document describes how to build and test the Kubernetes Orchestrator Extension.
 
-- [Developer Guide](#developer-guide)
-    * [Prerequisites](#prerequisites)
-    * [Testing Environment Variables](#testing-environment-variables)
-    * [Running tests](#running-tests)
-        + [Inventory](#inventory)
-            - [bash](#bash)
-            - [powershell](#powershell)
-            - [Output](#output)
-        + [Management Add](#management-add)
-            - [bash](#bash-1)
-            - [powershell](#powershell-1)
-            - [Output](#output-1)
-        + [Management Remove](#management-remove)
-            - [bash](#bash-2)
-            - [powershell](#powershell-2)
-            - [Output](#output-2)
-        + [Example Failed Test](#example-failed-test)
+## Table of Contents
+- [Prerequisites](#prerequisites)
+- [Building](#building)
+- [Testing](#testing)
+  - [Unit Tests](#unit-tests)
+  - [Integration Tests](#integration-tests)
+  - [Store-Type Specific Tests](#store-type-specific-tests)
+- [Architecture](#architecture)
 
 ## Prerequisites
 
-## Testing Environment Variables
+- .NET 8.0 SDK or later
+- Access to a Kubernetes cluster (for integration tests)
+- `kubectl` configured with appropriate context
 
-| Name                     | Description                                                                                      | Default   | Example                                                                                                                                             |
-|--------------------------|--------------------------------------------------------------------------------------------------|-----------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| `KEYFACTOR_HOSTNAME`     | The hostname of the Keyfactor Command server.                                                    |           | `my.kfcommand.kfdelivery.com`                                                                                                                       |
-| `KEYFACTOR_USERNAME`     | The username of the Keyfactor user.                                                              |           | `k8s-orch-sa`                                                                                                                                       |
-| `KEYFACTOR_PASSWORD`     | The password of the Keyfactor user.                                                              |           | `<k8s-orch-sa's Command password>`                                                                                                                  |
-| `TEST_PAM_MOCK_PASSWORD` | A full unescaped `kubeconfig` in JSON format. Can also be base64 encoded. Must be a single line! |           | [See Docs](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#keyfactor-kubernetes-orchestrator-service-account-definition) |
-| `TEST_PAM_MOCK_USERNAME` | Must be set to `kubeconfig` exactly.                                                             |           | [See Docs](https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#keyfactor-kubernetes-orchestrator-service-account-definition) |
-| `TEST_KUBE_NAMESPACE`    | The namespace to use for testing.                                                                | `default` | `keyfactor`                                                                                                                                         |
-| `TEST_MANUAL`            | If set to `true`, the tests will not be run automatically and prompt for user input.             | `false`   | `true`                                                                                                                                              |
-| `TEST_CERT_MGMT_TYPE`    | The orchestrator job type. Must be on of the following: `['inv','add','rem']`                    |           | `inv`                                                                                                                                               |
-| `TEST_ORCH_OPERATION`    | The orchestrator operation. Can be either `inventory` or `management`                            |           | `inventory`                                                                                                                                         |
+## Building
 
-## Running tests
-
-### Inventory
-#### bash
 ```bash
+# Build entire solution
 dotnet build
-export KEYFACTOR_HOSTNAME=my.keyfactor.kfdelivery.com
-export KEYFACTOR_DOMAIN=command
-export KEYFACTOR_USERNAME=k8s-agent-sa
-export KEYFACTOR_PASSWORD=mykeyfactorcommandpassword
-export TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be a full kubeconfig file. Can also be passed base64 encoded.
-export TEST_KUBE_NAMESPACE=default
-export TEST_MANUAL=false
-export TEST_CERT_MGMT_TYPE=inv
-export TEST_ORCH_OPERATION=inv
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
-```
-#### powershell
-```powershell
-dotnet build
-# Set environment variables
-$env:KEYFACTOR_HOSTNAME="my.keyfactor.kfdelivery.com"
-$env:KEYFACTOR_DOMAIN="command"
-$env:KEYFACTOR_USERNAME="k8s-agent-sa"
-$env:KEYFACTOR_PASSWORD="mykeyfactorcommandpassword"
-$env:TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be the full kubeconfig file. Can also be passed base64 encoded.
-$env:TEST_KUBE_NAMESPACE="default"
-$env:TEST_MANUAL="false"
-$env:TEST_CERT_MGMT_TYPE="inv"
-$env:TEST_ORCH_OPERATION="inv"
-./TestConsole/bin/Debug/netcoreapp3.1/TestConsole.exe
+
+# Or using Make
+make build
+
+# Build for release
+dotnet build -c Release
 ```
 
-#### Output
-```text
-------------------------------------------------------------------------------------------------------------------------
-|Test Name                                                  |Result                                                     |
-------------------------------------------------------------------------------------------------------------------------
-|Kube Inventory - TLS Secret - tls-secret-01 - SUCCESS      |Failure - Kubernetes tls_secret 'tls-secret-01' was not ...|
-|Kube Inventory - Opaque Secret - opaque-secret-01 - FAIL   |Success                                                    |
-|Kube Inventory - Opaque Secret - opaque-secret-00 - SUCCESS|Success                                                    |
-|Kube Inventory - Opaque Secret - opaque-secret-01 - SUCCESS|Success                                                    |
-|Kube Inventory - Certificate - cert-01 - SUCCESS           |Success Kubernetes cert 'cert-01' was not found in names...|
-------------------------------------------------------------------------------------------------------------------------
-All tests passed.
+## Testing
 
-```
+The project uses xUnit for testing with comprehensive unit and integration test suites.
 
-### Management Add
-#### bash
+### Unit Tests
+
+Run unit tests (no Kubernetes cluster required):
+
 ```bash
-dotnet build
-export KEYFACTOR_HOSTNAME=my.keyfactor.kfdelivery.com
-export KEYFACTOR_DOMAIN=command
-export KEYFACTOR_USERNAME=k8s-agent-sa
-export KEYFACTOR_PASSWORD=mykeyfactorcommandpassword
-export TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be a full kubeconfig file. Can also be passed base64 encoded.
-export TEST_KUBE_NAMESPACE=default
-export TEST_MANUAL=false
-export TEST_CERT_MGMT_TYPE=add
-export TEST_ORCH_OPERATION=management
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
-```
-#### powershell
-```powershell
-dotnet build
-# Set environment variables
-$env:KEYFACTOR_HOSTNAME="my.keyfactor.kfdelivery.com"
-$env:KEYFACTOR_DOMAIN="command"
-$env:KEYFACTOR_USERNAME="k8s-agent-sa"
-$env:KEYFACTOR_PASSWORD="mykeyfactorcommandpassword"
-$env:TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be the full kubeconfig file. Can also be passed base64 encoded.
-$env:TEST_KUBE_NAMESPACE="default"
-$env:TEST_MANUAL="false"
-$env:TEST_CERT_MGMT_TYPE="inv"
-$env:TEST_ORCH_OPERATION="inv"
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
+make test-unit
 ```
 
-#### Output
-```text
-------------------------------------------------------------------------------------------------------------------------
-|Test Name                                                  |Result                                                     |
-------------------------------------------------------------------------------------------------------------------------
-|Add - TLS Secret - tls-secret-01 - SUCCESS                 |Success                                                    |
-|Add - TLS Secret - tls-secret-01 - FAIL                    |Success Overwrite is not specified, cannot add multiple ...|
-|Add - TLS Secret - tls-secret-01 (overwrite) - SUCCESS     |Success                                                    |
-|Add - Opaque Secret - opaque-secret-01 - SUCCESS           |Success                                                    |
-|Add - Opaque Secret - opaque-secret-01 - FAIL              |Success The specified network password is not correct.     |
-|Add - Opaque Secret - opaque-secret-01 (overwrite) - SUC...|Success                                                    |
-|Add - Certificate - cert-01 - FAIL                         |Success ADD operation not supported by Kubernetes CSR type.|
-------------------------------------------------------------------------------------------------------------------------
-All tests passed.
+This runs all tests that don't require a live Kubernetes cluster (~740 tests).
 
-```
+### Integration Tests
 
-### Management Remove
-#### bash
+Integration tests require a Kubernetes cluster. By default, tests use `~/.kube/config`.
+
 ```bash
-dotnet build
-export KEYFACTOR_HOSTNAME=my.keyfactor.kfdelivery.com
-export KEYFACTOR_DOMAIN=command
-export KEYFACTOR_USERNAME=k8s-agent-sa
-export KEYFACTOR_PASSWORD=mykeyfactorcommandpassword
-export TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be a full kubeconfig file. Can also be passed base64 encoded.
-export TEST_KUBE_NAMESPACE=default
-export TEST_MANUAL=false
-export TEST_CERT_MGMT_TYPE=remove
-export TEST_ORCH_OPERATION=management
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
-```
-#### powershell
-```powershell
-dotnet build
-# Set environment variables
-$env:KEYFACTOR_HOSTNAME="my.keyfactor.kfdelivery.com"
-$env:KEYFACTOR_DOMAIN="command"
-$env:KEYFACTOR_USERNAME="k8s-agent-sa"
-$env:KEYFACTOR_PASSWORD="mykeyfactorcommandpassword"
-$env:TEST_KUBECONFIG={"kind":"Config","apiVersion":"v1","preferences":{},"clusters":[...]...} # This needs to be the full kubeconfig file. Can also be passed base64 encoded.
-$env:TEST_KUBE_NAMESPACE="default"
-$env:TEST_MANUAL="false"
-$env:TEST_CERT_MGMT_TYPE="remove"
-$env:TEST_ORCH_OPERATION="inv"
-./KubeTest/bin/Debug/netcoreapp3.1/KubeTest.exe
+# Run all integration tests
+make test-integration
+
+# Run integration tests (faster - single framework)
+make test-integration-fast
+
+# Run tests without cleanup (for debugging)
+make test-integration-no-cleanup
+
+# Run all tests with pre/post cleanup
+make test-all-with-cleanup
 ```
 
-#### Output
-```text
-------------------------------------------------------------------------------------------------------------------------
-|Test Name                                                  |Result                                                     |
-------------------------------------------------------------------------------------------------------------------------
-|Remove - TLS Secret - tls-secrte-01 - FAIL                 |Success Operation returned an invalid status code 'NotFo...|
-|Remove - TLS Secret - tls-secret-01 - SUCCESS              |Success                                                    |
-|Remove - Opaque Secret - opaque-secrte-01 - FAIL           |Success Operation returned an invalid status code 'NotFo...|
-|Remove - Opaque Secret - opaque-secret-01 - SUCCESS        |Success                                                    |
-------------------------------------------------------------------------------------------------------------------------
-All tests passed.
+#### Cluster Setup
 
+```bash
+# Check cluster connectivity and context
+make test-cluster-setup
+
+# Clean up test resources from previous runs
+make test-cluster-cleanup
 ```
 
-### Example Failed Test
-```text
-------------------------------------------------------------------------------------------------------------------------
-|Test Name                                                  |Result                                                     |
-------------------------------------------------------------------------------------------------------------------------
-|Remove - TLS Secret - tls-secrte-01 - FAIL                 |Success Operation returned an invalid status code 'NotFo...|
-|Remove - TLS Secret - tls-secret-01 - SUCCESS              |Failure - Operation returned an invalid status code 'Not...|
-|Remove - Opaque Secret - opaque-secrte-01 - FAIL           |Success Operation returned an invalid status code 'NotFo...|
-|Remove - Opaque Secret - opaque-secret-01 - SUCCESS        |Success                                                    |
-------------------------------------------------------------------------------------------------------------------------
-Some tests failed please check the output above.
+Integration tests create namespaces prefixed with `keyfactor-` and clean them up after completion.
+
+### Store-Type Specific Tests
+
+Run tests for individual store types:
+
+```bash
+make test-store-jks       # K8SJKS (Java Keystores)
+make test-store-pkcs12    # K8SPKCS12 (PKCS12/PFX files)
+make test-store-secret    # K8SSecret (Opaque secrets)
+make test-store-tls       # K8STLSSecr (TLS secrets)
+make test-store-cluster   # K8SCluster (cluster-wide)
+make test-store-ns        # K8SNS (namespace-level)
+make test-store-cert      # K8SCert (CSRs)
 ```
+
+Or run tests for a specific store type with cleanup:
+
+```bash
+make test-store-type STORE=K8SJKS
+```
+
+### Handler and Base Class Tests
+
+```bash
+make test-handlers        # Test secret handlers
+make test-base-jobs       # Test base job classes
+```
+
+### Interactive Test Selection
+
+Use `fzf` for interactive test selection:
+
+```bash
+make test
+```
+
+### Code Coverage
+
+```bash
+# Run tests with coverage
+make test-coverage
+
+# Unit tests with coverage
+make test-coverage-unit
+
+# View coverage report
+make test-coverage-open
+```
+
+## Architecture
+
+The extension follows a layered architecture:
+
+```
+Jobs/
+├── Base/                    # Base job classes
+│   ├── K8SJobBase.cs       # Shared infrastructure
+│   ├── InventoryBase.cs    # Inventory logic
+│   ├── ManagementBase.cs   # Management logic
+│   ├── DiscoveryBase.cs    # Discovery logic
+│   └── ReenrollmentBase.cs # Reenrollment logic
+└── StoreTypes/              # Store-specific implementations
+    ├── K8SCert/
+    ├── K8SCluster/
+    ├── K8SNS/
+    ├── K8SJKS/
+    ├── K8SPKCS12/
+    ├── K8SSecret/
+    └── K8STLSSecr/
+
+Handlers/                    # Secret operation handlers
+├── ISecretHandler.cs
+├── SecretHandlerFactory.cs
+├── TlsSecretHandler.cs
+├── OpaqueSecretHandler.cs
+├── JksSecretHandler.cs
+├── Pkcs12SecretHandler.cs
+├── ClusterSecretHandler.cs
+├── NamespaceSecretHandler.cs
+└── CertificateSecretHandler.cs
+
+Services/                    # Business logic
+Clients/                     # Kubernetes API wrapper
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
+
+## Debugging
+
+### Container-based Debugging
+
+For debugging with Keyfactor Command orchestrator containers:
+
+```bash
+# Build and verify DLL
+make debug-build
+
+# Restart orchestrator container
+make debug-restart
+
+# View container logs
+make debug-logs
+make debug-logs-follow
+
+# Schedule test jobs
+make debug-schedule-tls
+make debug-schedule-opaque
+
+# Full debug loop
+make debug-loop
+```
+
+### CSR Testing
+
+For K8SCert (Certificate Signing Request) testing:
+
+```bash
+# Create and approve a test CSR
+make csr-create-approved
+
+# Create CSR with certificate chain
+make csr-create-with-chain
+
+# List and cleanup CSRs
+make csr-list
+make csr-cleanup
+```
+
+## Common Issues
+
+### Test Failures
+
+1. **SSL Connection Errors**: Ensure your kubeconfig is valid and the cluster is accessible
+2. **Namespace Not Found**: Run `make test-cluster-cleanup` to clean up stale resources
+3. **Permission Denied**: Ensure your service account has appropriate RBAC permissions
+
+### Build Issues
+
+1. **Manifest.json file lock**: Run `rm -rf */bin */obj` to clean build artifacts
