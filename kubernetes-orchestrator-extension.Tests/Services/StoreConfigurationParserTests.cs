@@ -289,4 +289,223 @@ public class StoreConfigurationParserTests
     }
 
     #endregion
+
+    #region DeriveSecretTypeFromCapability Tests (via Parse)
+
+    [Theory]
+    [InlineData("CertStores.K8STLSSecr.Inventory", "tls_secret")]
+    [InlineData("CertStores.K8STLSSecr.Management", "tls_secret")]
+    [InlineData("CertStores.K8SSecret.Discovery", "secret")]
+    [InlineData("CertStores.K8SSecret.Inventory", "secret")]
+    [InlineData("CertStores.K8SJKS.Management", "jks")]
+    [InlineData("CertStores.K8SJKS.Reenrollment", "jks")]
+    [InlineData("CertStores.K8SPKCS12.Inventory", "pkcs12")]
+    [InlineData("CertStores.K8SPKCS12.Management", "pkcs12")]
+    [InlineData("CertStores.K8SCluster.Inventory", "cluster")]
+    [InlineData("CertStores.K8SCluster.Discovery", "cluster")]
+    [InlineData("CertStores.K8SNS.Inventory", "namespace")]
+    [InlineData("CertStores.K8SNS.Management", "namespace")]
+    [InlineData("CertStores.K8SCert.Discovery", "certificate")]
+    [InlineData("CertStores.K8SCert.Inventory", "certificate")]
+    public void Parse_WithCapability_DerivesSecretType(string capability, string expectedType)
+    {
+        // Arrange
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        var config = _parser.Parse(properties, capability);
+
+        // Assert
+        Assert.Equal(expectedType, config.KubeSecretType);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void Parse_WithNullOrEmptyCapability_DoesNotDeriveSecretType(string capability)
+    {
+        // Arrange
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        var config = _parser.Parse(properties, capability);
+
+        // Assert - KubeSecretType remains empty string (default)
+        Assert.True(string.IsNullOrEmpty(config.KubeSecretType));
+    }
+
+    [Fact]
+    public void Parse_WithWhitespaceCapability_ReturnsNullSecretType()
+    {
+        // Arrange
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        var config = _parser.Parse(properties, "   ");
+
+        // Assert - DeriveSecretTypeFromCapability returns null for unknown patterns
+        Assert.Null(config.KubeSecretType);
+    }
+
+    [Fact]
+    public void Parse_WithUnknownCapability_ReturnsNullSecretType()
+    {
+        // Arrange
+        var properties = new Dictionary<string, object>();
+        var unknownCapability = "CertStores.UnknownStore.Inventory";
+
+        // Act
+        var config = _parser.Parse(properties, unknownCapability);
+
+        // Assert - DeriveSecretTypeFromCapability returns null for unknown patterns
+        Assert.Null(config.KubeSecretType);
+    }
+
+    [Fact]
+    public void Parse_CapabilityTakesPrecedenceOverProperty()
+    {
+        // Arrange - Both capability and property specify a type
+        var properties = new Dictionary<string, object>
+        {
+            { "KubeSecretType", "manual_type" }
+        };
+        var capability = "CertStores.K8SJKS.Inventory";
+
+        // Act
+        var config = _parser.Parse(properties, capability);
+
+        // Assert - Capability should take precedence
+        Assert.Equal("jks", config.KubeSecretType);
+    }
+
+    [Fact]
+    public void Parse_PropertyUsedWhenCapabilityNotRecognized()
+    {
+        // Arrange - Capability doesn't map to a type, but property specifies one
+        var properties = new Dictionary<string, object>
+        {
+            { "KubeSecretType", "manual_type" }
+        };
+        var capability = "CertStores.UnknownStore.Inventory";
+
+        // Act
+        var config = _parser.Parse(properties, capability);
+
+        // Assert - Should fall back to property
+        Assert.Equal("manual_type", config.KubeSecretType);
+    }
+
+    #endregion
+
+    #region ApplyKeystoreDefaults Tests
+
+    [Fact]
+    public void ApplyKeystoreDefaults_JksType_SetsCertificateDataFieldName()
+    {
+        // Arrange
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "jks",
+            CertificateDataFieldName = ""
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert
+        Assert.Equal("jks", config.CertificateDataFieldName);
+    }
+
+    [Fact]
+    public void ApplyKeystoreDefaults_Pkcs12Type_SetsCertificateDataFieldName()
+    {
+        // Arrange
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "pkcs12",
+            CertificateDataFieldName = ""
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert
+        Assert.Equal("pfx", config.CertificateDataFieldName);
+    }
+
+    [Fact]
+    public void ApplyKeystoreDefaults_PfxType_SetsCertificateDataFieldName()
+    {
+        // Arrange
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "pfx",
+            CertificateDataFieldName = ""
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert
+        Assert.Equal("pfx", config.CertificateDataFieldName);
+    }
+
+    [Fact]
+    public void ApplyKeystoreDefaults_OverwritesExistingFieldName()
+    {
+        // Arrange - ApplyKeystoreDefaults DOES overwrite CertificateDataFieldName
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "jks",
+            CertificateDataFieldName = "custom_field"
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert - The default is applied regardless of existing value
+        Assert.Equal("jks", config.CertificateDataFieldName);
+    }
+
+    [Fact]
+    public void ApplyKeystoreDefaults_NonKeystoreType_DoesNotSetFieldName()
+    {
+        // Arrange
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "tls_secret",
+            CertificateDataFieldName = ""
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert - Should not set a default for non-keystore types
+        Assert.Equal("", config.CertificateDataFieldName);
+    }
+
+    [Fact]
+    public void ApplyKeystoreDefaults_P12Type_SetsCertificateDataFieldName()
+    {
+        // Arrange
+        var config = new StoreConfiguration
+        {
+            KubeSecretType = "p12",
+            CertificateDataFieldName = ""
+        };
+        var properties = new Dictionary<string, object>();
+
+        // Act
+        _parser.ApplyKeystoreDefaults(config, properties);
+
+        // Assert
+        Assert.Equal("pfx", config.CertificateDataFieldName);
+    }
+
+    #endregion
 }
