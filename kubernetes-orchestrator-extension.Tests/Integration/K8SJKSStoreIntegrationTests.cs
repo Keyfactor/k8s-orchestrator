@@ -1826,5 +1826,457 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         Assert.DoesNotContain("cert1", aliases);
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddThirdAlias_ToStoreWithTwoAliases_AllThreePresent()
+    {
+        // Arrange - Create JKS with 2 existing aliases
+        var secretName = $"test-jks-add-third-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Cert 1 Third");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "JKS Cert 2 Third");
+
+        var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "alias1", (cert1.Certificate, cert1.KeyPair) },
+            { "alias2", (cert2.Certificate, cert2.KeyPair) }
+        };
+        var existingJks = CertificateTestHelper.GenerateJksWithMultipleEntries(entries, "storepassword");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", existingJks }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        // Prepare third certificate to add
+        var cert3 = CachedCertificateProvider.GetOrCreate(KeyType.EcP384, "JKS Cert 3 Third");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(cert3.Certificate, cert3.KeyPair, "certpassword", "alias3");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.jks\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "alias3",
+                PrivateKeyPassword = "certpassword",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify all 3 aliases are present
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(updatedSecret.Data["keystore.jks"]))
+        {
+            jksStore.Load(ms, "storepassword".ToCharArray());
+        }
+
+        var resultAliases = jksStore.Aliases.ToList();
+        Assert.Equal(3, resultAliases.Count);
+        Assert.Contains("alias1", resultAliases);
+        Assert.Contains("alias2", resultAliases);
+        Assert.Contains("alias3", resultAliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_RemoveMiddleAlias_FromThreeAliasStore_OtherTwoRemain()
+    {
+        // Arrange - Create JKS with 3 aliases
+        var secretName = $"test-jks-remove-middle-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Cert 1 Middle");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "JKS Cert 2 Middle");
+        var cert3 = CachedCertificateProvider.GetOrCreate(KeyType.EcP384, "JKS Cert 3 Middle");
+
+        var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "first", (cert1.Certificate, cert1.KeyPair) },
+            { "middle", (cert2.Certificate, cert2.KeyPair) },
+            { "last", (cert3.Certificate, cert3.KeyPair) }
+        };
+        var existingJks = CertificateTestHelper.GenerateJksWithMultipleEntries(entries, "storepassword");
+
+        var secret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", existingJks }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Remove,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\",\"StoreFileName\":\"keystore.jks\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "middle"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify middle was removed but first and last remain
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(updatedSecret.Data["keystore.jks"]))
+        {
+            jksStore.Load(ms, "storepassword".ToCharArray());
+        }
+
+        var resultAliases = jksStore.Aliases.ToList();
+        Assert.Equal(2, resultAliases.Count);
+        Assert.Contains("first", resultAliases);
+        Assert.Contains("last", resultAliases);
+        Assert.DoesNotContain("middle", resultAliases);
+    }
+
+    #endregion
+
+    #region Buddy Password Tests (Password in Separate Secret)
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_ReadsPasswordFromSeparateSecret()
+    {
+        // Arrange - Create a JKS secret with password stored in a separate secret
+        var secretName = $"test-buddy-inv-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "buddypassword123";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Buddy Password Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        // Create the JKS secret
+        var jksSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", jksBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(jksSecret, TestNamespace);
+
+        // Create the password secret (buddy password)
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "password", System.Text.Encoding.UTF8.GetBytes(storePassword) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Create Inventory job config with PasswordIsSeparateSecret=true
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "", // Empty - password is in separate secret
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddWithBuddyPassword_UsesPasswordFromSeparateSecret()
+    {
+        // Arrange - Password stored in a separate secret
+        var secretName = $"test-buddy-add-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-add-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "buddypassword456";
+
+        // Create the password secret first (buddy password)
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "storepass", System.Text.Encoding.UTF8.GetBytes(storePassword) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Prepare certificate to add
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Buddy Add Cert");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, "certpassword", "buddycert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        // Create Management Add job config with PasswordIsSeparateSecret=true
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "", // Empty - password is in separate secret
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"storepass\"}}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "buddycert",
+                PrivateKeyPassword = "certpassword",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify secret was created with the JKS
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("keystore.jks"));
+
+        // Verify the JKS can be read with the buddy password
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(secret.Data["keystore.jks"]))
+        {
+            jksStore.Load(ms, storePassword.ToCharArray());
+        }
+        var aliases = jksStore.Aliases.ToList();
+        Assert.Contains("buddycert", aliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_RemoveWithBuddyPassword_UsesPasswordFromSeparateSecret()
+    {
+        // Arrange - Create JKS with password stored in separate secret
+        var secretName = $"test-buddy-remove-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-remove-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "buddypassword789";
+
+        // Create secret with two certificates
+        var cert1 = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Buddy Remove Cert 1");
+        var cert2 = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Buddy Remove Cert 2");
+
+        var entries = new Dictionary<string, (Org.BouncyCastle.X509.X509Certificate, Org.BouncyCastle.Crypto.AsymmetricCipherKeyPair)>
+        {
+            { "cert1", (cert1.Certificate, cert1.KeyPair) },
+            { "cert2", (cert2.Certificate, cert2.KeyPair) }
+        };
+
+        var jksBytes = CertificateTestHelper.GenerateJksWithMultipleEntries(entries, storePassword);
+
+        var jksSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", jksBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(jksSecret, TestNamespace);
+
+        // Create the password secret (buddy password)
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "password", System.Text.Encoding.UTF8.GetBytes(storePassword) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Create Management Remove job config with PasswordIsSeparateSecret=true
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Remove,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "", // Empty - password is in separate secret
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "cert1" // Remove cert1
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        // Verify cert1 was removed and cert2 remains
+        var updatedSecret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(updatedSecret.Data["keystore.jks"]))
+        {
+            jksStore.Load(ms, storePassword.ToCharArray());
+        }
+
+        var aliases = jksStore.Aliases.ToList();
+        Assert.Single(aliases);
+        Assert.Contains("cert2", aliases);
+        Assert.DoesNotContain("cert1", aliases);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_CustomFieldName_ReadsCorrectField()
+    {
+        // Arrange - Password stored in separate secret with custom field name
+        var secretName = $"test-buddy-custom-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-custom-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "customfieldpassword";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Custom Field Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        // Create the JKS secret
+        var jksSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", jksBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(jksSecret, TestNamespace);
+
+        // Create the password secret with custom field name
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore-password", System.Text.Encoding.UTF8.GetBytes(storePassword) },
+                { "other-field", System.Text.Encoding.UTF8.GetBytes("wrongpassword") }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Create Inventory job config specifying custom field name
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "",
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"keystore-password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Should succeed using the custom field name
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+    }
+
     #endregion
 }
