@@ -98,7 +98,12 @@ public class CertificateSecretHandler : SecretHandlerBase
                 {
                     if (!string.IsNullOrEmpty(kvp.Value))
                     {
-                        result[kvp.Key] = new List<string> { kvp.Value };
+                        // Parse PEM chain and convert back to individual PEM strings
+                        var certList = SplitPemChainToStrings(kvp.Value);
+                        if (certList.Count > 0)
+                        {
+                            result[kvp.Key] = certList;
+                        }
                     }
                 }
             }
@@ -200,11 +205,18 @@ public class CertificateSecretHandler : SecretHandlerBase
     {
         try
         {
-            // GetCertificateSigningRequestStatus returns string[]
+            // GetCertificateSigningRequestStatus returns string[] (each element may contain a chain)
             var csrCerts = KubeClient.GetCertificateSigningRequestStatus(Context.KubeSecretName);
             if (csrCerts != null && csrCerts.Length > 0)
             {
-                return csrCerts.ToList();
+                // Split each PEM chain into individual certificates
+                var allCerts = new List<string>();
+                foreach (var certPem in csrCerts)
+                {
+                    var split = SplitPemChainToStrings(certPem);
+                    allCerts.AddRange(split);
+                }
+                return allCerts;
             }
 
             Logger.LogDebug("CSR '{Name}' has no issued certificate yet", Context.KubeSecretName);
@@ -217,11 +229,43 @@ public class CertificateSecretHandler : SecretHandlerBase
         }
     }
 
+    /// <summary>
+    /// Splits a PEM chain into individual certificate PEM strings using the existing
+    /// KubeClient.LoadCertificateChain method (powered by BouncyCastle's PemReader).
+    /// </summary>
+    private List<string> SplitPemChainToStrings(string pemChain)
+    {
+        if (string.IsNullOrWhiteSpace(pemChain))
+        {
+            return new List<string>();
+        }
+
+        var certs = KubeClient.LoadCertificateChain(pemChain);
+        var result = new List<string>();
+
+        foreach (var cert in certs)
+        {
+            var certPem = KubeClient.ConvertToPem(cert);
+            result.Add(certPem);
+        }
+
+        Logger.LogDebug("Split PEM chain into {Count} individual certificates", result.Count);
+        return result;
+    }
+
     private List<string> GetClusterWideCsrCertificates(long jobId)
     {
         // ListAllCertificateSigningRequests returns Dictionary<string, string> (name -> certPem)
         var allCsrs = KubeClient.ListAllCertificateSigningRequests();
-        return allCsrs.Values.Where(v => !string.IsNullOrEmpty(v)).ToList();
+
+        // Split each PEM chain into individual certificates
+        var allCerts = new List<string>();
+        foreach (var certPem in allCsrs.Values.Where(v => !string.IsNullOrEmpty(v)))
+        {
+            var split = SplitPemChainToStrings(certPem);
+            allCerts.AddRange(split);
+        }
+        return allCerts;
     }
 
     #endregion

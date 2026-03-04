@@ -1764,10 +1764,20 @@ public class KubeCertificateManagerClient
             return;
         }
 
-        var secretData = RetryPolicy(() =>
-            Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, namespaceName));
+        try
+        {
+            var secretData = RetryPolicy(() =>
+                Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, namespaceName));
 
-        ProcessSecret(secret, secretData, allowedKeys, clusterName, namespaceName, locations);
+            ProcessSecret(secret, secretData, allowedKeys, clusterName, namespaceName, locations);
+        }
+        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Secret was deleted between listing and reading - this can happen in dynamic environments
+            _logger.LogDebug(
+                "Secret '{SecretName}' in namespace '{Namespace}' was deleted before it could be read, skipping.",
+                secret.Metadata.Name, namespaceName);
+        }
     }
 
     private T RetryPolicy<T>(Func<T> action)

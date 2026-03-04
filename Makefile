@@ -189,11 +189,11 @@ test-coverage: test-setup ## Run all tests with code coverage and generate HTML 
 	~/.dotnet/tools/reportgenerator \
 		"-reports:./coverage/*/coverage.cobertura.xml" \
 		"-targetdir:./coverage/html" \
-		"-reporttypes:Html" 2>/dev/null || \
+		"-reporttypes:Html;MarkdownSummary" 2>/dev/null || \
 	reportgenerator \
 		"-reports:./coverage/*/coverage.cobertura.xml" \
 		"-targetdir:./coverage/html" \
-		"-reporttypes:Html"; \
+		"-reporttypes:Html;MarkdownSummary"; \
 	echo "Coverage report generated at ./coverage/html/index.html"
 
 .PHONY: test-coverage-install
