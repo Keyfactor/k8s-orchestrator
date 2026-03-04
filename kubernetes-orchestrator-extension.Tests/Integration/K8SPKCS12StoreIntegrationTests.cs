@@ -1879,5 +1879,128 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_SecretNotFound_ReturnsSuccessWithEmptyInventory()
+    {
+        // Arrange - PKCS12 secret exists but password secret does NOT exist
+        // Note: Current behavior returns Success because StoreNotFoundException is caught
+        // by InventoryBase.ProcessJob for initial store setup scenarios. This means a
+        // missing password secret is treated the same as a missing store secret.
+        var secretName = $"test-pkcs12-buddy-missing-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-pkcs12-buddy-missing-pass-{Guid.NewGuid():N}"; // Will not be created
+        TrackSecret(secretName);
+
+        var storePassword = "testpassword";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PKCS12 Buddy Missing Cert");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        // Create only the PKCS12 secret, NOT the password secret
+        var pfxSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", pfxBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(pfxSecret, TestNamespace);
+
+        // Config references non-existent password secret
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "",
+                Properties = $"{{\"KubeSecretType\":\"pkcs12\",\"StoreFileName\":\"keystore.pfx\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        List<CurrentInventoryItem>? capturedInventory = null;
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) =>
+        {
+            capturedInventory = inventoryItems.ToList();
+            return true;
+        }));
+
+        // Assert - Returns Success with empty inventory (StoreNotFoundException is caught)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotNull(capturedInventory);
+        Assert.Empty(capturedInventory);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_WrongFieldName_ReturnsFailure()
+    {
+        // Arrange - Password secret exists but with different field name
+        var secretName = $"test-pkcs12-buddy-wrongfield-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-pkcs12-buddy-wrongfield-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "testpassword";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PKCS12 Buddy Wrong Field Cert");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        var pfxSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.pfx", pfxBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(pfxSecret, TestNamespace);
+
+        // Create password secret with DIFFERENT field name than configured
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "different-field", System.Text.Encoding.UTF8.GetBytes(storePassword) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Config expects "password" field but secret has "different-field"
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "",
+                Properties = $"{{\"KubeSecretType\":\"pkcs12\",\"StoreFileName\":\"keystore.pfx\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Should fail because password field doesn't exist
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Failure,
+            $"Expected Failure but got {result.Result}");
+        Assert.NotNull(result.FailureMessage);
+    }
+
     #endregion
 }

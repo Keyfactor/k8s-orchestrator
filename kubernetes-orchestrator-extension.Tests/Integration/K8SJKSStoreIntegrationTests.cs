@@ -2278,5 +2278,128 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_SecretNotFound_ReturnsSuccessWithEmptyInventory()
+    {
+        // Arrange - JKS secret exists but password secret does NOT exist
+        // Note: Current behavior returns Success because StoreNotFoundException is caught
+        // by InventoryBase.ProcessJob for initial store setup scenarios. This means a
+        // missing password secret is treated the same as a missing store secret.
+        var secretName = $"test-buddy-missing-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-missing-pass-{Guid.NewGuid():N}"; // Will not be created
+        TrackSecret(secretName);
+
+        var storePassword = "testpassword";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Buddy Missing Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        // Create only the JKS secret, NOT the password secret
+        var jksSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", jksBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(jksSecret, TestNamespace);
+
+        // Config references non-existent password secret
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "",
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        List<CurrentInventoryItem>? capturedInventory = null;
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) =>
+        {
+            capturedInventory = inventoryItems.ToList();
+            return true;
+        }));
+
+        // Assert - Returns Success with empty inventory (StoreNotFoundException is caught)
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotNull(capturedInventory);
+        Assert.Empty(capturedInventory);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_WithBuddyPassword_WrongFieldName_ReturnsFailure()
+    {
+        // Arrange - Password secret exists but with different field name
+        var secretName = $"test-buddy-wrongfield-{Guid.NewGuid():N}";
+        var passwordSecretName = $"test-buddy-wrongfield-pass-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+        TrackSecret(passwordSecretName);
+
+        var storePassword = "testpassword";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Buddy Wrong Field Cert");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, storePassword, "testcert");
+
+        var jksSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "keystore.jks", jksBytes }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(jksSecret, TestNamespace);
+
+        // Create password secret with DIFFERENT field name than configured
+        var passwordSecret = new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(passwordSecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "different-field", System.Text.Encoding.UTF8.GetBytes(storePassword) }
+            }
+        };
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(passwordSecret, TestNamespace);
+
+        // Config expects "password" field but secret has "different-field"
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "",
+                Properties = $"{{\"KubeSecretType\":\"jks\",\"StoreFileName\":\"keystore.jks\",\"PasswordIsSeparateSecret\":\"true\",\"StorePasswordPath\":\"{TestNamespace}/{passwordSecretName}\",\"PasswordFieldName\":\"password\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (inventoryItems) => true));
+
+        // Assert - Should fail because password field doesn't exist
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Failure,
+            $"Expected Failure but got {result.Result}");
+        Assert.NotNull(result.FailureMessage);
+    }
+
     #endregion
 }
