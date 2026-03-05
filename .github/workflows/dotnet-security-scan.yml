@@ -58,7 +58,7 @@ jobs:
         run: dotnet tool install --global dotnet-outdated-tool
 
       - name: Check for outdated packages
-        run: dotnet outdated --upgrade --include-auto-references
+        run: dotnet outdated --include-auto-references
         continue-on-error: true
 
       # Upload results

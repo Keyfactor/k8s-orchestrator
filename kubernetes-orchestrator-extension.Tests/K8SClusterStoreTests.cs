@@ -298,7 +298,6 @@ public class K8SClusterStoreTests
     public void ClusterStore_NamespaceWithNoSecrets_ReturnsEmpty()
     {
         // A namespace might exist but contain no secrets
-        var namespaceName = "empty-namespace";
         var secrets = new List<V1Secret>(); // Empty list for this namespace
 
         Assert.Empty(secrets);
@@ -781,17 +780,6 @@ public class K8SClusterStoreTests
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
 
-        var secret = new V1Secret
-        {
-            Metadata = new V1ObjectMeta { Name = $"rsa-{keyType}", NamespaceProperty = "production" },
-            Type = "kubernetes.io/tls",
-            Data = new Dictionary<string, byte[]>
-            {
-                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
-                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
-            }
-        };
-
         Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
         Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);
     }
@@ -806,17 +794,6 @@ public class K8SClusterStoreTests
         var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"EC {keyType}");
         var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
         var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
-
-        var secret = new V1Secret
-        {
-            Metadata = new V1ObjectMeta { Name = $"ec-{keyType}", NamespaceProperty = "production" },
-            Type = "kubernetes.io/tls",
-            Data = new Dictionary<string, byte[]>
-            {
-                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
-                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
-            }
-        };
 
         Assert.Contains("-----BEGIN CERTIFICATE-----", certPem);
         Assert.Contains("-----BEGIN PRIVATE KEY-----", keyPem);

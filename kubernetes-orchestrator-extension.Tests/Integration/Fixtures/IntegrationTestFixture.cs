@@ -125,19 +125,9 @@ public class IntegrationTestFixture : IAsyncLifetime
             return string.Empty;
         }
 
-        // Parse and modify the kubeconfig to use the specified namespace
-        var kubeconfigPath = KubeconfigPath;
-        var fileContent = File.ReadAllText(kubeconfigPath);
-
-        // Detect if the file is already JSON
-        if (fileContent.TrimStart().StartsWith("{"))
-        {
-            return fileContent;
-        }
-
-        // Rebuild with the specified namespace
+        // Rebuild with the specified namespace regardless of file format
         var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-            kubeconfigPath,
+            KubeconfigPath,
             currentContext: ClusterContext);
 
         var kubeconfigObj = new Dictionary<string, object>
@@ -192,7 +182,10 @@ public class IntegrationTestFixture : IAsyncLifetime
 
     private string ConvertKubeconfigToJson(string kubeconfigContent)
     {
-        var fileContent = File.ReadAllText(KubeconfigPath);
+        // Use the provided content; fall back to reading from disk if empty
+        var fileContent = !string.IsNullOrWhiteSpace(kubeconfigContent)
+            ? kubeconfigContent
+            : File.ReadAllText(KubeconfigPath);
 
         // Detect if the file is already JSON (starts with '{')
         if (fileContent.TrimStart().StartsWith("{"))

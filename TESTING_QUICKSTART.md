@@ -24,7 +24,7 @@ make test-cluster-cleanup   # Clean up test resources
 
 ### Run All Unit Tests
 ```bash
-cd /Users/sbailey/RiderProjects/k8s-orchestrator
+cd <repo-root>   # Change to the root of the k8s-orchestrator repository
 dotnet test
 ```
 

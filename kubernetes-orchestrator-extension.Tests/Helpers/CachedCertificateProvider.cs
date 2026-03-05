@@ -51,7 +51,7 @@ public static class CachedCertificateProvider
         // Use double-checked locking for chain generation since it's more expensive
         if (_chainCache.TryGetValue(cacheKey, out var existingChain))
         {
-            return existingChain;
+            return new List<CertificateInfo>(existingChain);
         }
 
         lock (_chainLock)
@@ -59,7 +59,7 @@ public static class CachedCertificateProvider
             // Check again after acquiring lock
             if (_chainCache.TryGetValue(cacheKey, out existingChain))
             {
-                return existingChain;
+                return new List<CertificateInfo>(existingChain);
             }
 
             var newChain = CertificateTestHelper.GenerateCertificateChain(
@@ -69,7 +69,7 @@ public static class CachedCertificateProvider
                 $"Root CA ({keyType})");
 
             _chainCache[cacheKey] = newChain;
-            return newChain;
+            return new List<CertificateInfo>(newChain);
         }
     }
 

@@ -1270,7 +1270,6 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         // Verify the deployed certificate matches the input certificate
         Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should have tls.crt field");
         var deployedCertPem = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
-        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
         using var reader = new System.IO.StringReader(deployedCertPem);
         var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
         var deployedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();

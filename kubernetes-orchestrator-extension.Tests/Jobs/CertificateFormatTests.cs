@@ -221,8 +221,8 @@ public class CertificateFormatTests
         var subCaPem = ConvertCertificateToPem(chain[1].Certificate);
         var rootPem = ConvertCertificateToPem(chain[2].Certificate);
 
-        // Combine into a single PEM string (like ca.crt would contain)
-        var combinedPem = subCaPem + rootPem;
+        // Combine into a single PEM string with all three certs in the chain
+        var combinedPem = leafPem + subCaPem + rootPem;
 
         // Act - Parse using PemReader loop (similar to LoadCertificateChain)
         var certificates = new List<Org.BouncyCastle.X509.X509Certificate>();
@@ -239,7 +239,8 @@ public class CertificateFormatTests
         }
 
         // Assert
-        Assert.Equal(2, certificates.Count);
+        Assert.Equal(3, certificates.Count);
+        Assert.Contains(certificates, c => c.SubjectDN.ToString().Contains("Leaf") || c.SubjectDN.ToString().Contains("Cached"));
         Assert.Contains(certificates, c => c.SubjectDN.ToString().Contains("Intermediate") || c.SubjectDN.ToString().Contains("Sub"));
         Assert.Contains(certificates, c => c.SubjectDN.ToString().Contains("Root"));
     }

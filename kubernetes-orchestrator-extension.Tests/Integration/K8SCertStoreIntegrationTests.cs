@@ -80,6 +80,11 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
 
         if (!_fixture.SkipCleanup)
         {
+            if (_k8sClient == null)
+            {
+                return;
+            }
+
             foreach (var csrName in _createdCsrs)
             {
                 try

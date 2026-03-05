@@ -77,6 +77,11 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
         if (!_fixture.SkipCleanup)
         {
+            if (_k8sClient == null)
+            {
+                return;
+            }
+
             foreach (var (secretName, ns) in _createdSecrets)
             {
                 try
@@ -260,7 +265,12 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
             break;
         }
 
-        return result!;
+        if (result == null)
+        {
+            throw new InvalidOperationException("ProcessJob returned null for all retry attempts.");
+        }
+
+        return result;
     }
 
     #region Discovery Tests

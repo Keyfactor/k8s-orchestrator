@@ -547,7 +547,7 @@ var jksBytes = CertificateTestHelper.GenerateJks(
     certificate, keyPair, password: "test123", alias: "mycert");
 
 // Generate corrupted data for negative tests
-var corruptedData = CertificateTestHelper.GenerateCorruptedPkcs12();
+var corruptedData = CertificateTestHelper.GenerateCorruptedData(500);
 ```
 
 ---

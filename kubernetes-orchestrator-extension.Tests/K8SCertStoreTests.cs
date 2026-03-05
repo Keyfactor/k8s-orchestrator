@@ -9,9 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
-using Moq;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 

@@ -44,7 +44,6 @@ jobs:
           # Run unit tests only (integration tests run in separate workflow)
           dotnet test --configuration Release --no-build --verbosity normal \
             --filter "FullyQualifiedName!~Integration"
-        continue-on-error: true
 
       # PR Size Check
       - name: Check PR size
