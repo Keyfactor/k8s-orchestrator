@@ -247,6 +247,22 @@ test-coverage-clean: ## Remove coverage reports
 	@rm -rf ./coverage
 	@echo "Coverage reports removed."
 
+.PHONY: coverage-summary
+coverage-summary: ## Show coverage summary sorted by uncovered lines (unit coverage)
+	@python3 scripts/analyze-coverage.py --summary
+
+.PHONY: coverage-summary-all
+coverage-summary-all: ## Show combined (unit+integration) coverage summary sorted by uncovered lines
+	@python3 scripts/analyze-coverage.py --summary --dir ./coverage
+
+.PHONY: coverage-uncovered
+coverage-uncovered: ## Show uncovered lines for a class (usage: make coverage-uncovered CLASS=CertificateUtilities)
+	@python3 scripts/analyze-coverage.py --uncovered $(CLASS)
+
+.PHONY: coverage-uncovered-all
+coverage-uncovered-all: ## Show uncovered lines from combined coverage (usage: make coverage-uncovered-all CLASS=JobBase)
+	@python3 scripts/analyze-coverage.py --uncovered $(CLASS) --dir ./coverage
+
 .PHONY: test-watch
 test-watch: ## Run tests in watch mode (auto-rerun on file changes)
 	@source .env; \
