@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
+using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.X509;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
@@ -503,6 +504,132 @@ public class K8SCertificateContextTests
 
         // Assert
         Assert.Single(context.Chain);
+    }
+
+    [Fact]
+    public void FromPkcs12_WithSpecificAlias_UsesProvidedAlias()
+    {
+        // Arrange
+        var pkcs12Bytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "password", "my-alias");
+
+        // Act
+        var context = K8SCertificateContext.FromPkcs12(pkcs12Bytes, "password", "my-alias");
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.True(context.HasPrivateKey);
+    }
+
+    [Fact]
+    public void FromPkcs12Store_WithValidStore_ExtractsContext()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Pkcs12Store Context");
+        var storeBuilder = new Org.BouncyCastle.Pkcs.Pkcs12StoreBuilder();
+        var store = storeBuilder.Build();
+        store.SetKeyEntry("test-alias",
+            new Org.BouncyCastle.Pkcs.AsymmetricKeyEntry(certInfo.KeyPair.Private),
+            new[] { new X509CertificateEntry(certInfo.Certificate) });
+
+        // Act
+        var context = K8SCertificateContext.FromPkcs12Store(store);
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.NotNull(context.PrivateKey);
+    }
+
+    [Fact]
+    public void FromPkcs12Store_WithSpecificAlias_UsesAlias()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Pkcs12Store Alias");
+        var storeBuilder = new Org.BouncyCastle.Pkcs.Pkcs12StoreBuilder();
+        var store = storeBuilder.Build();
+        store.SetKeyEntry("specific-alias",
+            new Org.BouncyCastle.Pkcs.AsymmetricKeyEntry(certInfo.KeyPair.Private),
+            new[] { new X509CertificateEntry(certInfo.Certificate) });
+
+        // Act
+        var context = K8SCertificateContext.FromPkcs12Store(store, "specific-alias");
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+    }
+
+    [Fact]
+    public void FromPem_WithChain_ExtractsChain()
+    {
+        // Arrange - create a PEM with multiple certificates
+        var leafInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PEM Chain Leaf");
+        var rootInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PEM Chain Root");
+        var leafPem = ConvertCertificateToPem(leafInfo.Certificate);
+        var rootPem = ConvertCertificateToPem(rootInfo.Certificate);
+        var chainPem = leafPem + "\n" + rootPem;
+
+        // Act
+        var context = K8SCertificateContext.FromPem(chainPem);
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.NotEmpty(context.Chain);
+        Assert.Single(context.Chain); // Root is the chain (leaf is the primary cert)
+    }
+
+    [Fact]
+    public void FromPemWithKey_WithChainPem_ParsesChain()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PemWithKey Chain");
+        var chainCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PemWithKey Chain Cert");
+        var certPem = ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+        var chainPem = ConvertCertificateToPem(chainCert.Certificate);
+
+        // Act
+        var context = K8SCertificateContext.FromPemWithKey(certPem, keyPem, chainPem);
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.NotEmpty(context.Chain);
+    }
+
+    [Fact]
+    public void FromPemWithKey_WithNullPrivateKey_ContextStillCreated()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "PemWithKey NullKey");
+        var certPem = ConvertCertificateToPem(certInfo.Certificate);
+
+        // Act
+        var context = K8SCertificateContext.FromPemWithKey(certPem, null);
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.False(context.HasPrivateKey);
+    }
+
+    [Fact]
+    public void FromDer_WithValidDer_ReturnsContext()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "DER Test");
+        var derBytes = certInfo.Certificate.GetEncoded();
+
+        // Act
+        var context = K8SCertificateContext.FromDer(derBytes);
+
+        // Assert
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.False(context.HasPrivateKey);
+        Assert.NotEmpty(context.Thumbprint);
     }
 
     #endregion

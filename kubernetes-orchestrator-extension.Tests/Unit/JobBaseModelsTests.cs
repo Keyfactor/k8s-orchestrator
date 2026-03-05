@@ -6,8 +6,13 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Orchestrators.K8S.Tests.Helpers;
+using Org.BouncyCastle.Pkcs;
 using Xunit;
+using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 
 namespace Keyfactor.Orchestrators.K8S.Tests.Unit;
 
@@ -366,6 +371,173 @@ public class JobBaseModelsTests
 
         // Assert
         Assert.IsAssignableFrom<Exception>(ex);
+    }
+
+    #endregion
+
+    #region K8SJobCertificate.GetCertificateContext Tests
+
+    [Fact]
+    public void GetCertificateContext_NullCertificateEntry_ReturnsNull()
+    {
+        // Arrange
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = null
+        };
+
+        // Act
+        var result = jobCert.GetCertificateContext();
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void GetCertificateContext_CertificateEntryWithNullCert_ReturnsNull()
+    {
+        // Arrange
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = new X509CertificateEntry(null)
+        };
+
+        // Act & Assert - X509CertificateEntry(null) may throw, so handle both cases
+        try
+        {
+            var result = jobCert.GetCertificateContext();
+            // If it doesn't throw, it should return null since Certificate is null
+            Assert.Null(result);
+        }
+        catch (ArgumentNullException)
+        {
+            // X509CertificateEntry constructor may throw for null - that's fine
+        }
+    }
+
+    [Fact]
+    public void GetCertificateContext_ValidCertificate_ReturnsContext()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert Context Test");
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = new X509CertificateEntry(certInfo.Certificate),
+            CertPem = "-----BEGIN CERTIFICATE-----\ntest\n-----END CERTIFICATE-----",
+            PrivateKeyPem = "-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----"
+        };
+
+        // Act
+        var result = jobCert.GetCertificateContext();
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(certInfo.Certificate, result.Certificate);
+        Assert.Equal(jobCert.CertPem, result.CertPem);
+        Assert.Equal(jobCert.PrivateKeyPem, result.PrivateKeyPem);
+    }
+
+    [Fact]
+    public void GetCertificateContext_WithChain_SkipsLeafCert()
+    {
+        // Arrange
+        var leafInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert Leaf");
+        var intermediateInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert Intermediate");
+        var rootInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert Root");
+
+        var chainEntries = new[]
+        {
+            new X509CertificateEntry(leafInfo.Certificate),
+            new X509CertificateEntry(intermediateInfo.Certificate),
+            new X509CertificateEntry(rootInfo.Certificate)
+        };
+
+        var chainPem = new List<string>
+        {
+            "leaf-pem",
+            "intermediate-pem",
+            "root-pem"
+        };
+
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = new X509CertificateEntry(leafInfo.Certificate),
+            CertificateEntryChain = chainEntries,
+            ChainPem = chainPem,
+            CertPem = "leaf-cert-pem",
+            PrivateKeyPem = ""
+        };
+
+        // Act
+        var result = jobCert.GetCertificateContext();
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.Chain);
+        Assert.Equal(2, result.Chain.Count); // Should skip leaf, keep intermediate + root
+        Assert.Equal(intermediateInfo.Certificate, result.Chain[0]);
+        Assert.Equal(rootInfo.Certificate, result.Chain[1]);
+        Assert.Equal(2, result.ChainPem.Count);
+        Assert.Equal("intermediate-pem", result.ChainPem[0]);
+        Assert.Equal("root-pem", result.ChainPem[1]);
+    }
+
+    [Fact]
+    public void GetCertificateContext_WithChain_NullChainPem_ChainStillSet()
+    {
+        // Arrange
+        var leafInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert NullChainPem");
+        var intermediateInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert NullChainPem Int");
+
+        var chainEntries = new[]
+        {
+            new X509CertificateEntry(leafInfo.Certificate),
+            new X509CertificateEntry(intermediateInfo.Certificate)
+        };
+
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = new X509CertificateEntry(leafInfo.Certificate),
+            CertificateEntryChain = chainEntries,
+            ChainPem = null, // No PEM chain provided
+            CertPem = "leaf-pem",
+            PrivateKeyPem = ""
+        };
+
+        // Act
+        var result = jobCert.GetCertificateContext();
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.NotNull(result.Chain);
+        Assert.Single(result.Chain); // intermediate only (leaf skipped)
+        Assert.Equal(intermediateInfo.Certificate, result.Chain[0]);
+        // ChainPem should NOT be set by GetCertificateContext when source ChainPem is null
+        // K8SCertificateContext may auto-generate ChainPem from Chain certificates
+        Assert.NotNull(result.ChainPem); // Auto-generated from Chain
+    }
+
+    [Fact]
+    public void GetCertificateContext_EmptyChain_DoesNotSetChain()
+    {
+        // Arrange
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JobCert EmptyChain");
+
+        var jobCert = new K8SJobCertificate
+        {
+            CertificateEntry = new X509CertificateEntry(certInfo.Certificate),
+            CertificateEntryChain = Array.Empty<X509CertificateEntry>(),
+            CertPem = "cert-pem",
+            PrivateKeyPem = ""
+        };
+
+        // Act
+        var result = jobCert.GetCertificateContext();
+
+        // Assert
+        Assert.NotNull(result);
+        // Chain should remain empty (default)
+        Assert.Empty(result.Chain);
     }
 
     #endregion
