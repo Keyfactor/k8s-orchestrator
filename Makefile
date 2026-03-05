@@ -334,6 +334,13 @@ test-store-cert: test-cluster-cleanup ## Run K8SCert store type integration test
 	export RUN_INTEGRATION_TESTS=true; \
 	dotnet test --filter "FullyQualifiedName~K8SCertStoreIntegrationTests" --logger "console;verbosity=minimal"
 
+.PHONY: test-kubeclient
+test-kubeclient: test-cluster-cleanup ## Run KubeCertificateManagerClient integration tests
+	@source .env 2>/dev/null || true; \
+	source .test.env 2>/dev/null || true; \
+	export RUN_INTEGRATION_TESTS=true; \
+	dotnet test --filter "FullyQualifiedName~KubeClientIntegrationTests" --logger "console;verbosity=minimal"
+
 .PHONY: test-handlers
 test-handlers: ## Run handler unit tests
 	@dotnet test --filter "FullyQualifiedName~Handler" --logger "console;verbosity=minimal"
@@ -381,6 +388,7 @@ test-cluster-cleanup: ## Clean up test namespaces and CSRs from cluster
 		keyfactor-k8scluster-test-ns2 keyfactor-k8scluster-test-ns2-net8 keyfactor-k8scluster-test-ns2-net10 \
 		keyfactor-k8sns-integration-tests keyfactor-k8sns-integration-tests-net8 keyfactor-k8sns-integration-tests-net10 \
 		keyfactor-k8scert-integration-tests keyfactor-k8scert-integration-tests-net8 keyfactor-k8scert-integration-tests-net10 \
+		keyfactor-kubeclient-integration-tests keyfactor-kubeclient-integration-tests-net8 keyfactor-kubeclient-integration-tests-net10 \
 		keyfactor-manual-test; do \
 		if kubectl get namespace $$ns 2>/dev/null; then \
 			echo "Deleting namespace $$ns..."; \
