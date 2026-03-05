@@ -34,6 +34,7 @@ make test-store-tls
 make test-store-cluster
 make test-store-ns
 make test-store-cert
+make test-kubeclient
 ```
 
 ### All Tests
@@ -508,6 +509,67 @@ Manages Kubernetes Certificate Signing Requests (CSRs). **READ-ONLY** - only Inv
 | `Inventory_NonExistentCSR_ReturnsFailure` | Non-existent CSR handled gracefully |
 | **Discovery** | |
 | `Discovery_FindsMultipleCSRs_ReturnsSuccess` | Discovery finds multiple CSRs |
+
+---
+
+## KubeCertificateManagerClient - Direct Client Tests
+
+Direct integration tests for the `KubeCertificateManagerClient` class, testing Kubernetes API operations without going through the job/handler layers.
+
+### Integration Tests (`KubeClientIntegrationTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **Constructor & Connection** | |
+| `Constructor_ValidKubeconfig_CreatesClient` | Valid kubeconfig creates client |
+| `GetHost_ReturnsClusterUrl` | Returns cluster API server URL |
+| `GetClusterName_ReturnsClusterName` | Returns cluster name from config |
+| **Secret CRUD** | |
+| `GetCertificateStoreSecret_ExistingSecret_ReturnsSecret` | Read existing secret |
+| `GetCertificateStoreSecret_NonExistent_ThrowsStoreNotFoundException` | Non-existent secret throws |
+| `CreateOrUpdateCertificateStoreSecret_PEM_CreatesNewSecret` | Create new Opaque secret with PEM |
+| `CreateOrUpdateCertificateStoreSecret_PEM_UpdatesExistingSecret` | Update existing Opaque secret |
+| `CreateOrUpdateCertificateStoreSecret_TLS_CreatesNewSecret` | Create new TLS secret |
+| `CreateOrUpdateCertificateStoreSecret_WithChain_StoresChainSeparately` | Chain stored in ca.crt |
+| `DeleteCertificateStoreSecret_ExistingSecret_DeletesSuccessfully` | Delete secret |
+| **PKCS12 Secrets** | |
+| `GetPkcs12Secret_ExistingSecret_ReturnsSecretWithInventory` | Read PKCS12 secret with inventory |
+| `GetPkcs12Secret_NonExistent_ThrowsStoreNotFoundException` | Non-existent PKCS12 throws |
+| `GetPkcs12Secret_CustomAllowedKeys_FiltersCorrectly` | Filters by allowed extensions |
+| `CreateOrUpdatePkcs12Secret_CreatesNewSecret` | Create new PKCS12 secret |
+| **JKS Secrets** | |
+| `GetJksSecret_ExistingSecret_ReturnsSecretWithInventory` | Read JKS secret with inventory |
+| `GetJksSecret_NonExistent_ThrowsStoreNotFoundException` | Non-existent JKS throws |
+| `GetJksSecret_EmptyData_ThrowsInvalidK8SSecretException` | Empty JKS data throws |
+| `CreateOrUpdateJksSecret_CreatesNewSecret` | Create new JKS secret |
+| **Buddy Passwords** | |
+| `CreateOrUpdateBuddyPass_CreatesPasswordSecret` | Create buddy password secret |
+| `CreateOrUpdateBuddyPass_UpdatesExistingPasswordSecret` | Update existing buddy password |
+| `ReadBuddyPass_ExistingSecret_ReturnsSecret` | Read buddy password |
+| `ReadBuddyPass_NonExistent_ThrowsStoreNotFoundException` | Non-existent buddy throws |
+| **Discovery** | |
+| `DiscoverSecrets_OpaqueType_FindsSecretsInNamespace` | Discover Opaque secrets |
+| `DiscoverSecrets_TlsType_FindsTlsSecrets` | Discover TLS secrets |
+| `DiscoverSecrets_ClusterType_ReturnsClusterName` | Cluster-type returns cluster name |
+| `DiscoverSecrets_NamespaceType_ReturnsNamespaceLocations` | Namespace-type returns namespace locations |
+| **PKCS12 Store Management** | |
+| `CreateOrUpdateCertificateStoreSecret_PKCS12_CreatesNewStore` | Create PKCS12 store secret |
+| `UpdatePKCS12SecretStore_AddsNewCertToExistingStore` | Add cert to existing PKCS12 store |
+| `RemoveFromPKCS12SecretStore_RemovesCertificateFromStore` | Remove cert from PKCS12 store |
+| `CreatePKCS12Collection_ValidPkcs12_ReturnsStore` | Create PKCS12 collection |
+| **Certificate Operations** | |
+| `ReadPemCertificate_ValidPem_ReturnsCertificate` | Read PEM certificate |
+| `ReadDerCertificate_ValidDer_ReturnsCertificate` | Read DER certificate |
+| `ConvertToPem_ValidCertificate_ReturnsPemString` | Convert to PEM |
+| `ExtractPrivateKeyAsPem_ValidPkcs12_ReturnsKey` | Extract private key as PEM |
+| `LoadCertificateChain_ValidPem_ReturnsChain` | Load certificate chain |
+| **CSR Operations** | |
+| `GenerateCertificateRequest_ValidParams_ReturnsCsrObject` | Generate CSR with key pair |
+| `ListAllCertificateSigningRequests_ReturnsResults` | List all CSRs |
+| `DiscoverCertificates_ReturnsLocations` | Discover CSR certificates |
+| **Placeholder Methods** | |
+| `GetOpaqueSecretCertificateInventory_ReturnsEmptyList` | Opaque inventory placeholder |
+| `GetTlsSecretCertificateInventory_ReturnsEmptyList` | TLS inventory placeholder |
 
 ---
 

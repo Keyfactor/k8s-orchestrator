@@ -9,30 +9,28 @@ This document describes how to build and test the Kubernetes Orchestrator Extens
   - [Unit Tests](#unit-tests)
   - [Integration Tests](#integration-tests)
   - [Store-Type Specific Tests](#store-type-specific-tests)
+  - [Code Coverage](#code-coverage)
 - [Architecture](#architecture)
+- [Debugging](#debugging)
+- [Makefile Reference](#makefile-reference)
 
 ## Prerequisites
 
 - .NET 8.0 SDK or later
 - Access to a Kubernetes cluster (for integration tests)
-- `kubectl` configured with appropriate context
+- `kubectl` configured with appropriate context (default: `kf-integrations`)
+- `fzf` (optional, for interactive test selection)
 
 ## Building
 
 ```bash
-# Build entire solution
-dotnet build
-
-# Or using Make
-make build
-
-# Build for release
-dotnet build -c Release
+make build              # Build entire solution
+dotnet build -c Release # Build for release
 ```
 
 ## Testing
 
-The project uses xUnit for testing with comprehensive unit and integration test suites.
+The project uses xUnit for testing with comprehensive unit and integration test suites (~1138 unit tests, ~213 integration tests).
 
 ### Unit Tests
 
@@ -42,34 +40,31 @@ Run unit tests (no Kubernetes cluster required):
 make test-unit
 ```
 
-This runs all tests that don't require a live Kubernetes cluster (~740 tests).
-
 ### Integration Tests
 
-Integration tests require a Kubernetes cluster. By default, tests use `~/.kube/config`.
+Integration tests require a Kubernetes cluster. By default, tests use `~/.kube/config` with the `kf-integrations` context.
 
 ```bash
-# Run all integration tests
-make test-integration
+make test-integration           # Run all integration tests (net8.0 only, with cleanup)
+make test-integration-fast      # Same as above (net8.0 only, ~50% faster than full)
+make test-integration-full      # Run on all frameworks (net8.0 + net10.0)
+make test-integration-no-cleanup # Leave secrets for manual inspection
+make test-all-with-cleanup      # Unit + integration with pre/post cleanup
+```
 
-# Run integration tests (faster - single framework)
-make test-integration-fast
+#### CI Testing
 
-# Run tests without cleanup (for debugging)
-make test-integration-no-cleanup
-
-# Run all tests with pre/post cleanup
-make test-all-with-cleanup
+```bash
+make test-ci                    # Fast on PRs, full on main branch
+make test-integration-smoke-net10 # Smoke tests on net10.0 only (Inventory tests)
 ```
 
 #### Cluster Setup
 
 ```bash
-# Check cluster connectivity and context
-make test-cluster-setup
-
-# Clean up test resources from previous runs
-make test-cluster-cleanup
+make test-cluster-setup         # Display cluster setup instructions and verify connectivity
+make test-cluster-cleanup       # Clean up test namespaces and CSRs
+make test-setup                 # Full setup: cleanup + create CSRs for K8SCert tests
 ```
 
 Integration tests create namespaces prefixed with `keyfactor-` and clean them up after completion.
@@ -86,6 +81,7 @@ make test-store-tls       # K8STLSSecr (TLS secrets)
 make test-store-cluster   # K8SCluster (cluster-wide)
 make test-store-ns        # K8SNS (namespace-level)
 make test-store-cert      # K8SCert (CSRs)
+make test-kubeclient      # KubeCertificateManagerClient (direct client tests)
 ```
 
 Or run tests for a specific store type with cleanup:
@@ -101,25 +97,33 @@ make test-handlers        # Test secret handlers
 make test-base-jobs       # Test base job classes
 ```
 
-### Interactive Test Selection
-
-Use `fzf` for interactive test selection:
+### Other Test Commands
 
 ```bash
-make test
+make testall              # Run all tests (unit + integration)
+make test                 # Interactive single test selection (requires fzf)
+make test-watch           # Auto-rerun tests on file changes
+make test-single FILTER=Inventory_OpaqueSecretWithCertificate  # Run one test by filter
 ```
 
 ### Code Coverage
 
 ```bash
-# Run tests with coverage
-make test-coverage
+make test-coverage              # Run all tests with coverage and generate HTML report
+make test-coverage-unit         # Unit tests only with coverage
+make test-coverage-open         # Open coverage HTML report in browser (macOS)
+make test-coverage-summary      # Show coverage summary in terminal
+make test-coverage-clean        # Remove coverage reports
+make test-coverage-install      # Install reportgenerator tool
+```
 
-# Unit tests with coverage
-make test-coverage-unit
+#### Coverage Analysis
 
-# View coverage report
-make test-coverage-open
+```bash
+make coverage-summary           # Unit coverage summary sorted by uncovered lines
+make coverage-summary-all       # Combined (unit+integration) coverage summary
+make coverage-uncovered CLASS=CertificateUtilities   # Uncovered lines for a class
+make coverage-uncovered-all CLASS=JobBase             # Uncovered lines from combined coverage
 ```
 
 ## Architecture
@@ -167,22 +171,40 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture docum
 For debugging with Keyfactor Command orchestrator containers:
 
 ```bash
-# Build and verify DLL
-make debug-build
+make debug-build            # Build extension and verify DLL in container folder
+make debug-restart          # Restart the orchestrator container
+make debug-logs             # Show recent container logs (last 100 lines)
+make debug-logs-follow      # Follow container logs in real-time
+make debug-container-id     # Get the current container ID
+```
 
-# Restart orchestrator container
-make debug-restart
+#### Scheduling Test Jobs
 
-# View container logs
-make debug-logs
-make debug-logs-follow
+```bash
+make debug-schedule-tls     # Schedule management job for TLS secret store
+make debug-schedule-opaque  # Schedule management job for Opaque secret store
+make debug-schedule-both    # Schedule both TLS and Opaque jobs
+make debug-schedule-tls-cert CERT_ID=43               # Schedule TLS job with specific cert
+make debug-schedule-tls-cert CERT_ID=43 PFX_PASSWORD=xxx  # With custom password
+```
 
-# Schedule test jobs
-make debug-schedule-tls
-make debug-schedule-opaque
+#### Debug Loops (build + restart + schedule + verify)
 
-# Full debug loop
-make debug-loop
+```bash
+make debug-loop             # Full loop: build, restart, schedule TLS job, wait, check
+make debug-loop-both        # Full loop for both TLS and Opaque stores
+make debug-loop-cert43      # Loop with cert 43 (has private key + chain)
+make debug-loop-cert44      # Loop with cert 44 (no private key, DER format)
+```
+
+#### Checking Secrets
+
+```bash
+make debug-check-tls-secret    # Check TLS secret in Kubernetes
+make debug-check-opaque-secret # Check Opaque secret in Kubernetes
+make debug-check-secrets       # Check both secrets
+make debug-wait-job            # Wait for jobs to complete (polls logs)
+make debug-get-cert-info CERT_ID=43  # Get certificate info from Command
 ```
 
 ### CSR Testing
@@ -190,16 +212,57 @@ make debug-loop
 For K8SCert (Certificate Signing Request) testing:
 
 ```bash
-# Create and approve a test CSR
-make csr-create-approved
-
-# Create CSR with certificate chain
-make csr-create-with-chain
-
-# List and cleanup CSRs
-make csr-list
-make csr-cleanup
+make csr-create                  # Create a test CSR
+make csr-create NAME=my-csr CN=test-cert  # Create with custom name/CN
+make csr-create-approved         # Create and approve a test CSR
+make csr-create-with-chain       # Create CSR with certificate chain (root -> intermediate -> leaf)
+make csr-create-batch COUNT=10 APPROVE=true  # Create multiple CSRs
+make csr-create-batch-with-chain COUNT=3     # Create multiple CSRs with chains
 ```
+
+```bash
+make csr-list               # List all CSRs
+make csr-list-test          # List only test CSRs (prefixed with test-)
+make csr-describe NAME=my-csr  # Describe a CSR
+make csr-approve NAME=my-csr   # Approve a CSR
+make csr-deny NAME=my-csr      # Deny a CSR
+make csr-delete NAME=my-csr    # Delete a CSR
+make csr-cleanup            # Delete all test CSRs
+```
+
+### OAuth Token Management
+
+```bash
+make token                  # Get OAuth token (uses cache if valid)
+make token-refresh          # Force refresh and cache to disk
+make token-show             # Show cached token info (without exposing token)
+make token-clear            # Clear cached token
+make token-get              # Get token silently (for use in scripts)
+```
+
+### Keyfactor Command API
+
+```bash
+make api-list-stores        # List certificate stores from Command
+make api-list-certs         # List certificates (first 20)
+make api-get-cert CERT_ID=43  # Get certificate details
+make api-get-jobs           # Get recent orchestrator jobs (last 10)
+```
+
+## Makefile Reference
+
+Run `make help` to see all available targets with descriptions, organized by category:
+
+| Category | Targets |
+|----------|---------|
+| **General** | `help` |
+| **Development** | `reset`, `setup`, `newtest`, `installpackage` |
+| **Testing** | `testall`, `test`, `test-unit`, `test-integration`, `test-integration-fast`, `test-integration-full`, `test-integration-smoke-net10`, `test-ci`, `test-setup`, `test-coverage`, `test-coverage-install`, `test-coverage-unit`, `test-coverage-summary`, `test-coverage-open`, `test-coverage-clean`, `coverage-summary`, `coverage-summary-all`, `coverage-uncovered`, `coverage-uncovered-all`, `test-watch`, `test-single`, `test-store-jks`, `test-store-pkcs12`, `test-store-secret`, `test-store-tls`, `test-store-cluster`, `test-store-ns`, `test-store-cert`, `test-kubeclient`, `test-handlers`, `test-base-jobs`, `test-cluster-setup`, `test-cluster-cleanup`, `test-store-type`, `test-integration-no-cleanup`, `test-all-with-cleanup` |
+| **Debugging** | `debug-build`, `debug-container-id`, `debug-restart`, `debug-logs`, `debug-logs-follow`, `debug-get-token`, `debug-schedule-tls`, `debug-schedule-opaque`, `debug-schedule-both`, `debug-check-tls-secret`, `debug-check-opaque-secret`, `debug-check-secrets`, `debug-wait-job`, `debug-loop`, `debug-loop-both`, `debug-schedule-tls-cert`, `debug-loop-cert43`, `debug-loop-cert44`, `debug-get-cert-info` |
+| **OAuth** | `token`, `token-refresh`, `token-show`, `token-clear`, `token-get` |
+| **Command API** | `api-list-stores`, `api-list-certs`, `api-get-cert`, `api-get-jobs` |
+| **CSR Management** | `csr-create`, `csr-create-approved`, `csr-approve`, `csr-deny`, `csr-list`, `csr-list-test`, `csr-describe`, `csr-delete`, `csr-cleanup`, `csr-create-batch`, `csr-create-with-chain`, `csr-create-batch-with-chain` |
+| **Build** | `build` |
 
 ## Common Issues
 
