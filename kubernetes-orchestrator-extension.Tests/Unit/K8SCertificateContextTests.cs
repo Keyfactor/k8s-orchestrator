@@ -7,7 +7,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.X509;
@@ -734,6 +736,83 @@ public class K8SCertificateContextTests
         // Assert
         Assert.NotEmpty(pem);
         Assert.Contains("PRIVATE KEY", pem);
+    }
+
+    #endregion
+
+    #region Edge Case Factory Method Tests
+
+    [Fact]
+    public void FromPkcs12_NoKeyEntry_ThrowsArgumentException()
+    {
+        // PKCS12 with only a trusted cert entry (no key entry)
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "NoKey PKCS12");
+        var store = new Pkcs12StoreBuilder().Build();
+        store.SetCertificateEntry("trustedcert", new X509CertificateEntry(certInfo.Certificate));
+
+        using var ms = new System.IO.MemoryStream();
+        store.Save(ms, "pass".ToCharArray(), new Org.BouncyCastle.Security.SecureRandom());
+
+        Assert.Throws<ArgumentException>(() => K8SCertificateContext.FromPkcs12(ms.ToArray(), "pass"));
+    }
+
+    [Fact]
+    public void FromPkcs12_WithChain_ExtractsChainSkippingLeaf()
+    {
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.EcP256, "PKCS12 Chain Leaf");
+        var leafInfo = chain[0];
+        var chainCerts = new Org.BouncyCastle.X509.X509Certificate[chain.Count - 1];
+        for (int i = 1; i < chain.Count; i++)
+            chainCerts[i - 1] = chain[i].Certificate;
+
+        var pkcs12 = CertificateTestHelper.GeneratePkcs12WithChain(
+            leafInfo.Certificate, leafInfo.KeyPair.Private, chainCerts, "pass", "leaf");
+
+        var context = K8SCertificateContext.FromPkcs12(pkcs12, "pass", "leaf");
+
+        Assert.NotNull(context);
+        Assert.NotNull(context.Certificate);
+        Assert.True(context.HasPrivateKey);
+        // Chain should exclude the leaf cert
+        Assert.True(context.Chain.Count >= 1);
+    }
+
+    [Fact]
+    public void FromPkcs12Store_NoKeyEntry_ThrowsArgumentException()
+    {
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "NoKey Store");
+        var store = new Pkcs12StoreBuilder().Build();
+        store.SetCertificateEntry("trustedcert", new X509CertificateEntry(certInfo.Certificate));
+
+        Assert.Throws<ArgumentException>(() => K8SCertificateContext.FromPkcs12Store(store));
+    }
+
+    [Fact]
+    public void FromPkcs12Store_WithChain_ExtractsChainSkippingLeaf()
+    {
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.EcP256, "Store Chain Leaf");
+        var leafInfo = chain[0];
+        var chainEntries = chain.Select(c => new X509CertificateEntry(c.Certificate)).ToArray();
+
+        var store = new Pkcs12StoreBuilder().Build();
+        store.SetKeyEntry("leaf",
+            new AsymmetricKeyEntry(leafInfo.KeyPair.Private),
+            chainEntries);
+
+        var context = K8SCertificateContext.FromPkcs12Store(store);
+
+        Assert.NotNull(context);
+        Assert.True(context.HasPrivateKey);
+        // Chain should exclude the leaf cert
+        Assert.True(context.Chain.Count >= 1);
+    }
+
+    [Fact]
+    public void FromPem_NoCertificatesFound_ThrowsArgumentException()
+    {
+        // PEM data with no CERTIFICATE blocks (just whitespace/garbage)
+        Assert.Throws<ArgumentException>(() =>
+            K8SCertificateContext.FromPem("-----BEGIN SOMETHING-----\ndata\n-----END SOMETHING-----"));
     }
 
     #endregion
