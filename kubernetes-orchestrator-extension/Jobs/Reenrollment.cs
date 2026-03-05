@@ -12,50 +12,61 @@ using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Newtonsoft.Json;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-// The Re-enrollment class implements IAgentJobExtension and is meant to:
-//  1) Generate a new public/private keypair locally
-//  2) Generate a CSR from the keypair,
-//  3) Submit the CSR to KF Command to enroll the certificate and retrieve the certificate back
-//  4) Deploy the newly re-enrolled certificate to a certificate store
 
+/// <summary>
+/// Re-enrollment job implementation for Kubernetes certificate stores.
+/// This job type is intended to:
+/// 1) Generate a new public/private keypair locally
+/// 2) Generate a CSR from the keypair
+/// 3) Submit the CSR to Keyfactor Command to enroll the certificate
+/// 4) Deploy the newly re-enrolled certificate to a certificate store
+/// </summary>
+/// <remarks>
+/// NOTE: Re-enrollment is not currently implemented for Kubernetes stores.
+/// This class provides a placeholder that returns a failure indicating
+/// the operation is not supported.
+/// </remarks>
 public class Reenrollment : JobBase, IReenrollmentJobExtension
 {
+    /// <summary>
+    /// Initializes a new instance of the Reenrollment job with the specified PAM resolver.
+    /// </summary>
+    /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
     public Reenrollment(IPAMSecretResolver resolver)
     {
         _resolver = resolver;
     }
-    //Job Entry Point
+
+    /// <summary>
+    /// Main entry point for the reenrollment job.
+    /// Currently not implemented - returns a failure result.
+    /// </summary>
+    /// <param name="config">Reenrollment job configuration.</param>
+    /// <param name="submitReenrollment">Callback delegate to submit CSR for enrollment.</param>
+    /// <returns>JobResult indicating failure (not implemented).</returns>
+    /// <remarks>
+    /// Future implementation should:
+    /// 1. Generate keypair using BouncyCastle
+    /// 2. Create CSR with appropriate subject and extensions
+    /// 3. Submit CSR via submitReenrollment callback
+    /// 4. Receive enrolled certificate and deploy to store
+    /// </remarks>
     public JobResult ProcessJob(ReenrollmentJobConfiguration config, SubmitReenrollmentCSR submitReenrollment)
     {
-        //METHOD ARGUMENTS...
-        //config - contains context information passed from KF Command to this job run:
-        //
-        // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
-        //
-        // config.ServerUsername, config.ServerPassword - credentials for orchestrated server - use to authenticate to certificate store server.
-        // config.CertificateStoreDetails.ClientMachine - server name or IP address of orchestrated server
-        // config.CertificateStoreDetails.StorePath - location path of certificate store on orchestrated server
-        // config.CertificateStoreDetails.StorePassword - if the certificate store has a password, it would be passed here
-        // config.CertificateStoreDetails.Properties - JSON string containing custom store properties for this specific store type
-        //
-        // config.JobProperties = Dictionary of custom parameters to use in building CSR and placing enrolled certificate in a the proper certificate store
-
-        //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
         Logger = LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Begin Reenrollment...");
-        Logger.LogDebug("Following info received from command:");
-        Logger.LogDebug(JsonConvert.SerializeObject(config));
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing reenrollment job {JobId} for capability {Capability}", config.JobId, config.Capability);
 
-        Logger.LogDebug($"Begin {config.Capability} for job id {config.JobId.ToString()}...");
-        // logger.LogTrace($"Store password: {storePassword}"); //Do not log passwords
-        Logger.LogTrace($"Server: {config.CertificateStoreDetails.ClientMachine}");
-        Logger.LogTrace($"Store Path: {config.CertificateStoreDetails.StorePath}");
-        Logger.LogTrace($"Canonical Store Path: {GetStorePath()}");
+        Logger.LogTrace("Server: {Server}", config.CertificateStoreDetails.ClientMachine);
+        Logger.LogTrace("Store Path: {StorePath}", config.CertificateStoreDetails.StorePath);
 
-        //Status: 2=Success, 3=Warning, 4=Error
+        // Re-enrollment is not implemented for Kubernetes stores
+        Logger.LogWarning("Re-enrollment not implemented for {Capability}", config.Capability);
+        Logger.MethodExit(MsLogLevel.Debug);
         return FailJob($"Re-enrollment not implemented for {config.Capability}", config.JobHistoryId);
     }
 }

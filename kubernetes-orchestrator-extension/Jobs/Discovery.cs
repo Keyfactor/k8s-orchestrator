@@ -14,34 +14,60 @@ using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
-// The Discovery class implements IAgentJobExtension and is meant to find all certificate stores based on the information passed when creating the job in KF Command 
+/// <summary>
+/// Discovery job implementation for Kubernetes certificate stores.
+/// Finds all certificate stores (secrets, JKS, PKCS12) in specified namespaces
+/// based on job configuration and returns them to Keyfactor Command for approval.
+/// </summary>
+/// <remarks>
+/// Supports discovery for the following store types:
+/// - K8SCluster: Cluster-wide secret discovery
+/// - K8SNS: Namespace-level secret discovery
+/// - K8STLSSecr: TLS secrets (kubernetes.io/tls)
+/// - K8SSecret: Opaque secrets
+/// - K8SPKCS12/K8SPFX: PKCS12 keystores
+/// - K8SJKS: JKS keystores
+///
+/// Discovery parameters from job properties:
+/// - dirs: Namespaces to search (comma-separated)
+/// - extensions: Secret data keys to check
+/// - ignoreddirs: Namespaces to ignore
+/// - patterns: File name patterns to match
+/// </remarks>
 public class Discovery : JobBase, IDiscoveryJobExtension
 {
+    /// <summary>
+    /// Initializes a new instance of the Discovery job with the specified PAM resolver.
+    /// </summary>
+    /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
     public Discovery(IPAMSecretResolver resolver)
     {
         _resolver = resolver;
     }
 
-    //Job Entry Point
+    /// <summary>
+    /// Main entry point for the discovery job. Searches for certificate stores
+    /// in Kubernetes based on the job configuration.
+    /// </summary>
+    /// <param name="config">Discovery job configuration containing search parameters.</param>
+    /// <param name="submitDiscovery">Callback delegate to submit discovered store locations to Keyfactor Command.</param>
+    /// <returns>JobResult indicating success or failure of the discovery operation.</returns>
+    /// <remarks>
+    /// Configuration parameters available in config:
+    /// - config.ServerUsername, config.ServerPassword - credentials for K8S API authentication
+    /// - config.JobProperties["dirs"] - Namespaces to search (comma-separated, defaults to "default")
+    /// - config.JobProperties["extensions"] - Secret data keys to check for certificate data
+    /// - config.JobProperties["ignoreddirs"] - Namespaces to ignore
+    /// - config.JobProperties["patterns"] - File name patterns to match
+    /// </remarks>
     public JobResult ProcessJob(DiscoveryJobConfiguration config, SubmitDiscoveryUpdate submitDiscovery)
     {
-        //METHOD ARGUMENTS...
-        //config - contains context information passed from KF Command to this job run:
-        //
-        // config.ServerUsername, config.ServerPassword - credentials for orchestrated server - use to authenticate to certificate store server.
-        // config.ClientMachine - server name or IP address of orchestrated server
-        //
-        // config.JobProperties["dirs"] - Directories to search
-        // config.JobProperties["extensions"] - Extensions to search
-        // config.JobProperties["ignoreddirs"] - Directories to ignore
-        // config.JobProperties["patterns"] - File name patterns to match
-
-
-        //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
         Logger = LogHandler.GetClassLogger(GetType());
+        Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogInformation("Begin Discovery for K8S Orchestrator Extension for job {JobID}", config.JobId);
         Logger.LogInformation("Discovery for store type: {Capability}", config.Capability);
         try
@@ -236,6 +262,8 @@ public class Discovery : JobBase, IDiscoveryJobExtension
             submitDiscovery.Invoke(locations.Distinct().ToArray());
             Logger.LogDebug("Returned from submitDiscovery.Invoke()");
             //Status: 2=Success, 3=Warning, 4=Error
+            Logger.LogInformation("Discovery job {JobId} completed successfully with {Count} locations", config.JobId, locations.Count);
+            Logger.MethodExit(MsLogLevel.Debug);
             return new JobResult
             {
                 Result = OrchestratorJobStatusJobResult.Success,
@@ -247,18 +275,19 @@ public class Discovery : JobBase, IDiscoveryJobExtension
         {
             // NOTE: if the cause of the submitInventory.Invoke exception is a communication issue between the Orchestrator server and the Command server, the job status returned here
             //  may not be reflected in Keyfactor Command.
-            Logger.LogError("Discovery job has failed due to an unknown error: `{Error}`", ex.Message);
-            Logger.LogTrace("{Message}", ex.ToString());
+            Logger.LogError("Discovery job has failed due to an unknown error: {Error}", ex.Message);
+            Logger.LogTrace("Exception details: {Details}", ex.ToString());
             var inner = ex.InnerException;
             while (inner != null)
             {
                 Logger.LogError("Inner Exception: {Message}", inner.Message);
-                Logger.LogTrace("{Message}", inner.ToString());
+                Logger.LogTrace("Inner exception details: {Details}", inner.ToString());
                 inner = inner.InnerException;
             }
 
             Logger.LogInformation("End DISCOVERY for K8S Orchestrator Extension for job '{JobID}' with failure",
                 config.JobId);
+            Logger.MethodExit(MsLogLevel.Debug);
             return FailJob(ex.Message, config.JobHistoryId);
         }
     }
