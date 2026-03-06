@@ -10,6 +10,7 @@ This guide documents all available Make targets for the Kubernetes Orchestrator 
 | **Testing** | `make test-unit`, `make test-integration`, `make test` |
 | **Coverage** | `make test-coverage-unit`, `make test-coverage-open` |
 | **Debugging** | `make debug-loop`, `make debug-logs` |
+| **Keystore Inspection** | `make inspect-jks-manual`, `make inspect-pkcs12-manual` |
 | **OAuth** | `make token`, `make token-show` |
 | **API** | `make api-list-stores`, `make api-list-certs` |
 
@@ -351,6 +352,43 @@ Get certificate information from Command:
 ```bash
 make debug-get-cert-info CERT_ID=43
 ```
+
+---
+
+## Keystore Inspection
+
+Pull JKS or PKCS12 keystores from Kubernetes and inspect them locally with `keytool`. Useful for verifying certificate deployments, checking aliases, and viewing certificate chains.
+
+### Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SECRET` | (required) | Kubernetes secret name |
+| `INSPECT_NS` | `default` | Kubernetes namespace |
+| `INSPECT_PASSWORD` | `changeit!` | Keystore password |
+
+### `make inspect-jks SECRET=<name> [INSPECT_NS=<ns>] [INSPECT_PASSWORD=<pw>]`
+
+Fetch a JKS keystore from a Kubernetes secret and list its contents with `keytool`:
+```bash
+make inspect-jks SECRET=my-jks-store INSPECT_NS=production INSPECT_PASSWORD=changeme!
+```
+Displays aliases, entry types, certificate fingerprints, and the full certificate chain.
+
+### `make inspect-pkcs12 SECRET=<name> [INSPECT_NS=<ns>] [INSPECT_PASSWORD=<pw>]`
+
+Same as `inspect-jks` but for PKCS12/PFX keystores:
+```bash
+make inspect-pkcs12 SECRET=my-pfx-store INSPECT_NS=production INSPECT_PASSWORD=changeme!
+```
+
+### `make inspect-jks-manual`
+Shortcut for `make inspect-jks SECRET=manual-jks INSPECT_NS=default`. Pass `INSPECT_PASSWORD` as needed.
+
+### `make inspect-pkcs12-manual`
+Shortcut for `make inspect-pkcs12 SECRET=manual-pkcs12 INSPECT_NS=default`. Pass `INSPECT_PASSWORD` as needed.
+
+> **Note:** Empty keystores (created by a "create if missing" job before any certificate is deployed) cannot be listed by `keytool` — this is a keytool limitation. Once a certificate is present, inspection works normally.
 
 ---
 

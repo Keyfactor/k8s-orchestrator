@@ -12,6 +12,8 @@
 - fix(management): Fix alias parsing for `K8SNS` and `K8SCluster` store-types when alias contains multiple path segments.
 - fix(management): Add `IncludeCertChain` at base job level, and include in management jobs.
 - fix(management): `K8SPKCS12` and `K8SJKS` respect `IncludeCertChain` flag.
+- fix(management): "Create if missing" jobs (`CertStoreOperationType.Create`) no longer fail with "Unknown operation type: Create". `Create` is now routed identically to `Add`.
+- fix(management): `K8SJKS` and `K8SPKCS12` `CreateEmptyStore` now uses the buddy-secret password when one is configured, instead of always using an empty password.
 
 ## Chores:
 - chore(tests): Add comprehensive unit test suite covering all store types and cryptographic operations.

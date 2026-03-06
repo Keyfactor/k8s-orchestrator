@@ -672,6 +672,26 @@ Utility functions for certificate parsing, conversion, and property extraction.
 
 ---
 
+## Management Job Routing
+
+Regression tests for `ManagementBase.RouteOperation`, verifying that `CertStoreOperationType.Create` ("create if missing") is correctly routed to `HandleAdd`.
+
+### Unit Tests (`Unit/Jobs/ManagementBaseTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **Create operation type regression** | |
+| `RouteOperation_CreateType_CallsHandleAdd` | `OperationType=Create` routes to `HandleAdd` (regression: previously returned "Unknown operation type: Create") |
+| `RouteOperation_CreateType_DoesNotFail` | `OperationType=Create` does not return Failure |
+| **Add operation** | |
+| `RouteOperation_AddType_CallsHandleAdd` | `OperationType=Add` routes to `HandleAdd` |
+| **Remove operation** | |
+| `RouteOperation_RemoveType_CallsHandleRemove` | `OperationType=Remove` routes to `HandleRemove` |
+| **Unsupported operation types** | |
+| `RouteOperation_UnsupportedTypes_ReturnsFailure` | `Unknown`, `Inventory`, `Discovery` return Failure without calling Add or Remove |
+
+---
+
 ## Logging Safety Tests
 
 Tests to ensure sensitive data is never logged.
