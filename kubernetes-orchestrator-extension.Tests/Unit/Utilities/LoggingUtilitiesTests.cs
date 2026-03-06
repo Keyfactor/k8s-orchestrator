@@ -46,7 +46,7 @@ public class LoggingUtilitiesTests
     }
 
     [Fact]
-    public void RedactPassword_ValidInput_ReturnsRedactedWithLength()
+    public void RedactPassword_ValidInput_ReturnsRedacted()
     {
         // Arrange
         var password = "mySecretPassword123";
@@ -55,21 +55,22 @@ public class LoggingUtilitiesTests
         var result = LoggingUtilities.RedactPassword(password);
 
         // Assert
-        Assert.Contains("***REDACTED***", result);
-        Assert.Contains($"length: {password.Length}", result);
+        Assert.Equal("***REDACTED***", result);
+        Assert.DoesNotContain(password.Length.ToString(), result);
     }
 
     [Theory]
-    [InlineData("a", 1)]
-    [InlineData("password", 8)]
-    [InlineData("verylongpassword1234567890", 26)]
-    public void RedactPassword_VariousLengths_ReturnsCorrectLength(string password, int expectedLength)
+    [InlineData("a")]
+    [InlineData("password")]
+    [InlineData("verylongpassword1234567890")]
+    public void RedactPassword_VariousInputs_DoesNotRevealLength(string password)
     {
         // Act
         var result = LoggingUtilities.RedactPassword(password);
 
         // Assert
-        Assert.Contains($"length: {expectedLength}", result);
+        Assert.Equal("***REDACTED***", result);
+        Assert.DoesNotContain(password.Length.ToString(), result);
     }
 
     #endregion

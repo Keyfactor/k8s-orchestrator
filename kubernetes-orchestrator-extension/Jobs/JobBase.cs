@@ -1562,13 +1562,11 @@ public abstract class JobBase
         //convert password to string
         var storePassword = Encoding.UTF8.GetString(storePasswordBytes);
         Logger.LogTrace("Password (before trimming): {Password}", LoggingUtilities.RedactPassword(storePassword));
-        Logger.LogTrace("Password length (before trimming): {Length}", storePassword.Length);
 
         // remove any trailing new line characters from the string
         storePassword = storePassword.TrimEnd('\r','\n');
         Logger.LogDebug("Store password loaded and trimmed");
         Logger.LogTrace("Password (after trimming): {Password}", LoggingUtilities.RedactPassword(storePassword));
-        Logger.LogTrace("Password length (after trimming): {Length}", storePassword.Length);
         Logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
 
         Logger.MethodExit(MsLogLevel.Debug);

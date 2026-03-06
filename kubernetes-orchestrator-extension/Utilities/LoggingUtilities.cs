@@ -31,11 +31,10 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
         #region Password Redaction
 
         /// <summary>
-        /// Redacts a password for safe logging. Returns a string indicating the password
-        /// is redacted along with its length.
+        /// Redacts a password for safe logging.
         /// </summary>
         /// <param name="password">The password to redact</param>
-        /// <returns>A redacted string like "***REDACTED*** (length: N)" or "EMPTY" or "NULL"</returns>
+        /// <returns>"***REDACTED***", "EMPTY", or "NULL"</returns>
         public static string RedactPassword(string password)
         {
             if (password == null)
@@ -48,7 +47,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
                 return "EMPTY";
             }
 
-            return $"***REDACTED*** (length: {password.Length})";
+            return "***REDACTED***";
         }
 
         /// <summary>
