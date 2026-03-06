@@ -12,7 +12,7 @@ using System.Text;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
+using Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SJKS;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Security;
@@ -51,21 +51,6 @@ public class JksSecretHandler : SecretHandlerBase
     }
 
     #region Inventory Operations
-
-    /// <inheritdoc />
-    public override List<string> GetCertificates(long jobId)
-    {
-        // JKS stores use aliases, return flat list of all certificates
-        var aliasedCerts = GetCertificatesWithAliases(jobId);
-        var allCerts = new List<string>();
-
-        foreach (var kvp in aliasedCerts)
-        {
-            allCerts.AddRange(kvp.Value);
-        }
-
-        return allCerts;
-    }
 
     /// <inheritdoc />
     public override Dictionary<string, List<string>> GetCertificatesWithAliases(long jobId)
@@ -299,9 +284,10 @@ public class JksSecretHandler : SecretHandlerBase
         try
         {
             // Create empty JKS keystore using BouncyCastle
+            // Use ResolvePassword (not Context.StorePassword directly) so buddy-secret passwords are respected
             var jksStore = new JksStore();
             using var ms = new System.IO.MemoryStream();
-            var password = Context.StorePassword ?? "";
+            var password = ResolvePassword(null);
             jksStore.Save(ms, password.ToCharArray());
             var jksBytes = ms.ToArray();
 
@@ -340,53 +326,6 @@ public class JksSecretHandler : SecretHandlerBase
         {
             LogMethodExit(nameof(DiscoverStores));
         }
-    }
-
-    #endregion
-
-    #region Private Helpers
-
-    private V1Secret HandleCreateIfMissing()
-    {
-        try
-        {
-            var existingSecret = GetSecret();
-            Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
-            return existingSecret;
-        }
-        catch (StoreNotFoundException)
-        {
-            Logger.LogDebug("Secret not found, creating empty JKS keystore");
-            return CreateEmptyStore();
-        }
-    }
-
-    private string ResolvePassword(V1Secret secret)
-    {
-        // Try to get password from buddy secret first
-        if (!string.IsNullOrEmpty(Context.PasswordSecretPath))
-        {
-            // Parse the path to extract namespace and secret name
-            var pathParts = Context.PasswordSecretPath.Split('/');
-            var passwordNamespace = pathParts.Length > 1 ? pathParts[0] : Context.KubeNamespace;
-            var passwordSecretName = pathParts.Length > 1 ? pathParts[^1] : pathParts[0];
-
-            var buddySecret = KubeClient.ReadBuddyPass(
-                passwordSecretName,
-                passwordNamespace);
-
-            if (buddySecret?.Data != null)
-            {
-                var fieldName = Context.PasswordFieldName ?? "password";
-                if (buddySecret.Data.TryGetValue(fieldName, out var passwordBytes) && passwordBytes != null)
-                {
-                    return Encoding.UTF8.GetString(passwordBytes).TrimEnd('\n', '\r');
-                }
-            }
-        }
-
-        // Fall back to configured password
-        return Context.StorePassword ?? "";
     }
 
     #endregion

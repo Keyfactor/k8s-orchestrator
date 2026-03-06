@@ -12,7 +12,7 @@ using System.Text;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SPKCS12;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
@@ -52,21 +52,6 @@ public class Pkcs12SecretHandler : SecretHandlerBase
     }
 
     #region Inventory Operations
-
-    /// <inheritdoc />
-    public override List<string> GetCertificates(long jobId)
-    {
-        // PKCS12 stores use aliases, return flat list of all certificates
-        var aliasedCerts = GetCertificatesWithAliases(jobId);
-        var allCerts = new List<string>();
-
-        foreach (var kvp in aliasedCerts)
-        {
-            allCerts.AddRange(kvp.Value);
-        }
-
-        return allCerts;
-    }
 
     /// <inheritdoc />
     public override Dictionary<string, List<string>> GetCertificatesWithAliases(long jobId)
@@ -380,10 +365,11 @@ public class Pkcs12SecretHandler : SecretHandlerBase
         try
         {
             // Create empty PKCS12 keystore
+            // Use ResolvePassword (not Context.StorePassword directly) so buddy-secret passwords are respected
             var storeBuilder = new Pkcs12StoreBuilder();
             var store = storeBuilder.Build();
             using var ms = new System.IO.MemoryStream();
-            var password = Context.StorePassword ?? "";
+            var password = ResolvePassword(null);
             store.Save(ms, password.ToCharArray(), new SecureRandom());
             var pkcs12Bytes = ms.ToArray();
 
@@ -422,53 +408,6 @@ public class Pkcs12SecretHandler : SecretHandlerBase
         {
             LogMethodExit(nameof(DiscoverStores));
         }
-    }
-
-    #endregion
-
-    #region Private Helpers
-
-    private V1Secret HandleCreateIfMissing()
-    {
-        try
-        {
-            var existingSecret = GetSecret();
-            Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
-            return existingSecret;
-        }
-        catch (StoreNotFoundException)
-        {
-            Logger.LogDebug("Secret not found, creating empty PKCS12 keystore");
-            return CreateEmptyStore();
-        }
-    }
-
-    private string ResolvePassword(V1Secret secret)
-    {
-        // Try to get password from buddy secret first
-        if (!string.IsNullOrEmpty(Context.PasswordSecretPath))
-        {
-            // Parse the path to extract namespace and secret name
-            var pathParts = Context.PasswordSecretPath.Split('/');
-            var passwordNamespace = pathParts.Length > 1 ? pathParts[0] : Context.KubeNamespace;
-            var passwordSecretName = pathParts.Length > 1 ? pathParts[^1] : pathParts[0];
-
-            var buddySecret = KubeClient.ReadBuddyPass(
-                passwordSecretName,
-                passwordNamespace);
-
-            if (buddySecret?.Data != null)
-            {
-                var fieldName = Context.PasswordFieldName ?? "password";
-                if (buddySecret.Data.TryGetValue(fieldName, out var passwordBytes) && passwordBytes != null)
-                {
-                    return Encoding.UTF8.GetString(passwordBytes).TrimEnd('\n', '\r');
-                }
-            }
-        }
-
-        // Fall back to configured password
-        return Context.StorePassword ?? "";
     }
 
     #endregion

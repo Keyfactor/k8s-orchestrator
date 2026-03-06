@@ -748,6 +748,104 @@ debug-get-cert-info: ## Get certificate info from Command (usage: make debug-get
 		-H "x-keyfactor-requested-with: APIClient" | \
 		jq '{Id, Thumbprint, IssuedCN, HasPrivateKey, IssuerDN, KeyType: .KeyTypeString}'
 
+##@ Keystore Inspection (pull and inspect JKS/PKCS12 secrets from Kubernetes)
+
+# Defaults — override on the command line: make inspect-jks SECRET=my-jks NS=my-ns PASSWORD=mypass
+INSPECT_NS       ?= default
+INSPECT_PASSWORD ?= changeit!
+
+.PHONY: inspect-jks
+inspect-jks: ## Inspect a JKS secret from Kubernetes (usage: make inspect-jks SECRET=name [NS=namespace] [INSPECT_PASSWORD=pw])
+	@if [ -z "$(SECRET)" ]; then \
+		echo "Usage: make inspect-jks SECRET=<secret-name> [NS=<namespace>] [INSPECT_PASSWORD=<password>]"; \
+		echo "Example: make inspect-jks SECRET=manual-jks"; \
+		exit 1; \
+	fi
+	@echo "=== Inspecting JKS secret '$(INSPECT_NS)/$(SECRET)' ==="
+	@TMPDIR=$$(mktemp -d); \
+	trap "rm -rf $$TMPDIR" EXIT; \
+	DATA=$$(kubectl get secret $(SECRET) -n $(INSPECT_NS) -o json 2>/dev/null); \
+	if [ -z "$$DATA" ]; then \
+		echo "ERROR: Secret '$(INSPECT_NS)/$(SECRET)' not found"; \
+		exit 1; \
+	fi; \
+	KEYS=$$(echo "$$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(', '.join(d.keys())) if d else print('(empty)')"); \
+	echo "Keys in secret: $$KEYS"; \
+	echo ""; \
+	FIELD=$$(echo "$$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); fields=[k for k in d if k.endswith('.jks') or k in ('keystore','jks')]; print(fields[0] if fields else (list(d.keys())[0] if d else ''))"); \
+	if [ -z "$$FIELD" ]; then \
+		echo "NOTE: No data in secret (empty store)"; \
+		exit 0; \
+	fi; \
+	echo "Using field: '$$FIELD'"; \
+	echo "$$DATA" | python3 -c "import sys,json,base64; d=json.load(sys.stdin)['data']['$$FIELD']; sys.stdout.buffer.write(base64.b64decode(d))" > $$TMPDIR/keystore.jks; \
+	SIZE=$$(wc -c < $$TMPDIR/keystore.jks | tr -d ' '); \
+	echo "Keystore size: $$SIZE bytes"; \
+	if [ "$$SIZE" -eq 0 ]; then \
+		echo "NOTE: Keystore is empty — store created with 'create if missing', no certificates added yet"; \
+	else \
+		echo ""; \
+		echo "=== Aliases ==="; \
+		printf '%s' "$(INSPECT_PASSWORD)" > $$TMPDIR/pw.tmp; PW=$$(cat $$TMPDIR/pw.tmp); \
+		keytool -list -keystore $$TMPDIR/keystore.jks -storepass "$$PW" 2>&1 || \
+			keytool -list -keystore $$TMPDIR/keystore.jks -storepass "" 2>&1 || \
+			{ echo ""; echo "Hint: wrong password? Try: make inspect-jks SECRET=$(SECRET) INSPECT_PASSWORD=yourpassword"; }; \
+		echo ""; \
+		echo "=== Certificate details ==="; \
+		keytool -list -v -keystore $$TMPDIR/keystore.jks -storepass "$$PW" 2>/dev/null \
+			| grep -E "^Alias|^Entry type|Owner:|Issuer:|Valid from|Serial number" || true; \
+	fi
+
+.PHONY: inspect-pkcs12
+inspect-pkcs12: ## Inspect a PKCS12 secret from Kubernetes (usage: make inspect-pkcs12 SECRET=name [NS=namespace] [INSPECT_PASSWORD=pw])
+	@if [ -z "$(SECRET)" ]; then \
+		echo "Usage: make inspect-pkcs12 SECRET=<secret-name> [NS=<namespace>] [INSPECT_PASSWORD=<password>]"; \
+		echo "Example: make inspect-pkcs12 SECRET=manual-pkcs12"; \
+		exit 1; \
+	fi
+	@echo "=== Inspecting PKCS12 secret '$(INSPECT_NS)/$(SECRET)' ==="
+	@TMPDIR=$$(mktemp -d); \
+	trap "rm -rf $$TMPDIR" EXIT; \
+	DATA=$$(kubectl get secret $(SECRET) -n $(INSPECT_NS) -o json 2>/dev/null); \
+	if [ -z "$$DATA" ]; then \
+		echo "ERROR: Secret '$(INSPECT_NS)/$(SECRET)' not found"; \
+		exit 1; \
+	fi; \
+	KEYS=$$(echo "$$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin)['data']; print(', '.join(d.keys())) if d else print('(empty)')"); \
+	echo "Keys in secret: $$KEYS"; \
+	echo ""; \
+	FIELD=$$(echo "$$DATA" | python3 -c "import sys,json; d=json.load(sys.stdin).get('data',{}); fields=[k for k in d if k.endswith('.p12') or k.endswith('.pfx') or k in ('pkcs12','p12','pfx')]; print(fields[0] if fields else (list(d.keys())[0] if d else ''))"); \
+	if [ -z "$$FIELD" ]; then \
+		echo "NOTE: No data in secret (empty store)"; \
+		exit 0; \
+	fi; \
+	echo "Using field: '$$FIELD'"; \
+	echo "$$DATA" | python3 -c "import sys,json,base64; d=json.load(sys.stdin)['data']['$$FIELD']; sys.stdout.buffer.write(base64.b64decode(d))" > $$TMPDIR/keystore.p12; \
+	SIZE=$$(wc -c < $$TMPDIR/keystore.p12 | tr -d ' '); \
+	echo "Keystore size: $$SIZE bytes"; \
+	if [ "$$SIZE" -eq 0 ]; then \
+		echo "NOTE: Keystore is empty — store created with 'create if missing', no certificates added yet"; \
+	else \
+		echo ""; \
+		echo "=== Aliases ==="; \
+		printf '%s' "$(INSPECT_PASSWORD)" > $$TMPDIR/pw.tmp; PW=$$(cat $$TMPDIR/pw.tmp); \
+		keytool -list -keystore $$TMPDIR/keystore.p12 -storetype pkcs12 -storepass "$$PW" 2>&1 || \
+			keytool -list -keystore $$TMPDIR/keystore.p12 -storetype pkcs12 -storepass "" 2>&1 || \
+			{ echo ""; echo "Hint: wrong password? Try: make inspect-pkcs12 SECRET=$(SECRET) INSPECT_PASSWORD=yourpassword"; }; \
+		echo ""; \
+		echo "=== Certificate details ==="; \
+		keytool -list -v -keystore $$TMPDIR/keystore.p12 -storetype pkcs12 -storepass "$$PW" 2>/dev/null \
+			| grep -E "^Alias|^Entry type|Owner:|Issuer:|Valid from|Serial number" || true; \
+	fi
+
+.PHONY: inspect-jks-manual
+inspect-jks-manual: ## Inspect the default 'manual-jks' secret in the default namespace
+	@$(MAKE) inspect-jks SECRET=manual-jks INSPECT_NS=default
+
+.PHONY: inspect-pkcs12-manual
+inspect-pkcs12-manual: ## Inspect the default 'manual-pkcs12' secret in the default namespace
+	@$(MAKE) inspect-pkcs12 SECRET=manual-pkcs12 INSPECT_NS=default
+
 ##@ OAuth Token Management
 
 # Token cache file and expiry (tokens valid for 55 minutes, refresh at 50 min)

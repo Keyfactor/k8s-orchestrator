@@ -68,12 +68,7 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
                 config.OperationType, KubeSecretType, config.JobId);
 
             // Route to appropriate operation
-            return config.OperationType switch
-            {
-                CertStoreOperationType.Add => HandleAdd(config),
-                CertStoreOperationType.Remove => HandleRemove(config),
-                _ => FailJob($"Unknown operation type: {config.OperationType}", config.JobHistoryId)
-            };
+            return RouteOperation(config);
         }
         catch (StoreNotFoundException ex)
         {
@@ -90,6 +85,21 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
             Logger.LogInformation("End MANAGEMENT for job {JobId}", config.JobId);
             Logger.MethodExit(LogLevel.Debug);
         }
+    }
+
+    /// <summary>
+    /// Routes the management job to the appropriate handler method based on OperationType.
+    /// <c>Create</c> is treated identically to <c>Add</c> — both add a certificate to the store.
+    /// Extracted as an internal method to allow direct unit testing without K8S infrastructure.
+    /// </summary>
+    internal JobResult RouteOperation(ManagementJobConfiguration config)
+    {
+        return config.OperationType switch
+        {
+            CertStoreOperationType.Add or CertStoreOperationType.Create => HandleAdd(config),
+            CertStoreOperationType.Remove => HandleRemove(config),
+            _ => FailJob($"Unknown operation type: {config.OperationType}", config.JobHistoryId)
+        };
     }
 
     /// <summary>
