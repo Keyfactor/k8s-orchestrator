@@ -48,7 +48,6 @@ public class KubeCertificateManagerClient
 {
     private readonly ILogger _logger;
     private readonly KubeconfigParser _kubeconfigParser;
-    private readonly KeystoreManager _keystoreManager;
     private readonly PasswordResolver _passwordResolver;
     private readonly CertificateOperations _certificateOperations;
     private SecretOperations _secretOperations;
@@ -62,7 +61,6 @@ public class KubeCertificateManagerClient
     {
         _logger = LogHandler.GetClassLogger(MethodBase.GetCurrentMethod()?.DeclaringType);
         _kubeconfigParser = new KubeconfigParser(_logger);
-        _keystoreManager = new KeystoreManager(_logger);
         _passwordResolver = new PasswordResolver(_logger);
         _certificateOperations = new CertificateOperations(_logger);
         _logger.MethodEntry(LogLevel.Debug);
