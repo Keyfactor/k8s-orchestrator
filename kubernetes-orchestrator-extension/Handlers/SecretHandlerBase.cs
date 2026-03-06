@@ -7,6 +7,8 @@
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
@@ -72,7 +74,14 @@ public abstract class SecretHandlerBase : ISecretHandler
     public abstract bool SupportsManagement { get; }
 
     /// <inheritdoc />
-    public abstract List<string> GetCertificates(long jobId);
+    public virtual List<string> GetCertificates(long jobId)
+    {
+        var aliasedCerts = GetCertificatesWithAliases(jobId);
+        var allCerts = new List<string>();
+        foreach (var kvp in aliasedCerts)
+            allCerts.AddRange(kvp.Value);
+        return allCerts;
+    }
 
     /// <inheritdoc />
     public abstract Dictionary<string, List<string>> GetCertificatesWithAliases(long jobId);
@@ -98,6 +107,62 @@ public abstract class SecretHandlerBase : ISecretHandler
     #endregion
 
     #region Protected Helpers
+
+    /// <summary>
+    /// Resolves the store password, checking a buddy secret first then falling back to the configured password.
+    /// </summary>
+    /// <param name="secret">The primary secret (unused, kept for signature compatibility).</param>
+    /// <returns>The resolved password string.</returns>
+    protected string ResolvePassword(V1Secret secret)
+    {
+        if (!string.IsNullOrEmpty(Context.PasswordSecretPath))
+        {
+            var pathParts = Context.PasswordSecretPath.Split('/');
+            var passwordNamespace = pathParts.Length > 1 ? pathParts[0] : Context.KubeNamespace;
+            var passwordSecretName = pathParts.Length > 1 ? pathParts[^1] : pathParts[0];
+
+            var buddySecret = KubeClient.ReadBuddyPass(passwordSecretName, passwordNamespace);
+            if (buddySecret?.Data != null)
+            {
+                var fieldName = Context.PasswordFieldName ?? "password";
+                if (buddySecret.Data.TryGetValue(fieldName, out var passwordBytes) && passwordBytes != null)
+                    return Encoding.UTF8.GetString(passwordBytes).TrimEnd('\n', '\r');
+            }
+        }
+
+        return Context.StorePassword ?? "";
+    }
+
+    /// <summary>
+    /// Returns true if the secret has no meaningful certificate data (e.g. created via "create if missing").
+    /// An empty secret can be implicitly overwritten without the overwrite flag.
+    /// </summary>
+    public static bool IsSecretEmpty(V1Secret secret)
+    {
+        if (secret?.Data == null || secret.Data.Count == 0)
+            return true;
+
+        return secret.Data.Values.All(v => v == null || v.Length == 0);
+    }
+
+    /// <summary>
+    /// Handles the "create store if missing" case: returns existing secret if present, otherwise creates an empty store.
+    /// </summary>
+    /// <returns>The existing or newly created secret.</returns>
+    protected V1Secret HandleCreateIfMissing()
+    {
+        try
+        {
+            var existingSecret = GetSecret();
+            Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
+            return existingSecret;
+        }
+        catch (StoreNotFoundException)
+        {
+            Logger.LogDebug("Secret not found, creating empty {Type} store", SecretTypeName);
+            return CreateEmptyStore();
+        }
+    }
 
     /// <summary>
     /// Gets the secret from Kubernetes.

@@ -258,14 +258,33 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
 
-            // Get existing store bytes (first key in inventory or null)
+            // Parse alias: format is "<k8s_field_name>/<keystore_alias>" per the documented alias pattern.
+            // The field name selects which field in the K8S secret to read/write.
+            // The keystore alias is the entry alias inside the PKCS12 file.
+            var separatorIdx = alias.IndexOf('/');
+            var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
+            var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
+
+            Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'", alias, fieldName ?? "(none)", certAlias);
+
+            // Select the target field from the inventory.
+            // If the alias specifies a field name, use that field (creating it if absent).
+            // Otherwise fall back to the first existing field for backward compatibility.
             byte[] existingData = null;
-            string existingKeyName = "keystore.pfx";
+            string existingKeyName = fieldName ?? "keystore.pfx";
             if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
             {
-                var firstKey = k8sData.Inventory.Keys.First();
-                existingData = k8sData.Inventory[firstKey];
-                existingKeyName = firstKey;
+                if (fieldName != null && k8sData.Inventory.TryGetValue(fieldName, out var fieldBytes))
+                {
+                    existingData = fieldBytes;
+                }
+                else if (fieldName == null)
+                {
+                    var firstKey = k8sData.Inventory.Keys.First();
+                    existingData = k8sData.Inventory[firstKey];
+                    existingKeyName = firstKey;
+                }
+                // else: fieldName specified but not yet in inventory → existingData stays null (new field)
             }
 
             // Get certificate bytes for the serializer
@@ -277,7 +296,7 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             var newPkcs12Bytes = serializer.CreateOrUpdatePkcs12(
                 newCertBytes,
                 certObj.Password,
-                alias,
+                certAlias,
                 existingData,
                 storePassword,
                 remove: false,
@@ -320,26 +339,40 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
 
-            // Get existing store bytes
+            // Parse alias: format is "<k8s_field_name>/<keystore_alias>"
+            var separatorIdx = alias.IndexOf('/');
+            var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
+            var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
+
+            Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'", alias, fieldName ?? "(none)", certAlias);
+
+            // Select the target field from the inventory
             byte[] existingData = null;
-            string existingKeyName = "keystore.pfx";
+            string existingKeyName = fieldName ?? "keystore.pfx";
             if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
             {
-                var firstKey = k8sData.Inventory.Keys.First();
-                existingData = k8sData.Inventory[firstKey];
-                existingKeyName = firstKey;
+                if (fieldName != null && k8sData.Inventory.TryGetValue(fieldName, out var fieldBytes))
+                {
+                    existingData = fieldBytes;
+                }
+                else if (fieldName == null)
+                {
+                    var firstKey = k8sData.Inventory.Keys.First();
+                    existingData = k8sData.Inventory[firstKey];
+                    existingKeyName = firstKey;
+                }
             }
 
             if (existingData == null)
             {
-                throw new InvalidOperationException("Cannot remove from non-existent keystore");
+                throw new InvalidOperationException($"Cannot remove from non-existent keystore field '{existingKeyName}'");
             }
 
             // Use serializer to remove from the PKCS12 store
             var newPkcs12Bytes = serializer.CreateOrUpdatePkcs12(
                 null,
                 null,
-                alias,
+                certAlias,
                 existingData,
                 storePassword,
                 remove: true,

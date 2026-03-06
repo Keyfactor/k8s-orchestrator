@@ -9,7 +9,7 @@ using System.Collections.Generic;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Org.BouncyCastle.Pkcs;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Serializers;
 
 /// <summary>
 /// Interface for certificate store serializers that handle different keystore formats.

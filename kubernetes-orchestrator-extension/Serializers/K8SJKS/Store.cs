@@ -21,7 +21,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SJKS;
 
 /// <summary>
 /// Serializer for Java KeyStore (JKS) certificate stores in Kubernetes secrets.

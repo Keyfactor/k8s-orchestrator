@@ -14,10 +14,13 @@
 - fix(management): `K8SPKCS12` and `K8SJKS` respect `IncludeCertChain` flag.
 - fix(management): "Create if missing" jobs (`CertStoreOperationType.Create`) no longer fail with "Unknown operation type: Create". `Create` is now routed identically to `Add`.
 - fix(management): `K8SJKS` and `K8SPKCS12` `CreateEmptyStore` now uses the buddy-secret password when one is configured, instead of always using an empty password.
+- fix(management): `K8SJKS` and `K8SPKCS12` alias routing now correctly interprets the `<fieldName>/<certAlias>` alias format. Previously, `HandleAdd` and `HandleRemove` always wrote to the first existing field in the secret and passed the full alias string (e.g. `mystore.jks/default`) to the keystore serializer; now the field name selects the target K8S secret field and only the short cert alias is used inside the JKS/PKCS12 file.
 
 ## Chores:
 - chore(tests): Add comprehensive unit test suite covering all store types and cryptographic operations.
 - chore(tests): Add integration test suite validating end-to-end operations against live Kubernetes clusters.
+- chore(tests): Add alias routing regression tests (`AliasRoutingRegressionTests`) with 8 unit tests covering JKS and PKCS12 field-selection and certAlias correctness.
+- chore(tests): Add 4 integration tests each to `K8SJKSStoreIntegrationTests` and `K8SPKCS12StoreIntegrationTests` validating end-to-end `<fieldName>/<certAlias>` alias routing (field written to, cert alias inside keystore, inventory alias format, and remove from named field).
 - chore(ci): Add GitHub Actions workflows for unit tests, integration tests, code quality, and security scanning.
 - chore(ci): Add CodeQL, dependency review, SBOM generation, and license compliance workflows.
 - chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.

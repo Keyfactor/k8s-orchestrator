@@ -1103,37 +1103,22 @@ public class KubeCertificateManagerClient
         // Always update tls.crt
         existingSecret.Data["tls.crt"] = newSecret.Data["tls.crt"];
 
-        //check if existing secret has ca.crt and if new secret has ca.crt
-        if (existingSecret.Data.ContainsKey("ca.crt") && newSecret.Data.ContainsKey("ca.crt"))
+        // Use the new secret's ca.crt field as the source of truth for whether the chain should be separate.
+        // Do NOT gate on whether the existing secret already has ca.crt — on first write to an empty store
+        // the existing secret will never have ca.crt, which caused the chain to be concatenated into tls.crt
+        // even when SeparateChain=true.
+        if (newSecret.Data.TryGetValue("ca.crt", out var chainBytes))
         {
-            _logger.LogDebug("Existing secret '{Namespace}/{Name}' has ca.crt adding chain to this field",
+            _logger.LogDebug("New secret has ca.crt, storing chain separately in '{Namespace}/{Name}'",
                 namespaceName, secretName);
-            _logger.LogTrace("existing ca.crt:\n {CaCrt}", existingSecret.Data["ca.crt"]);
-            existingSecret.Data["ca.crt"] = newSecret.Data["ca.crt"];
-            _logger.LogTrace("new ca.crt:\n {CaCrt}", newSecret.Data["ca.crt"]);
+            existingSecret.Data["ca.crt"] = chainBytes;
+            _logger.LogTrace("ca.crt:\n {CaCrt}", chainBytes);
         }
         else
         {
-            //Append to tls.crt
-            _logger.LogDebug("Existing secret '{Namespace}/{Name}' does not have ca.crt, appending to tls.crt",
+            _logger.LogDebug("No separate chain in new secret, only updating tls.crt for '{Namespace}/{Name}'",
                 namespaceName, secretName);
-            if (newSecret.Data.TryGetValue("ca.crt", out var value))
-            {
-                _logger.LogDebug("Appending ca.crt to tls.crt");
-                existingSecret.Data["tls.crt"] =
-                    Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]) +
-                                           Encoding.UTF8.GetString(value));
-                _logger.LogTrace("New tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
-            }
-            else
-            {
-                _logger.LogDebug("No chain was provided, only updating leaf certificate for '{Namespace}/{Name}'",
-                    namespaceName, secretName);
-                _logger.LogTrace("existing tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
-                existingSecret.Data["tls.crt"] =
-                    Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(newSecret.Data["tls.crt"]));
-                _logger.LogTrace("updated tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
-            }
+            _logger.LogTrace("updated tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
         }
 
         _logger.LogDebug($"Attempting to update secret {secretName} in namespace {namespaceName}");

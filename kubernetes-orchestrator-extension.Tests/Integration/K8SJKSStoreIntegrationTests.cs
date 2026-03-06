@@ -12,7 +12,7 @@ using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SJKS;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
+using Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SJKS;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
@@ -2399,6 +2399,294 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Failure,
             $"Expected Failure but got {result.Result}");
         Assert.NotNull(result.FailureMessage);
+    }
+
+    #endregion
+
+    // ──────────────────────────────────────────────────────────────────────────────────────
+    // Regression: alias routing – "<fieldName>/<certAlias>" pattern
+    // ──────────────────────────────────────────────────────────────────────────────────────
+
+    #region Alias routing regression tests
+
+    /// <summary>
+    /// Regression: when alias is "mystore.jks/mycert", the handler must write to the
+    /// <c>mystore.jks</c> field in the K8S secret, not to the first existing field.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_Add_WithFieldPrefixedAlias_WritesToNamedField()
+    {
+        // Arrange
+        var secretName = $"test-alias-field-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Alias Field Routing");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(cert.Certificate, cert.KeyPair, "certpw", "mycert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                // Alias format: "<k8s_field_name>/<keystore_alias>"
+                Alias = "mystore.jks/mycert",
+                PrivateKeyPassword = "certpw",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        // Assert – job succeeded
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+
+        // The K8S secret must contain the NAMED field "mystore.jks", not the default "keystore.jks"
+        Assert.True(secret.Data.ContainsKey("mystore.jks"),
+            "K8S secret should contain 'mystore.jks' field (the fieldName from alias)");
+        Assert.False(secret.Data.ContainsKey("keystore.jks"),
+            "K8S secret should NOT fall back to default 'keystore.jks' field");
+    }
+
+    /// <summary>
+    /// Regression: the certAlias inside the JKS file must be the short name ("mycert"),
+    /// not the full path alias ("mystore.jks/mycert") that was erroneously passed before the fix.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_Add_WithFieldPrefixedAlias_CertAliasInsideJksIsShortName()
+    {
+        // Arrange
+        var secretName = $"test-alias-certname-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "JKS Alias CertName Test");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(cert.Certificate, cert.KeyPair, "certpw", "mycert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        var jobConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "mystore.jks/mycert",
+                PrivateKeyPassword = "certpw",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+        var result = await Task.Run(() => management.ProcessJob(jobConfig));
+
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("mystore.jks"), "Field 'mystore.jks' must exist");
+
+        // Load the JKS and check the cert alias inside
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(secret.Data["mystore.jks"]))
+        {
+            jksStore.Load(ms, "storepassword".ToCharArray());
+        }
+
+        // Regression: the alias inside the JKS must be "mycert", not "mystore.jks/mycert"
+        Assert.True(jksStore.ContainsAlias("mycert"),
+            "JKS entry alias must be the short name 'mycert', not the full path");
+        Assert.False(jksStore.ContainsAlias("mystore.jks/mycert"),
+            "JKS entry alias must NOT be the full path 'mystore.jks/mycert'");
+    }
+
+    /// <summary>
+    /// Regression: inventory after a field-prefixed add must return the full alias
+    /// "fieldName/certAlias" (e.g. "mystore.jks/mycert"), not just the short cert alias.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddThenInventory_WithFieldPrefixedAlias_InventoryReturnsFullAlias()
+    {
+        // Arrange
+        var secretName = $"test-alias-inv-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Inventory Full Alias");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(cert.Certificate, cert.KeyPair, "certpw", "mycert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        // Add
+        var addConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "mystore.jks/mycert",
+                PrivateKeyPassword = "certpw",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+        var addResult = await Task.Run(() => management.ProcessJob(addConfig));
+        Assert.True(addResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Add failed: {addResult.FailureMessage}");
+
+        // Inventory
+        List<CurrentInventoryItem> inventoryItems = null;
+        var invConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        var invResult = await Task.Run(() => inventory.ProcessJob(invConfig, items =>
+        {
+            inventoryItems = items?.ToList();
+            return true;
+        }));
+
+        Assert.True(invResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Inventory failed: {invResult.FailureMessage}");
+
+        // Inventory should return the full alias "mystore.jks/mycert"
+        Assert.NotNull(inventoryItems);
+        Assert.Contains(inventoryItems, item => item.Alias == "mystore.jks/mycert");
+    }
+
+    /// <summary>
+    /// Regression: remove with field-prefixed alias must remove from the correct named field,
+    /// not from the first field in the inventory.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Management_AddThenRemove_WithFieldPrefixedAlias_RemovesFromNamedField()
+    {
+        // Arrange – add to a named field first
+        var secretName = $"test-alias-remove-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var cert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "JKS Remove Named Field");
+        var pfxBytes = CertificateTestHelper.GeneratePkcs12(cert.Certificate, cert.KeyPair, "certpw", "mycert");
+        var pfxBase64 = Convert.ToBase64String(pfxBytes);
+
+        var addConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Add,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "mystore.jks/mycert",
+                PrivateKeyPassword = "certpw",
+                Contents = pfxBase64
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var management = new Management(MockPamResolver.Object);
+        var addResult = await Task.Run(() => management.ProcessJob(addConfig));
+        Assert.True(addResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Add failed: {addResult.FailureMessage}");
+
+        // Remove
+        var removeConfig = new ManagementJobConfiguration
+        {
+            Capability = "K8SJKS",
+            OperationType = CertStoreOperationType.Remove,
+            Overwrite = false,
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",
+                StorePassword = "storepassword",
+                Properties = "{\"KubeSecretType\":\"jks\",\"StorePassword\":\"storepassword\"}"
+            },
+            JobCertificate = new ManagementJobCertificate
+            {
+                Alias = "mystore.jks/mycert"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var removeResult = await Task.Run(() => management.ProcessJob(removeConfig));
+        Assert.True(removeResult.Result == OrchestratorJobStatusJobResult.Success,
+            $"Remove failed: {removeResult.FailureMessage}");
+
+        // Verify the cert alias was removed from "mystore.jks"
+        var secret = await K8sClient.CoreV1.ReadNamespacedSecretAsync(secretName, TestNamespace);
+        Assert.NotNull(secret);
+        Assert.True(secret.Data.ContainsKey("mystore.jks"), "Field 'mystore.jks' should still exist after remove");
+
+        var jksStore = new Org.BouncyCastle.Security.JksStore();
+        using (var ms = new System.IO.MemoryStream(secret.Data["mystore.jks"]))
+        {
+            jksStore.Load(ms, "storepassword".ToCharArray());
+        }
+
+        Assert.False(jksStore.ContainsAlias("mycert"), "Entry 'mycert' should have been removed from the JKS");
+        Assert.Empty(jksStore.Aliases.Cast<string>());
     }
 
     #endregion

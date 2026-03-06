@@ -164,9 +164,16 @@ public class OpaqueSecretHandler : SecretHandlerBase
 
             if (existingSecret != null && !overwrite)
             {
-                Logger.LogWarning("Secret already exists and overwrite is false");
-                throw new InvalidOperationException(
-                    $"Secret '{Context.KubeSecretName}' already exists. Set overwrite=true to replace.");
+                if (IsSecretEmpty(existingSecret))
+                {
+                    Logger.LogDebug("Secret '{Name}' exists but is empty; overwriting implicitly", Context.KubeSecretName);
+                }
+                else
+                {
+                    Logger.LogWarning("Secret already exists and overwrite is false");
+                    throw new InvalidOperationException(
+                        $"Secret '{Context.KubeSecretName}' already exists. Set overwrite=true to replace.");
+                }
             }
 
             // Validate cert-only updates: prevent deploying certificate without private key
@@ -304,21 +311,6 @@ public class OpaqueSecretHandler : SecretHandlerBase
             keys,
             Context.KubeSecretName,
             Context.KubeNamespace);
-    }
-
-    private V1Secret HandleCreateIfMissing()
-    {
-        try
-        {
-            var existingSecret = GetSecret();
-            Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
-            return existingSecret;
-        }
-        catch (StoreNotFoundException)
-        {
-            Logger.LogDebug("Secret not found, creating empty Opaque secret");
-            return CreateEmptyStore();
-        }
     }
 
     #endregion

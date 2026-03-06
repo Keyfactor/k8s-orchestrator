@@ -16,7 +16,7 @@ using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
-namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+namespace Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SPKCS12;
 
 /// <summary>
 /// Serializer for PKCS12/PFX certificate stores in Kubernetes secrets.

@@ -100,6 +100,11 @@ Manages JKS (Java KeyStore) files stored as base64 in Kubernetes Opaque secrets.
 | `Discovery_FindsJksSecretsInNamespace` | Discovery finds JKS secrets |
 | **Error Handling** | |
 | `Management_AddWithWrongPassword_ReturnsFailure` | Wrong password returns failure |
+| **Alias routing regression** | |
+| `Management_Add_WithFieldPrefixedAlias_WritesToNamedField` | Alias `"mystore.jks/mycert"` writes to `mystore.jks` field, not default `keystore.jks` |
+| `Management_Add_WithFieldPrefixedAlias_CertAliasInsideJksIsShortName` | Cert alias inside the JKS file is `"mycert"`, not the full path `"mystore.jks/mycert"` |
+| `Management_AddThenInventory_WithFieldPrefixedAlias_InventoryReturnsFullAlias` | Inventory returns `"mystore.jks/mycert"` after field-prefixed add |
+| `Management_AddThenRemove_WithFieldPrefixedAlias_RemovesFromNamedField` | Remove with `"mystore.jks/mycert"` removes entry from the named field |
 
 ---
 
@@ -159,6 +164,11 @@ Manages PKCS12 (.p12, .pfx) files stored as base64 in Kubernetes Opaque secrets.
 | `Discovery_FindsPkcs12SecretsInNamespace` | Discovery finds PKCS12 secrets |
 | **Error Handling** | |
 | `Management_AddWithWrongPassword_ReturnsFailure` | Wrong password returns failure |
+| **Alias routing regression** | |
+| `Management_Add_WithFieldPrefixedAlias_WritesToNamedField` | Alias `"mystore.p12/mycert"` writes to `mystore.p12` field, not default `keystore.pfx` |
+| `Management_Add_WithFieldPrefixedAlias_CertAliasInsidePkcs12IsShortName` | Cert alias inside the PKCS12 file is `"mycert"`, not the full path `"mystore.p12/mycert"` |
+| `Management_AddThenInventory_WithFieldPrefixedAlias_InventoryReturnsFullAlias` | Inventory returns `"mystore.p12/mycert"` after field-prefixed add |
+| `Management_AddThenRemove_WithFieldPrefixedAlias_RemovesFromNamedField` | Remove with `"mystore.p12/mycert"` removes entry from the named field |
 
 ---
 
@@ -689,6 +699,36 @@ Regression tests for `ManagementBase.RouteOperation`, verifying that `CertStoreO
 | `RouteOperation_RemoveType_CallsHandleRemove` | `OperationType=Remove` routes to `HandleRemove` |
 | **Unsupported operation types** | |
 | `RouteOperation_UnsupportedTypes_ReturnsFailure` | `Unknown`, `Inventory`, `Discovery` return Failure without calling Add or Remove |
+
+---
+
+## Alias Routing
+
+Regression tests for the `<fieldName>/<certAlias>` alias pattern in `JksSecretHandler` and `Pkcs12SecretHandler`.
+
+**Bug (pre-fix):** `HandleAdd`/`HandleRemove` always selected the first field in the secret inventory (`Keys.First()`) and passed the full alias string (e.g. `"meow.jks/default"`) to the keystore serializer. This caused:
+- Certificates written to the wrong K8S secret field
+- Cert aliases stored under the full path (e.g. `"meow.jks/default"`) instead of the short name (`"default"`)
+- Inventory returning double-prefixed aliases (e.g. `"keystore.jks/meow.jks/default"`)
+
+**Fix:** Parse alias at the first `/` to extract `fieldName` (K8S secret field) and `certAlias` (alias inside the JKS/PKCS12 file) separately.
+
+### Unit Tests (`Unit/Handlers/AliasRoutingRegressionTests.cs`)
+
+Tests use the JKS and PKCS12 serializers directly (no K8S cluster required) to prove why the bug mattered and why the fix is correct.
+
+| Test Name | Description |
+|-----------|-------------|
+| **JKS alias routing** | |
+| `Jks_StoreWithCertAlias_EntryFoundUnderCertAlias` | Storing with `"mycert"` finds entry under `"mycert"`, not `"mystore.jks/mycert"` |
+| `Jks_StoreWithFullPathAlias_OldBehaviourWasWrong_EntryIsUnderFullPath` | Documents pre-fix state: full-path alias stores entry under full path (wrong) |
+| `Jks_RemoveWithCertAlias_RemovesCorrectEntry` | Remove with short alias clears the entry from the JKS store |
+| `Jks_InventoryAlias_IsFieldNameSlashCertAlias` | Inventory alias format is `"fieldName/certAlias"` — cert inside JKS has the short name |
+| **PKCS12 alias routing** | |
+| `Pkcs12_StoreWithCertAlias_EntryFoundUnderCertAlias` | Storing with `"mycert"` finds entry under `"mycert"`, not `"mystore.p12/mycert"` |
+| `Pkcs12_StoreWithFullPathAlias_OldBehaviourWasWrong_EntryIsUnderFullPath` | Documents pre-fix state for PKCS12 |
+| `Pkcs12_RemoveWithCertAlias_RemovesCorrectEntry` | Remove with short alias clears the PKCS12 entry |
+| `Pkcs12_InventoryAlias_IsFieldNameSlashCertAlias` | Inventory alias format is `"fieldName/certAlias"` — cert inside PKCS12 has the short name |
 
 ---
 
