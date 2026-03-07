@@ -268,6 +268,55 @@ public abstract class SecretHandlerBase : ISecretHandler
     }
 
     /// <summary>
+    /// Parses a keystore alias of the form <c>&lt;fieldName&gt;/&lt;certAlias&gt;</c> and resolves the
+    /// corresponding existing data and key name from the supplied inventory.
+    /// </summary>
+    /// <param name="alias">The raw alias string (e.g. <c>"keystore.jks/mycert"</c> or just <c>"mycert"</c>).</param>
+    /// <param name="inventory">The current K8S secret inventory (field → bytes). May be null or empty.</param>
+    /// <param name="defaultFieldName">Field name to use when no prefix is present and the inventory is empty.</param>
+    /// <returns>
+    /// A tuple containing:
+    /// <list type="bullet">
+    ///   <item><c>fieldName</c> — the K8S secret field name extracted from the alias, or <c>null</c> if no separator was found.</item>
+    ///   <item><c>certAlias</c> — the alias inside the keystore file.</item>
+    ///   <item><c>existingData</c> — the current bytes for the resolved field, or <c>null</c> if the field does not yet exist.</item>
+    ///   <item><c>existingKeyName</c> — the resolved field name to write to.</item>
+    /// </list>
+    /// </returns>
+    protected (string fieldName, string certAlias, byte[] existingData, string existingKeyName) ParseKeystoreAlias(
+        string alias,
+        Dictionary<string, byte[]> inventory,
+        string defaultFieldName)
+    {
+        var separatorIdx = alias.IndexOf('/');
+        var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
+        var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
+
+        Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'",
+            alias, fieldName ?? "(none)", certAlias);
+
+        byte[] existingData = null;
+        string existingKeyName = fieldName ?? defaultFieldName;
+
+        if (inventory != null && inventory.Count > 0)
+        {
+            if (fieldName != null && inventory.TryGetValue(fieldName, out var fieldBytes))
+            {
+                existingData = fieldBytes;
+            }
+            else if (fieldName == null)
+            {
+                var firstKey = inventory.Keys.First();
+                existingData = inventory[firstKey];
+                existingKeyName = firstKey;
+            }
+            // else: fieldName specified but not yet in inventory → existingData stays null (new field)
+        }
+
+        return (fieldName, certAlias, existingData, existingKeyName);
+    }
+
+    /// <summary>
     /// Logs entry to a method.
     /// </summary>
     /// <param name="methodName">Name of the method.</param>

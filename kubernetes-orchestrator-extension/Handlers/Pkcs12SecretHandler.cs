@@ -258,34 +258,8 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
 
-            // Parse alias: format is "<k8s_field_name>/<keystore_alias>" per the documented alias pattern.
-            // The field name selects which field in the K8S secret to read/write.
-            // The keystore alias is the entry alias inside the PKCS12 file.
-            var separatorIdx = alias.IndexOf('/');
-            var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
-            var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
-
-            Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'", alias, fieldName ?? "(none)", certAlias);
-
-            // Select the target field from the inventory.
-            // If the alias specifies a field name, use that field (creating it if absent).
-            // Otherwise fall back to the first existing field for backward compatibility.
-            byte[] existingData = null;
-            string existingKeyName = fieldName ?? "keystore.pfx";
-            if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
-            {
-                if (fieldName != null && k8sData.Inventory.TryGetValue(fieldName, out var fieldBytes))
-                {
-                    existingData = fieldBytes;
-                }
-                else if (fieldName == null)
-                {
-                    var firstKey = k8sData.Inventory.Keys.First();
-                    existingData = k8sData.Inventory[firstKey];
-                    existingKeyName = firstKey;
-                }
-                // else: fieldName specified but not yet in inventory → existingData stays null (new field)
-            }
+            var (_, certAlias, existingData, existingKeyName) =
+                ParseKeystoreAlias(alias, k8sData.Inventory, "keystore.pfx");
 
             // Get certificate bytes for the serializer
             // Use PKCS12 if available (for certificates with private keys), otherwise use raw cert bytes
@@ -339,29 +313,8 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             // Get password
             var storePassword = ResolvePassword(k8sData.Secret);
 
-            // Parse alias: format is "<k8s_field_name>/<keystore_alias>"
-            var separatorIdx = alias.IndexOf('/');
-            var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
-            var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
-
-            Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'", alias, fieldName ?? "(none)", certAlias);
-
-            // Select the target field from the inventory
-            byte[] existingData = null;
-            string existingKeyName = fieldName ?? "keystore.pfx";
-            if (k8sData.Inventory != null && k8sData.Inventory.Count > 0)
-            {
-                if (fieldName != null && k8sData.Inventory.TryGetValue(fieldName, out var fieldBytes))
-                {
-                    existingData = fieldBytes;
-                }
-                else if (fieldName == null)
-                {
-                    var firstKey = k8sData.Inventory.Keys.First();
-                    existingData = k8sData.Inventory[firstKey];
-                    existingKeyName = firstKey;
-                }
-            }
+            var (_, certAlias, existingData, existingKeyName) =
+                ParseKeystoreAlias(alias, k8sData.Inventory, "keystore.pfx");
 
             if (existingData == null)
             {
