@@ -8,11 +8,17 @@
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
         <PackageId>Keyfactor.Orchestrators.K8S</PackageId>
+        <!-- Suppress obsolete X509Certificate2 warnings (migrating to BouncyCastle), assembly conflicts from dependencies, and CA2200 (intentional re-throw after condition check) -->
+        <NoWarn>$(NoWarn);SYSLIB0026;SYSLIB0057;MSB3277;NU1701;CA2200</NoWarn>
 
         <DebugSymbols>true</DebugSymbols>
         <DebugType>portable</DebugType>
         <Optimize>false</Optimize>
     </PropertyGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="Keyfactor.Orchestrators.K8S.Tests" />
+    </ItemGroup>
 
     <ItemGroup>
         <None Update="manifest.json">
@@ -30,8 +36,8 @@
         <!--    <PackageReference Include="KubernetesClient.Classic" Version="10.0.31" />-->
         <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.2" />
         <PackageReference Include="BouncyCastle.Cryptography" Version="2.6.2"/>
-
-
+        <!-- Override transitive dependency to fix NU1904 vulnerability -->
+        <PackageReference Include="System.Drawing.Common" Version="8.0.0"/>
     </ItemGroup>
 
 </Project>

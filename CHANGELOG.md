@@ -1,3 +1,32 @@
+# 1.3.0
+
+## Features
+- feat(storetypes): `K8SCert` supports inventory of all signed K8S cluster CSRs.
+- feat(crypto): Replace `X509Certificate2` with BouncyCastle for all cryptographic operations, improving cross-platform compatibility.
+- feat(crypto): Add `CertificateUtilities` class with comprehensive certificate parsing, key extraction, and format detection.
+- feat(crypto): Support for all key types: `RSA (1024-8192 bit), ECDSA (P-256, P-384, P-521), DSA (1024, 2048 bit), Ed25519, Ed448`.
+
+## Bug Fixes
+- fix(client): Fix null reference issues in kubeconfig parsing when optional fields are missing.
+- fix(inventory): Initialize logger before all other operations to ensure proper error reporting.
+- fix(management): Fix alias parsing for `K8SNS` and `K8SCluster` store-types when alias contains multiple path segments.
+- fix(management): Add `IncludeCertChain` at base job level, and include in management jobs.
+- fix(management): `K8SPKCS12` and `K8SJKS` respect `IncludeCertChain` flag.
+- fix(management): "Create if missing" jobs (`CertStoreOperationType.Create`) no longer fail with "Unknown operation type: Create". `Create` is now routed identically to `Add`.
+- fix(management): `K8SJKS` and `K8SPKCS12` `CreateEmptyStore` now uses the buddy-secret password when one is configured, instead of always using an empty password.
+- fix(management): `K8SJKS` and `K8SPKCS12` alias routing now correctly interprets the `<fieldName>/<certAlias>` alias format. Previously, `HandleAdd` and `HandleRemove` always wrote to the first existing field in the secret and passed the full alias string (e.g. `mystore.jks/default`) to the keystore serializer; now the field name selects the target K8S secret field and only the short cert alias is used inside the JKS/PKCS12 file.
+
+## Chores:
+- chore(tests): Add comprehensive unit test suite covering all store types and cryptographic operations.
+- chore(tests): Add integration test suite validating end-to-end operations against live Kubernetes clusters.
+- chore(tests): Add alias routing regression tests (`AliasRoutingRegressionTests`) with 8 unit tests covering JKS and PKCS12 field-selection and certAlias correctness.
+- chore(tests): Add 4 integration tests each to `K8SJKSStoreIntegrationTests` and `K8SPKCS12StoreIntegrationTests` validating end-to-end `<fieldName>/<certAlias>` alias routing (field written to, cert alias inside keystore, inventory alias format, and remove from named field).
+- chore(ci): Add GitHub Actions workflows for unit tests, integration tests, code quality, and security scanning.
+- chore(ci): Add CodeQL, dependency review, SBOM generation, and license compliance workflows.
+- chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.
+- chore(docs): Document supported key types for all store types.
+- chore(util): Add verbose logging to PAM credential resolver.
+
 # 1.2.2
 
 ## Bug Fixes
