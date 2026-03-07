@@ -6,12 +6,10 @@
 // and limitations under the License.
 
 using System;
-using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
-using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
@@ -34,7 +32,6 @@ public abstract class K8SJobBase : JobBase
     /// Creates the operation context from the current job configuration.
     /// Override in subclasses to provide store-type-specific context.
     /// </summary>
-    /// <returns>The operation context for the handler.</returns>
     protected virtual ISecretOperationContext CreateOperationContext()
     {
         return new SecretOperationContext
@@ -54,41 +51,23 @@ public abstract class K8SJobBase : JobBase
 
     /// <summary>
     /// Initializes the handler for inventory operations.
-    /// Call this after InitializeStore() in ProcessJob.
     /// </summary>
-    /// <param name="config">The inventory job configuration.</param>
     protected void InitializeHandler(InventoryJobConfiguration config)
     {
-        Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Creating handler for store type: {StoreType}", KubeSecretType);
-
-        var context = CreateOperationContext();
-        Handler = SecretHandlerFactory.Create(KubeSecretType, KubeClient, Logger, context);
-
-        Logger.LogDebug("Handler created: {HandlerType}", Handler?.GetType().Name ?? "null");
+        InitializeHandlerCore();
     }
 
     /// <summary>
     /// Initializes the handler for management operations.
-    /// Call this after InitializeStore() in ProcessJob.
     /// </summary>
-    /// <param name="config">The management job configuration.</param>
     protected void InitializeHandler(ManagementJobConfiguration config)
     {
-        Logger ??= LogHandler.GetClassLogger(GetType());
-        Logger.LogDebug("Creating handler for store type: {StoreType}", KubeSecretType);
-
-        var context = CreateOperationContext();
-        Handler = SecretHandlerFactory.Create(KubeSecretType, KubeClient, Logger, context);
-
-        Logger.LogDebug("Handler created: {HandlerType}", Handler?.GetType().Name ?? "null");
+        InitializeHandlerCore();
     }
 
     /// <summary>
     /// Initializes the handler for discovery operations.
-    /// Call this after InitializeStore() in ProcessJob.
     /// </summary>
-    /// <param name="config">The discovery job configuration.</param>
     protected void InitializeHandler(DiscoveryJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
@@ -103,6 +82,19 @@ public abstract class K8SJobBase : JobBase
         };
 
         Handler = SecretHandlerFactory.Create(KubeSecretType ?? "secret", KubeClient, Logger, context);
+        Logger.LogDebug("Handler created: {HandlerType}", Handler?.GetType().Name ?? "null");
+    }
+
+    /// <summary>
+    /// Shared handler initialization for inventory and management operations.
+    /// </summary>
+    private void InitializeHandlerCore()
+    {
+        Logger ??= LogHandler.GetClassLogger(GetType());
+        Logger.LogDebug("Creating handler for store type: {StoreType}", KubeSecretType);
+
+        var context = CreateOperationContext();
+        Handler = SecretHandlerFactory.Create(KubeSecretType, KubeClient, Logger, context);
 
         Logger.LogDebug("Handler created: {HandlerType}", Handler?.GetType().Name ?? "null");
     }
@@ -110,10 +102,7 @@ public abstract class K8SJobBase : JobBase
     /// <summary>
     /// Creates a success job result.
     /// </summary>
-    /// <param name="jobHistoryId">The job history ID.</param>
-    /// <param name="message">Optional message to include in the result.</param>
-    /// <returns>A successful JobResult.</returns>
-    protected new JobResult SuccessJob(long jobHistoryId, string message = null)
+    protected static JobResult SuccessJob(long jobHistoryId, string message = null)
     {
         return new JobResult
         {
@@ -126,9 +115,6 @@ public abstract class K8SJobBase : JobBase
     /// <summary>
     /// Creates a success job result with a warning message.
     /// </summary>
-    /// <param name="message">The warning message.</param>
-    /// <param name="jobHistoryId">The job history ID.</param>
-    /// <returns>A warning JobResult.</returns>
     protected JobResult WarningJob(string message, long jobHistoryId)
     {
         return new JobResult
@@ -142,10 +128,7 @@ public abstract class K8SJobBase : JobBase
     /// <summary>
     /// Creates a failure job result.
     /// </summary>
-    /// <param name="message">The failure message.</param>
-    /// <param name="jobHistoryId">The job history ID.</param>
-    /// <returns>A failed JobResult.</returns>
-    protected new JobResult FailJob(string message, long jobHistoryId)
+    protected JobResult FailJob(string message, long jobHistoryId)
     {
         Logger?.LogError("Job failed: {Message}", message);
         return new JobResult
@@ -159,9 +142,6 @@ public abstract class K8SJobBase : JobBase
     /// <summary>
     /// Creates a failure job result from an exception.
     /// </summary>
-    /// <param name="ex">The exception that caused the failure.</param>
-    /// <param name="jobHistoryId">The job history ID.</param>
-    /// <returns>A failed JobResult.</returns>
     protected JobResult FailJob(Exception ex, long jobHistoryId)
     {
         Logger?.LogError(ex, "Job failed with exception: {Message}", ex.Message);
