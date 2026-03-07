@@ -114,35 +114,14 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
 
         // Initialize certificate from job configuration (parses PKCS12, extracts keys, etc.)
         K8SCertificate = InitJobCertificate(config);
-
-        // Parse certificate from job configuration
-        var certObj = ParseCertificate(config);
         var alias = config.JobCertificate?.Alias ?? "";
         var overwrite = config.Overwrite;
 
         Logger.LogDebug("Adding certificate with alias: {Alias}, overwrite: {Overwrite}", alias, overwrite);
 
-        try
-        {
-            var result = Handler.HandleAdd(certObj, alias, overwrite);
-
-            if (result != null)
-            {
-                Logger.LogInformation("Successfully added certificate to {SecretName}", KubeSecretName);
-                return SuccessJob(config.JobHistoryId);
-            }
-            else
-            {
-                // Some handlers return null on success (e.g., when creating empty store)
-                Logger.LogInformation("Add operation completed for {SecretName}", KubeSecretName);
-                return SuccessJob(config.JobHistoryId);
-            }
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("already exists") && !config.Overwrite)
-        {
-            Logger.LogWarning("Certificate already exists and overwrite is false: {Message}", ex.Message);
-            return WarningJob(ex.Message, config.JobHistoryId);
-        }
+        Handler.HandleAdd(K8SCertificate, alias, overwrite);
+        Logger.LogInformation("Successfully added certificate to {SecretName}", KubeSecretName);
+        return SuccessJob(config.JobHistoryId);
     }
 
     /// <summary>
@@ -171,18 +150,5 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
             Logger.LogWarning("Store not found, nothing to remove");
             return SuccessJob(config.JobHistoryId);
         }
-    }
-
-    /// <summary>
-    /// Parses the certificate from the job configuration.
-    /// Uses the existing JobBase certificate parsing logic.
-    /// </summary>
-    /// <param name="config">The management job configuration.</param>
-    /// <returns>The parsed certificate object, or null if no certificate data.</returns>
-    protected virtual K8SJobCertificate ParseCertificate(ManagementJobConfiguration config)
-    {
-        // Use existing JobBase parsing - the K8SCertificate property is populated by InitializeStore
-        // For "create if missing" scenarios, this may be null
-        return K8SCertificate;
     }
 }

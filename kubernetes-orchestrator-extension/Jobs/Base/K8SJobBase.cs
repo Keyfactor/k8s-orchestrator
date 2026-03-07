@@ -113,19 +113,6 @@ public abstract class K8SJobBase : JobBase
     }
 
     /// <summary>
-    /// Creates a success job result with a warning message.
-    /// </summary>
-    protected JobResult WarningJob(string message, long jobHistoryId)
-    {
-        return new JobResult
-        {
-            Result = OrchestratorJobStatusJobResult.Warning,
-            JobHistoryId = jobHistoryId,
-            FailureMessage = message
-        };
-    }
-
-    /// <summary>
     /// Creates a failure job result.
     /// </summary>
     protected JobResult FailJob(string message, long jobHistoryId)

@@ -136,14 +136,4 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
             return FailJob($"Failed to submit inventory: {ex.Message}", jobHistoryId);
         }
     }
-
-    /// <summary>
-    /// Determines if this inventory job has a private key.
-    /// Delegates to the handler.
-    /// </summary>
-    /// <returns>True if the store has a private key.</returns>
-    protected bool HasPrivateKey()
-    {
-        return Handler?.HasPrivateKey() ?? false;
-    }
 }
