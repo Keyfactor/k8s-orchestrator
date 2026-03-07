@@ -348,3 +348,7 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+
+# OAuth token cache (Makefile)
+.oauth_token
+.oauth_token_expiry
