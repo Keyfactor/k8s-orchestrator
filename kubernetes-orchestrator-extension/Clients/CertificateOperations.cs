@@ -7,23 +7,18 @@
 
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
-using Keyfactor.PKI.PrivateKeys;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
-using Org.BouncyCastle.Utilities.IO.Pem;
 using Org.BouncyCastle.X509;
-using PemWriter = Org.BouncyCastle.OpenSsl.PemWriter;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Clients;
 
 /// <summary>
 /// Provides certificate parsing, conversion, and chain operations.
-/// Extracted from KubeCertificateManagerClient to improve testability and reduce complexity.
+/// Delegates to <see cref="CertificateUtilities"/> for core logic.
 /// </summary>
 public class CertificateOperations
 {
@@ -47,8 +42,7 @@ public class CertificateOperations
     {
         _logger.MethodEntry(LogLevel.Debug);
         var derData = Convert.FromBase64String(derString);
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(derData);
+        var cert = CertificateUtilities.ParseCertificateFromDer(derData);
         _logger.LogDebug("Parsed DER certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
         _logger.MethodExit(LogLevel.Debug);
         return cert;
@@ -56,28 +50,26 @@ public class CertificateOperations
 
     /// <summary>
     /// Reads a PEM-encoded certificate from a string.
+    /// Returns null if the input is not a valid certificate (unlike <see cref="CertificateUtilities.ParseCertificateFromPem"/> which throws).
     /// </summary>
     /// <param name="pemString">PEM-encoded certificate string.</param>
     /// <returns>Parsed X509Certificate object, or null if not a valid certificate.</returns>
     public X509Certificate ReadPemCertificate(string pemString)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        using var reader = new StringReader(pemString);
-        var pemReader = new PemReader(reader);
-        var pemObject = pemReader.ReadPemObject();
-        if (pemObject is not { Type: "CERTIFICATE" })
+        try
         {
-            _logger.LogDebug("PEM object is not a certificate, returning null");
+            var cert = CertificateUtilities.ParseCertificateFromPem(pemString);
+            _logger.LogDebug("Parsed PEM certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
+            _logger.MethodExit(LogLevel.Debug);
+            return cert;
+        }
+        catch
+        {
+            _logger.LogDebug("PEM object is not a valid certificate, returning null");
             _logger.MethodExit(LogLevel.Debug);
             return null;
         }
-
-        var certificateBytes = pemObject.Content;
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(certificateBytes);
-        _logger.LogDebug("Parsed PEM certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
-        _logger.MethodExit(LogLevel.Debug);
-        return cert;
     }
 
     /// <summary>
@@ -88,18 +80,7 @@ public class CertificateOperations
     public List<X509Certificate> LoadCertificateChain(string pemData)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        var pemReader = new PemReader(new StringReader(pemData));
-        var certificates = new List<X509Certificate>();
-
-        PemObject pemObject;
-        while ((pemObject = pemReader.ReadPemObject()) != null)
-            if (pemObject.Type == "CERTIFICATE")
-            {
-                var certificateParser = new X509CertificateParser();
-                var certificate = certificateParser.ReadCertificate(pemObject.Content);
-                certificates.Add(certificate);
-            }
-
+        var certificates = CertificateUtilities.LoadCertificateChain(pemData);
         _logger.LogDebug("Loaded {Count} certificates from chain", certificates.Count);
         _logger.MethodExit(LogLevel.Debug);
         return certificates;
@@ -113,13 +94,9 @@ public class CertificateOperations
     public string ConvertToPem(X509Certificate certificate)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        var pemObject = new PemObject("CERTIFICATE", certificate.GetEncoded());
-        using var stringWriter = new StringWriter();
-        var pemWriter = new PemWriter(stringWriter);
-        pemWriter.WriteObject(pemObject);
-        pemWriter.Writer.Flush();
+        var pem = CertificateUtilities.ConvertToPem(certificate);
         _logger.MethodExit(LogLevel.Debug);
-        return stringWriter.ToString();
+        return pem;
     }
 
     /// <summary>
@@ -134,26 +111,12 @@ public class CertificateOperations
     public string ExtractPrivateKeyAsPem(Pkcs12Store store, string password, PrivateKeyFormat format = PrivateKeyFormat.Pkcs8)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        // Get the first private key entry
-        var alias = store.Aliases.FirstOrDefault(entryAlias => store.IsKeyEntry(entryAlias));
 
-        if (alias == null)
-        {
-            _logger.LogError("No private key found in the provided PFX/P12 file");
-            throw new Exception("No private key found in the provided PFX/P12 file.");
-        }
-
-        _logger.LogDebug("Found private key with alias: {Alias}", alias);
-        // Get the private key
-        var keyEntry = store.GetKey(alias);
-        var privateKeyParams = keyEntry.Key;
-
-        var keyTypeName = PrivateKeyFormatUtilities.GetAlgorithmName(privateKeyParams);
+        var privateKey = CertificateUtilities.ExtractPrivateKey(store);
+        var keyTypeName = PrivateKeyFormatUtilities.GetAlgorithmName(privateKey);
         _logger.LogDebug("Private key type: {KeyType}, requested format: {Format}", keyTypeName, format);
 
-        // Use PrivateKeyFormatUtilities to export in the requested format
-        // It will automatically fall back to PKCS8 if PKCS1 is not supported for the key type
-        var pem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(privateKeyParams, format);
+        var pem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(privateKey, format);
 
         _logger.LogTrace("Private key: {Key}", LoggingUtilities.RedactPrivateKeyPem(pem));
         _logger.MethodExit(LogLevel.Debug);
@@ -168,8 +131,7 @@ public class CertificateOperations
     public X509Certificate ParseCertificateFromPem(string pemCertificate)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(System.Text.Encoding.UTF8.GetBytes(pemCertificate));
+        var cert = CertificateUtilities.ParseCertificateFromPem(pemCertificate);
         _logger.LogDebug("Parsed certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
         _logger.MethodExit(LogLevel.Debug);
         return cert;
@@ -183,8 +145,7 @@ public class CertificateOperations
     public X509Certificate ParseCertificateFromDer(byte[] derBytes)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        var certificateParser = new X509CertificateParser();
-        var cert = certificateParser.ReadCertificate(derBytes);
+        var cert = CertificateUtilities.ParseCertificateFromDer(derBytes);
         _logger.LogDebug("Parsed certificate: {Summary}", LoggingUtilities.GetCertificateSummary(cert));
         _logger.MethodExit(LogLevel.Debug);
         return cert;

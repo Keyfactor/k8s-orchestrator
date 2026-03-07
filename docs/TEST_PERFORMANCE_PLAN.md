@@ -1,159 +1,68 @@
 # Integration Test Performance Improvement Plan
 
-## Current State
+## Current State (as of 2026-03-06)
 
-- **Total Tests**: 896 (unit + integration)
-- **Current Runtime**: ~37.5 minutes (net8.0 + net10.0)
-- **Single Framework Runtime**: ~19 minutes (net8.0 only)
+- **Total Tests**: 1,371 (1,156 unit + 215 integration)
+- **Dual Framework**: Tests run on both net8.0 and net10.0
 
-## Identified Slow Tests
+## Implemented Optimizations
 
-Tests taking >5 seconds:
-- `K8SClusterStoreTests.ClusterSecret_RsaKeyTypes_ValidPemFormat(keyType: Rsa4096)` - 14s
-- `K8STLSSecrStoreTests.PemCertificate_VariousKeyTypes_ValidFormat(keyType: Dsa2048)` - 13s
-- Tests with `Rsa4096` and `Dsa2048` key types are consistently slower due to key generation
+### Certificate Caching (Done)
 
-## Improvement Strategies
-
-### 1. Parallel Test Execution (High Impact)
-
-**Current Issue**: Integration tests run sequentially due to shared Kubernetes cluster state.
-
-**Solution**:
-- Use test collections to group tests by store type
-- Tests within different store types can run in parallel (different namespaces)
-- Use unique namespace prefixes per test collection
-
-**Implementation**:
+`CachedCertificateProvider` prevents redundant key generation:
 ```csharp
-[Collection("K8SSecret Tests")]  // Same collection = sequential
-[Collection("K8SJKS Tests")]     // Different collection = parallel
-```
-
-**Expected Improvement**: 40-50% reduction in runtime
-
-### 2. Certificate Caching (Already Implemented)
-
-The `CachedCertificateProvider` is already in use. Ensure all tests use it:
-```csharp
-// Good (fast)
+// Fast (cached)
 var cert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test");
 
-// Bad (slow - generates new key each time)
+// Slow (generates new key each time)
 var cert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test");
 ```
 
-**Audit needed**: Verify all tests use cached certificates where possible.
+All tests use cached certificates. `Rsa8192` tests are isolated to dedicated Fact tests rather than Theory parameters.
 
-### 3. Reduce Large Key Sizes in Parameterized Tests
+### Single Framework CI (Done)
 
-**Current Issue**: Theory tests with `Rsa4096` and `Rsa8192` run for each key type.
+`make test-ci` runs net8.0 only for PR builds. Full multi-framework tests run on main branch merges.
 
-**Solution**:
-- Move large key tests to dedicated Fact tests (run once)
-- Use smaller keys (Rsa2048, EcP256) for parameterized tests
+### Exponential Backoff (Done)
 
-**Example**:
-```csharp
-// Instead of:
-[Theory]
-[InlineData(KeyType.Rsa2048)]
-[InlineData(KeyType.Rsa4096)]
-[InlineData(KeyType.Rsa8192)]
-public void Test_AllRsaSizes(...) { }
+K8SCert tests use `WaitForCsrCertificateAsync` with exponential backoff instead of fixed delays.
 
-// Use:
-[Theory]
-[InlineData(KeyType.Rsa2048)]
-[InlineData(KeyType.EcP256)]  // Fast EC key
-public void Test_CommonKeys(...) { }
+## Remaining Opportunities
 
-[Fact]
-public void Test_Rsa8192_SpecificBehavior() { }  // Run once
+### 1. Parallel Test Collections (High Impact)
+
+**Current**: Integration tests run sequentially due to shared K8s state.
+**Solution**: Use `[Collection]` attributes to run different store types in parallel (they use different namespaces).
+**Expected**: 40-50% reduction in integration test runtime.
+
+### 2. Shared Test Fixtures (Medium Impact)
+
+**Current**: Each test class creates/deletes namespaces.
+**Solution**: Use `ICollectionFixture<T>` for per-collection namespace setup.
+**Expected**: 15-20% reduction from less namespace churn.
+
+### 3. Audit for Fixed Delays (Low Impact)
+
+Check for any remaining `Thread.Sleep()` or fixed `Task.Delay()` calls.
+
+## Makefile Test Targets
+
+```bash
+make test-unit              # Unit tests only
+make test-integration       # Integration tests (requires K8s cluster)
+make testall                # All tests
+make test                   # Interactive single test (fzf)
+make test-coverage          # Full coverage report
+make test-coverage-open     # Open HTML coverage report
+make test-ci                # CI-optimized (single framework)
+make test-cluster-cleanup   # Clean up test namespaces
 ```
-
-**Expected Improvement**: 20-30% for unit tests
-
-### 4. Test Environment Setup Optimization
-
-**Current Issue**: Each test class creates/deletes namespaces and secrets.
-
-**Solution**:
-- Use `IAsyncLifetime` with shared fixtures where possible
-- Create namespaces once per collection, not per test class
-- Use `[Collection]` with shared `ICollectionFixture<T>`
-
-**Implementation**:
-```csharp
-[CollectionDefinition("K8S Integration")]
-public class K8SIntegrationCollection : ICollectionFixture<K8SIntegrationFixture> { }
-
-public class K8SIntegrationFixture : IAsyncLifetime
-{
-    public string SharedNamespace { get; private set; }
-
-    public async Task InitializeAsync()
-    {
-        SharedNamespace = $"test-{Guid.NewGuid():N}";
-        await CreateNamespace(SharedNamespace);
-    }
-
-    public async Task DisposeAsync()
-    {
-        await DeleteNamespace(SharedNamespace);
-    }
-}
-```
-
-### 5. Remove Unnecessary Delays
-
-**Audit for**:
-- `Thread.Sleep()` or `Task.Delay()` calls
-- Polling with fixed delays (replace with polling with exponential backoff)
-
-**Already Done**: K8SCert tests use `WaitForCsrCertificateAsync` with exponential backoff.
-
-### 6. Single Framework CI Optimization
-
-**Current**: Tests run on both net8.0 and net10.0 (doubles time).
-
-**Solution**:
-- Use `make test-integration-fast` (net8.0 only) for PR builds
-- Run full multi-framework tests only on main branch merges
-
-**Already Implemented**: `make test-ci` does this.
-
-### 7. Test Isolation Improvements
-
-**Issue**: Tests can interfere with each other if not properly isolated.
-
-**Solution**:
-- Each test should use unique resource names (already using GUIDs)
-- Ensure cleanup happens even on test failure (`try/finally` in tests)
-- Use `IAsyncDisposable` for deterministic cleanup
-
-## Implementation Priority
-
-| Priority | Task | Expected Savings | Effort |
-|----------|------|------------------|--------|
-| 1 | Parallel test collections | 40-50% | Medium |
-| 2 | Audit certificate caching usage | 10-20% | Low |
-| 3 | Move large key tests to Facts | 10-15% | Low |
-| 4 | Shared test fixtures | 15-20% | Medium |
-| 5 | Remove fixed delays | 5-10% | Low |
-
-## Makefile Targets
-
-New targets added:
-- `make test-setup` - Set up test environment (creates CSRs for K8SCert tests)
-- `make test-coverage-install` - Install reportgenerator tool
-- `make test-coverage` - Full test coverage with HTML report (depends on test-setup)
 
 ## Monitoring
 
-Track test duration trends:
 ```bash
-# Extract test times from output
+# Extract slowest tests
 grep -E "Passed.*\[[0-9]+ (s|m)" test_output.log | \
   sort -t'[' -k2 -rn | head -20
 ```

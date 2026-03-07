@@ -5,6 +5,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using k8s.Models;
@@ -193,6 +194,130 @@ public class SecretHandlerBaseTests
         Assert.Equal("mycert", certAlias);
         Assert.Null(existingData);
         Assert.Equal("keystore.pfx", existingKeyName);
+    }
+
+    #endregion
+
+    #region ValidateCertOnlyUpdateCore
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_NullSecret_DoesNotThrow()
+    {
+        // Should be a no-op when secret is null
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            null, new[] { "tls.key" }, "tls", "my-secret", "default", null);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_NullData_DoesNotThrow()
+    {
+        var secret = new V1Secret { Data = null };
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            secret, new[] { "tls.key" }, "tls", "my-secret", "default", null);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_NoMatchingField_DoesNotThrow()
+    {
+        var keyBytes = Encoding.UTF8.GetBytes("-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----");
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "other-field", keyBytes } }
+        };
+        // Field names don't include "other-field"
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            secret, new[] { "tls.key" }, "tls", "my-secret", "default", null);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_FieldExistsButEmpty_DoesNotThrow()
+    {
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "tls.key", Array.Empty<byte>() } }
+        };
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            secret, new[] { "tls.key" }, "tls", "my-secret", "default", null);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_FieldHasCertNotKey_DoesNotThrow()
+    {
+        // tls.key exists but contains a certificate, not a private key
+        var certBytes = Encoding.UTF8.GetBytes("-----BEGIN CERTIFICATE-----\nMIIB...\n-----END CERTIFICATE-----");
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "tls.key", certBytes } }
+        };
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            secret, new[] { "tls.key" }, "tls", "my-secret", "default", null);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_TlsKeyHasPrivateKey_Throws()
+    {
+        var keyBytes = Encoding.UTF8.GetBytes("-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----");
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "tls.key", keyBytes } }
+        };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SecretHandlerBase.ValidateCertOnlyUpdateCore(
+                secret, new[] { "tls.key" }, "tls", "my-secret", "default", null));
+
+        Assert.Contains("tls.key", ex.Message);
+        Assert.Contains("my-secret", ex.Message);
+        Assert.Contains("default", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_RsaPrivateKeyHeader_Throws()
+    {
+        // "BEGIN RSA PRIVATE KEY" also contains "PRIVATE KEY"
+        var keyBytes = Encoding.UTF8.GetBytes("-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----");
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "tls.key", keyBytes } }
+        };
+        Assert.Throws<InvalidOperationException>(() =>
+            SecretHandlerBase.ValidateCertOnlyUpdateCore(
+                secret, new[] { "tls.key" }, "tls", "my-secret", "default", null));
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_OpaqueKeyFields_ThrowsOnFirstMatch()
+    {
+        // Opaque secrets check multiple field names; should throw when "key" field has a private key
+        var keyBytes = Encoding.UTF8.GetBytes("-----BEGIN PRIVATE KEY-----\nMIIE...\n-----END PRIVATE KEY-----");
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]> { { "key", keyBytes } }
+        };
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            SecretHandlerBase.ValidateCertOnlyUpdateCore(
+                secret,
+                new[] { "tls.key", "key", "private-key", "key.pem", "private-key.pem" },
+                "opaque", "my-secret", "default", null));
+
+        Assert.Contains("key", ex.Message);
+    }
+
+    [Fact]
+    public void ValidateCertOnlyUpdateCore_OpaqueKeyFields_AllEmpty_DoesNotThrow()
+    {
+        var secret = new V1Secret
+        {
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.key", Array.Empty<byte>() },
+                { "key", null },
+                { "private-key", Array.Empty<byte>() }
+            }
+        };
+        SecretHandlerBase.ValidateCertOnlyUpdateCore(
+            secret,
+            new[] { "tls.key", "key", "private-key", "key.pem", "private-key.pem" },
+            "opaque", "my-secret", "default", null);
     }
 
     #endregion

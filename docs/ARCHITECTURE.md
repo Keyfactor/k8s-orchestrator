@@ -118,11 +118,25 @@ Handlers/
 ```csharp
 public interface ISecretHandler
 {
-    List<CurrentInventoryItem> GetInventory(SecretOperationContext context);
-    void AddCertificate(SecretOperationContext context);
-    void RemoveCertificate(SecretOperationContext context);
+    string[] AllowedKeys { get; }
+    string SecretTypeName { get; }
+    bool SupportsManagement { get; }
+    List<InventoryEntry> GetInventoryEntries(long jobId);
+    V1Secret HandleAdd(K8SJobCertificate certObj, string alias, bool overwrite);
+    V1Secret HandleRemove(string alias);
+    V1Secret CreateEmptyStore();
+    List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv);
 }
 ```
+
+**Base Class (`SecretHandlerBase`):**
+
+Provides shared logic used by multiple handlers:
+- `IsSecretEmpty(V1Secret)` — Detects empty-store secrets (created via "create if missing")
+- `ValidateCertOnlyUpdate(V1Secret)` — Prevents cert/key mismatch on cert-only overwrites (virtual `PrivateKeyFieldNames` property allows TLS vs Opaque customization)
+- `ParseKeystoreAliasCore(alias, inventory, defaultFieldName)` — Shared alias parsing for JKS/PKCS12 handlers (`<fieldName>/<certAlias>` format)
+- `ResolvePassword(V1Secret)` — Buddy-secret password resolution
+- `HandleCreateIfMissing()` — Create-if-not-exists logic
 
 ### 3. Services Layer (`Services/`)
 
@@ -130,44 +144,41 @@ Reusable business logic services.
 
 ```
 Services/
-├── JobConfigurationParser.cs      # Parses job config → SecretOperationContext
-├── CredentialResolver.cs          # Resolves passwords from secrets or values
-├── CertificateProcessor.cs        # Certificate parsing and conversion
-├── InventorySubmitter.cs          # Builds and submits inventory
-├── StorePathResolver.cs           # Parses store paths (namespace/secret)
-├── CertificateChainExtractor.cs   # Extracts certs from secret data
+├── CertificateChainExtractor.cs   # Extracts certs from secret data fields
+├── KeystoreOperations.cs          # JKS/PKCS12 keystore manipulation
 ├── PasswordResolver.cs            # PAM-aware password resolution
-└── StoreConfigurationParser.cs    # Parses store property JSON
+├── StoreConfigurationParser.cs    # Parses store property JSON
+└── StorePathResolver.cs           # Parses store paths (namespace/secret)
 ```
 
 ### 4. Clients Layer (`Clients/`)
 
-Kubernetes API client wrappers.
+Kubernetes API client wrappers and certificate operations.
 
 ```
 Clients/
-├── KubeClient.cs                  # Main client wrapper
-├── KubeCertificateManagerClient   # Certificate-specific operations
-│   (alias for KubeClient)
+├── KubeClient.cs                  # Main client wrapper (alias: KubeCertificateManagerClient)
+├── KubeconfigParser.cs            # Kubeconfig JSON parsing and validation
 ├── SecretOperations.cs            # Secret CRUD operations
-└── KeystoreManager.cs             # JKS/PKCS12 keystore operations
+└── CertificateOperations.cs       # Certificate parsing/conversion (thin wrapper over CertificateUtilities)
 ```
 
 **KubeClient Responsibilities:**
 
-- Kubeconfig parsing and validation
+- Kubeconfig parsing and validation (via `KubeconfigParser`)
 - Connection retry logic
 - TLS verification (optional skip)
-- Certificate format conversion (PEM/DER)
-- Secret CRUD operations
+- Secret CRUD operations (via `SecretOperations`)
 
-### 5. StoreTypes Layer (`StoreTypes/`)
+**CertificateOperations** is a thin logging wrapper that delegates all certificate parsing, conversion, and private key export to `CertificateUtilities` and `PrivateKeyFormatUtilities`.
 
-Format-specific serialization for non-PEM stores.
+### 5. Serializers Layer (`Serializers/`)
+
+Format-specific serialization for non-PEM stores. Only JKS and PKCS12 need serializers — PEM-based store types (K8SSecret, K8STLSSecr, K8SCert, K8SCluster, K8SNS) work with raw PEM strings directly in their handlers and don't require a separate serialization layer.
 
 ```
-StoreTypes/
-├── ICertificateStoreSerializer.cs  # Interface
+Serializers/
+├── ICertificateStoreSerializer.cs  # Interface (Deserialize, Serialize, GetPrivateKeyPath)
 ├── K8SJKS/
 │   └── Store.cs                    # JKS keystore handling (BouncyCastle)
 └── K8SPKCS12/
@@ -363,9 +374,11 @@ The extension uses multiple certificate libraries:
 
 | Library | Purpose |
 |---------|---------|
-| **BouncyCastle** | X.509 parsing, JKS/PKCS12 handling, PEM encoding |
-| **Keyfactor.PKI** | Certificate utilities (thumbprints, key types, conversions) |
-| **System.Security.Cryptography** | TLS client certificates |
+| **BouncyCastle** (v2.6.2) | X.509 parsing, JKS/PKCS12 handling, PEM encoding, private key operations |
+| **Keyfactor.PKI** (v8.2.2) | Thumbprints, CommonName, SerialNumber, PEM/DER conversion, `PrivateKeyConverter` |
+| **System.Security.Cryptography** | K8s client TLS only (not used for certificate store operations) |
+
+**Note:** `CertificateUtilities` and `PrivateKeyFormatUtilities` in `Utilities/` wrap these libraries with consistent logging. Some operations (unencrypted private key PEM export, certificate chain parsing from mixed PEM) use raw BouncyCastle due to gaps in the PKI library — see `docs/KEYFACTOR_PKI_ENHANCEMENTS.md` for details.
 
 ## Configuration
 
@@ -425,15 +438,16 @@ kubernetes-orchestrator-extension/
 │   ├── Base/                   # Base job classes
 │   └── StoreTypes/             # Store-specific jobs
 ├── Models/                     # Data models
+├── Serializers/                # Store-specific serializers (JKS, PKCS12)
 ├── Services/                   # Business logic services
-├── StoreTypes/                 # Store-specific serializers
 ├── Utilities/                  # Helper utilities
 └── manifest.json               # Extension registration
 ```
 
 ## Future Considerations
 
-1. **Handler Registry**: The current factory pattern could evolve into a registry for easier extension
-2. **Async Operations**: Consider async/await for Kubernetes API calls
-3. **Connection Pooling**: Reuse Kubernetes client connections across operations
-4. **Metrics**: Add telemetry for operation timing and success rates
+1. **Keyfactor.PKI Library Enhancements**: Several local utility methods could be replaced once PKI gaps are addressed — see `docs/KEYFACTOR_PKI_ENHANCEMENTS.md`
+2. **Handler Registry**: The current factory pattern could evolve into a registry for easier extension
+3. **Async Operations**: Consider async/await for Kubernetes API calls
+4. **Connection Pooling**: Reuse Kubernetes client connections across operations
+5. **Metrics**: Add telemetry for operation timing and success rates

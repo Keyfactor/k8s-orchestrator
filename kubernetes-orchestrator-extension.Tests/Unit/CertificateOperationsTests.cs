@@ -298,7 +298,7 @@ public class CertificateOperationsTests
         var emptyStore = new Pkcs12StoreBuilder().Build();
 
         // Act & Assert
-        Assert.Throws<Exception>(() => _operations.ExtractPrivateKeyAsPem(emptyStore, "password"));
+        Assert.Throws<ArgumentException>(() => _operations.ExtractPrivateKeyAsPem(emptyStore, "password"));
     }
 
     [Theory]

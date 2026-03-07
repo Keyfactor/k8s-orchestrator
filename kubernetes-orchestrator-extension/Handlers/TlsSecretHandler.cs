@@ -246,6 +246,9 @@ public class TlsSecretHandler : SecretHandlerBase
 
     #region Private Helpers
 
+    // ValidateCertOnlyUpdate is inherited from SecretHandlerBase.
+    // TlsSecretHandler uses the default PrivateKeyFieldNames = { "tls.key" }.
+
     private List<string> ExtractCertificatesFromSecret(V1Secret secret)
     {
         // Check if tls.crt exists and has data
@@ -280,37 +283,6 @@ public class TlsSecretHandler : SecretHandlerBase
         }
 
         return certsList;
-    }
-
-    /// <summary>
-    /// Validates that a cert-only update won't create a key/cert mismatch.
-    /// Throws if existing secret has a private key but incoming cert doesn't.
-    /// </summary>
-    private void ValidateCertOnlyUpdate(V1Secret existingSecret)
-    {
-        Logger.LogDebug("Validating cert-only update for TLS secret '{SecretName}' in namespace '{Namespace}'",
-            Context.KubeSecretName, Context.KubeNamespace);
-
-        if (existingSecret?.Data == null) return;
-
-        // TLS secrets use tls.key for private keys
-        if (existingSecret.Data.TryGetValue("tls.key", out var existingKeyBytes) &&
-            existingKeyBytes != null &&
-            existingKeyBytes.Length > 0)
-        {
-            var existingKeyPem = System.Text.Encoding.UTF8.GetString(existingKeyBytes).Trim();
-            if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
-            {
-                var errorMsg = $"Cannot update TLS secret '{Context.KubeSecretName}' in namespace '{Context.KubeNamespace}' " +
-                    $"with a certificate that has no private key. The existing secret contains a private key (tls.key) " +
-                    $"which would become mismatched with the new certificate. " +
-                    $"Either include the private key with the certificate, or delete the existing secret first.";
-                Logger.LogError(errorMsg);
-                throw new InvalidOperationException(errorMsg);
-            }
-        }
-
-        Logger.LogDebug("Validation passed: existing secret has no private key");
     }
 
     #endregion

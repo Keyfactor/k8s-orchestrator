@@ -42,6 +42,10 @@ public class OpaqueSecretHandler : SecretHandlerBase
     /// <inheritdoc />
     public override bool SupportsManagement => true;
 
+    /// <inheritdoc />
+    protected override string[] PrivateKeyFieldNames =>
+        new[] { "tls.key", "key", "private-key", "key.pem", "private-key.pem" };
+
     /// <summary>
     /// Initializes a new instance of the OpaqueSecretHandler.
     /// </summary>
@@ -262,40 +266,8 @@ public class OpaqueSecretHandler : SecretHandlerBase
 
     #region Private Helpers
 
-    /// <summary>
-    /// Validates that a cert-only update won't create a key/cert mismatch.
-    /// Throws if existing secret has a private key but incoming cert doesn't.
-    /// </summary>
-    private void ValidateCertOnlyUpdate(V1Secret existingSecret)
-    {
-        Logger.LogDebug("Validating cert-only update for Opaque secret '{SecretName}' in namespace '{Namespace}'",
-            Context.KubeSecretName, Context.KubeNamespace);
-
-        if (existingSecret?.Data == null) return;
-
-        // Check if the existing secret has a private key
-        var keyFields = new[] { "tls.key", "key", "private-key", "key.pem", "private-key.pem" };
-        foreach (var field in keyFields)
-        {
-            if (existingSecret.Data.TryGetValue(field, out var existingKeyBytes) &&
-                existingKeyBytes != null &&
-                existingKeyBytes.Length > 0)
-            {
-                var existingKeyPem = Encoding.UTF8.GetString(existingKeyBytes).Trim();
-                if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
-                {
-                    var errorMsg = $"Cannot update Opaque secret '{Context.KubeSecretName}' in namespace '{Context.KubeNamespace}' " +
-                        $"with a certificate that has no private key. The existing secret contains a private key ({field}) " +
-                        $"which would become mismatched with the new certificate. " +
-                        $"Either include the private key with the certificate, or delete the existing secret first.";
-                    Logger.LogError(errorMsg);
-                    throw new InvalidOperationException(errorMsg);
-                }
-            }
-        }
-
-        Logger.LogDebug("Validation passed: existing secret has no private key");
-    }
+    // ValidateCertOnlyUpdate is inherited from SecretHandlerBase.
+    // OpaqueSecretHandler overrides PrivateKeyFieldNames to include all common key field names.
 
     private List<string> ExtractCertificatesFromSecret(V1Secret secret)
     {

@@ -247,6 +247,60 @@ public abstract class SecretHandlerBase : ISecretHandler
     }
 
     /// <summary>
+    /// The private key field names to check during cert-only update validation.
+    /// TLS handlers check only "tls.key"; Opaque handlers check all common key field names.
+    /// Override in subclasses to customize which fields are considered private key fields.
+    /// </summary>
+    protected virtual string[] PrivateKeyFieldNames => new[] { "tls.key" };
+
+    /// <summary>
+    /// Validates that a cert-only update won't create a key/cert mismatch.
+    /// Throws if the existing secret contains a private key but the incoming cert doesn't.
+    /// </summary>
+    protected void ValidateCertOnlyUpdate(V1Secret existingSecret)
+    {
+        Logger.LogDebug("Validating cert-only update for {Type} secret '{SecretName}' in namespace '{Namespace}'",
+            SecretTypeName, Context.KubeSecretName, Context.KubeNamespace);
+        ValidateCertOnlyUpdateCore(existingSecret, PrivateKeyFieldNames,
+            SecretTypeName, Context.KubeSecretName, Context.KubeNamespace, Logger);
+    }
+
+    /// <summary>
+    /// Core cert-only update validation logic, separated for testability.
+    /// Iterates <paramref name="privateKeyFieldNames"/> and throws if any contains a PEM private key.
+    /// </summary>
+    internal static void ValidateCertOnlyUpdateCore(
+        V1Secret existingSecret,
+        string[] privateKeyFieldNames,
+        string secretTypeName,
+        string secretName,
+        string secretNamespace,
+        ILogger logger)
+    {
+        if (existingSecret?.Data == null) return;
+
+        foreach (var field in privateKeyFieldNames)
+        {
+            if (!existingSecret.Data.TryGetValue(field, out var existingKeyBytes) ||
+                existingKeyBytes == null || existingKeyBytes.Length == 0)
+                continue;
+
+            var existingKeyPem = Encoding.UTF8.GetString(existingKeyBytes).Trim();
+            if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
+            {
+                var errorMsg = $"Cannot update {secretTypeName} secret '{secretName}' in namespace '{secretNamespace}' " +
+                    $"with a certificate that has no private key. The existing secret contains a private key ({field}) " +
+                    $"which would become mismatched with the new certificate. " +
+                    $"Either include the private key with the certificate, or delete the existing secret first.";
+                logger?.LogError(errorMsg);
+                throw new InvalidOperationException(errorMsg);
+            }
+        }
+
+        logger?.LogDebug("Validation passed: existing secret has no private key");
+    }
+
+    /// <summary>
     /// Builds allowed keys list from context and defaults.
     /// </summary>
     /// <param name="defaultKeys">Default keys for this handler type.</param>
