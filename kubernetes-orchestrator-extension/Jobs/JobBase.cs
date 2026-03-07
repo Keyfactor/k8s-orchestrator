@@ -11,14 +11,12 @@ using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
-using Org.BouncyCastle.Crypto;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Newtonsoft.Json;
-using Org.BouncyCastle.Pkcs;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
@@ -29,17 +27,6 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// </summary>
 public abstract class JobBase
 {
-    protected const string CertChainSeparator = ",";
-    protected static readonly string[] SupportedKubeStoreTypes;
-
-    private static readonly string[] RequiredProperties;
-
-    protected static readonly string[] TLSAllowedKeys;
-    protected static readonly string[] OpaqueAllowedKeys;
-    protected static readonly string[] CertAllowedKeys;
-    protected static readonly string[] Pkcs12AllowedKeys;
-    protected static readonly string[] JksAllowedKeys;
-
     protected IPAMSecretResolver _resolver;
 
     protected KubeCertificateManagerClient KubeClient;
@@ -52,26 +39,12 @@ public abstract class JobBase
 
     private JobCertificateParser _certParser;
 
-    static JobBase()
-    {
-        CertAllowedKeys = new[] { "cert", "csr" };
-        TLSAllowedKeys = new[] { "tls.crt", "tls.key", "ca.crt" };
-        OpaqueAllowedKeys = new[]
-            { "tls.crt", "tls.crts", "cert", "certs", "certificate", "certificates", "crt", "crts", "ca.crt" };
-        SupportedKubeStoreTypes = new[] { "secret", "certificate" };
-        RequiredProperties = new[] { "KubeNamespace", "KubeSecretName", "KubeSecretType" };
-        Pkcs12AllowedKeys = new[] { "p12", "pkcs12", "pfx" };
-        JksAllowedKeys = new[] { "jks" };
-    }
-
-
     protected internal bool SeparateChain { get; set; } =
         false; //Don't arbitrarily change this to true without specifying BREAKING CHANGE in the release notes.
 
     protected internal bool IncludeCertChain { get; set; } =
         true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
 
-    protected internal string OperationType { get; set; }
     protected internal bool SkipTlsValidation { get; set; }
 
     public K8SJobCertificate K8SCertificate { get; set; }
@@ -104,16 +77,6 @@ public abstract class JobBase
 
     protected string StorePassword { get; set; }
 
-    protected bool Overwrite { get; set; }
-
-    protected internal virtual AsymmetricKeyEntry KeyEntry { get; set; }
-
-    protected internal ManagementJobConfiguration ManagementConfig { get; set; }
-
-    protected internal DiscoveryJobConfiguration DiscoveryConfig { get; set; }
-
-    protected internal InventoryJobConfiguration InventoryConfig { get; set; }
-
     public string ExtensionName => "K8S";
 
     public string KubeCluster { get; set; }
@@ -132,7 +95,6 @@ public abstract class JobBase
 
         try
         {
-            InventoryConfig = config;
             InitializeStoreCore(
                 config.Capability,
                 config.ServerUsername,
@@ -156,7 +118,6 @@ public abstract class JobBase
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.MethodEntry(MsLogLevel.Debug);
 
-        DiscoveryConfig = config;
         SkipTlsValidation = !config.UseSSL;
         Logger.LogInformation("UseSSL={UseSSL}, SkipTlsValidation={Skip}", config.UseSSL, SkipTlsValidation);
 
@@ -179,7 +140,6 @@ public abstract class JobBase
 
         try
         {
-            ManagementConfig = config;
             InitializeStoreCore(
                 config.Capability,
                 config.ServerUsername,
@@ -187,7 +147,6 @@ public abstract class JobBase
                 config.CertificateStoreDetails?.StorePath,
                 null,
                 JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties));
-            Overwrite = config.Overwrite;
         }
         catch (Exception ex)
         {
@@ -325,7 +284,7 @@ public abstract class JobBase
         {
             Logger.MethodExit(MsLogLevel.Debug);
             throw new ConfigurationException(
-                $"Invalid configuration. Please provide {RequiredProperties}. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
+                "Invalid configuration. Please provide KubeNamespace, KubeSecretName, KubeSecretType. Or review the documentation at https://github.com/Keyfactor/kubernetes-orchestrator#custom-fields-tab");
         }
 
         // Parse all store properties using centralized parser
