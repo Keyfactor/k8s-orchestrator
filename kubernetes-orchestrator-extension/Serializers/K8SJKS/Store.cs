@@ -248,203 +248,132 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
-        _logger.MethodEntry(MsLogLevel.Debug);
-        // If existingStore is null, create a new store
-        var existingJksStore = new JksStore();
-        var newJksStore = new JksStore();
-        var createdNewStore = false;
+        _logger.LogDebug("CreateOrUpdateJks: alias='{Alias}', remove={Remove}, includeChain={IncludeChain}", alias, remove, includeChain);
+        var passwordChars = PasswordToChars(existingStorePassword);
 
-        _logger.LogTrace("alias: {Alias}", alias);
-        _logger.LogTrace("newCertPassword: {Password}", LoggingUtilities.RedactPassword(newCertPassword));
-        _logger.LogTrace("existingStorePassword: {Password}", LoggingUtilities.RedactPassword(existingStorePassword));
-
-        // If existingStore is not null, load it into jksStore
+        // Load or create the target JKS store
+        var targetStore = new JksStore();
         if (existingStore != null)
         {
-            _logger.LogDebug("Loading existing JKS store");
-            using var ms = new MemoryStream(existingStore);
+            LoadExistingJksStore(targetStore, existingStore, existingStorePassword);
 
-            try
+            // Handle removal or alias cleanup
+            if (targetStore.ContainsAlias(alias))
             {
-                existingJksStore.Load(ms,
-                    string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError("Error loading existing JKS store: {Ex}", ex.Message);
-
-                if (ex.Message.Contains("password incorrect or store tampered with"))
-                {
-                    _logger.LogError("Unable to load existing JKS store using provided password: {Password}", LoggingUtilities.RedactPassword(existingStorePassword));
-                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(existingStorePassword));
-                    throw;
-                }
-
-                try
-                {
-                    _logger.LogDebug("Attempting to load existing JKS store as Pkcs12Store");
-                    var pkcs12Store = new Pkcs12StoreBuilder().Build();
-                    using (var ms2 = new MemoryStream(existingStore))
-                    {
-                        pkcs12Store.Load(ms2,
-                            string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-                    }
-
-                    _logger.LogDebug("Existing JKS store loaded as Pkcs12Store");
-                    // return pkcs12Store;
-                    throw new JkSisPkcs12Exception("Existing JKS store is actually a Pkcs12Store");
-                }
-                catch (Exception ex2)
-                {
-                    _logger.LogError("Error loading existing JKS store as Jks or Pkcs12Store: {Ex}", ex2.Message);
-                    throw;
-                }
-            }
-
-            if (existingJksStore.ContainsAlias(alias))
-            {
-                // If alias exists, delete it from existingJksStore
-                _logger.LogDebug("Alias '{Alias}' exists in existing JKS store, deleting it", alias);
-                existingJksStore.DeleteEntry(alias);
-                if (remove)
-                {
-                    // If remove is true, save existingJksStore and return
-                    _logger.LogDebug("This is a removal operation, saving existing JKS store");
-                    using var mms = new MemoryStream();
-                    existingJksStore.Save(mms,
-                        string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-                    _logger.LogDebug("Returning existing JKS store");
-                    return mms.ToArray();
-                }
+                _logger.LogDebug("Deleting existing alias '{Alias}'", alias);
+                targetStore.DeleteEntry(alias);
+                if (remove) return SaveJksStore(targetStore, passwordChars);
             }
             else if (remove)
             {
-                // If alias does not exist and remove is true, return existingStore
-                _logger.LogDebug(
-                    "Alias '{Alias}' does not exist in existing JKS store and this is a removal operation, returning existing JKS store as-is",
-                    alias);
-                using var mms = new MemoryStream();
-                existingJksStore.Save(mms,
-                    string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-                return mms.ToArray();
+                _logger.LogDebug("Alias '{Alias}' not found, nothing to remove", alias);
+                return SaveJksStore(targetStore, passwordChars);
             }
         }
-        else
+
+        // Parse the new certificate from PKCS12 bytes
+        var newCert = LoadNewCertificate(newPkcs12Bytes, newCertPassword, alias);
+
+        // Add entries from new certificate to target store
+        foreach (var al in newCert.Aliases)
         {
-            _logger.LogDebug("Existing JKS store is null, creating new JKS store");
-            createdNewStore = true;
+            if (newCert.IsKeyEntry(al))
+            {
+                var keyEntry = newCert.GetKey(al);
+                var certificateChain = newCert.GetCertificateChain(al);
+                if (!includeChain)
+                    certificateChain = [new X509CertificateEntry(certificateChain[0].Certificate)];
+
+                var certificates = certificateChain.Select(e => e.Certificate).ToArray();
+
+                if (targetStore.ContainsAlias(alias))
+                    targetStore.DeleteEntry(alias);
+
+                targetStore.SetKeyEntry(alias, keyEntry.Key, passwordChars, certificates);
+            }
+            else
+            {
+                targetStore.SetCertificateEntry(alias, newCert.GetCertificate(alias).Certificate);
+            }
         }
 
-        // Create new Pkcs12Store from newPkcs12Bytes
+        return SaveJksStore(targetStore, passwordChars);
+    }
+
+    /// <summary>
+    /// Loads an existing JKS store, falling back to PKCS12 detection.
+    /// </summary>
+    private void LoadExistingJksStore(JksStore jksStore, byte[] storeBytes, string password)
+    {
+        try
+        {
+            using var ms = new MemoryStream(storeBytes);
+            jksStore.Load(ms, PasswordToChars(password));
+        }
+        catch (Exception ex)
+        {
+            if (ex.Message.Contains("password incorrect or store tampered with"))
+            {
+                _logger.LogError("Unable to load JKS store: incorrect password");
+                throw;
+            }
+
+            // Check if it's actually PKCS12 format
+            try
+            {
+                var pkcs12Store = new Pkcs12StoreBuilder().Build();
+                using var ms2 = new MemoryStream(storeBytes);
+                pkcs12Store.Load(ms2, PasswordToChars(password));
+                throw new JkSisPkcs12Exception("Existing JKS store is actually a Pkcs12Store");
+            }
+            catch (JkSisPkcs12Exception) { throw; }
+            catch (Exception ex2)
+            {
+                _logger.LogError("Error loading store as JKS or PKCS12: {Error}", ex2.Message);
+                throw;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Loads a new certificate from PKCS12 bytes, falling back to raw X509 parsing.
+    /// </summary>
+    private Pkcs12Store LoadNewCertificate(byte[] pkcs12Bytes, string password, string alias)
+    {
         var storeBuilder = new Pkcs12StoreBuilder();
         var newCert = storeBuilder.Build();
 
         try
         {
-            _logger.LogDebug("Loading new Pkcs12Store from newPkcs12Bytes");
-            _logger.LogTrace("PKCS12 data: {Data}", LoggingUtilities.RedactPkcs12Bytes(newPkcs12Bytes));
-            using var pkcs12Ms = new MemoryStream(newPkcs12Bytes);
-            if (pkcs12Ms.Length != 0) newCert.Load(pkcs12Ms, (newCertPassword ?? string.Empty).ToCharArray());
+            using var ms = new MemoryStream(pkcs12Bytes);
+            if (ms.Length != 0) newCert.Load(ms, (password ?? string.Empty).ToCharArray());
         }
         catch (Exception)
         {
-            _logger.LogDebug("Loading new Pkcs12Store from newPkcs12Bytes failed, trying to load as X509Certificate");
-            var certificateParser = new X509CertificateParser();
-            var certificate = certificateParser.ReadCertificate(newPkcs12Bytes);
-
-            _logger.LogDebug("Creating new Pkcs12Store from certificate");
-            // create new Pkcs12Store from certificate
-            storeBuilder = new Pkcs12StoreBuilder();
+            _logger.LogDebug("PKCS12 load failed, parsing as raw X509 certificate");
+            var certificate = new X509CertificateParser().ReadCertificate(pkcs12Bytes);
             newCert = storeBuilder.Build();
-            _logger.LogDebug("Setting certificate entry in new Pkcs12Store as alias '{Alias}'", alias);
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));
         }
 
+        return newCert;
+    }
 
-        // Iterate through newCert aliases.
-        _logger.LogDebug("Iterating through new Pkcs12Store aliases");
-        foreach (var al in newCert.Aliases)
-        {
-            _logger.LogTrace("Alias: {Alias}", al);
-            if (newCert.IsKeyEntry(al))
-            {
-                _logger.LogDebug("Alias '{Alias}' is a key entry, getting key entry and certificate chain", al);
-                var keyEntry = newCert.GetKey(al);
-                _logger.LogDebug("Getting certificate chain for alias '{Alias}'", al);
-                var certificateChain = newCert.GetCertificateChain(al);
-                if (!includeChain)
-                {
-                    _logger.LogDebug("includeChain is false, reducing certificate chain to only the end-entity certificate");
-                    // If includeChain is false, reduce certificate chain to only the end-entity certificate
-                    certificateChain =
-                    [
-                        new X509CertificateEntry(certificateChain[0].Certificate)
-                    ];
-                }
+    /// <summary>
+    /// Saves a JKS store to a byte array.
+    /// </summary>
+    private static byte[] SaveJksStore(JksStore store, char[] password)
+    {
+        using var ms = new MemoryStream();
+        store.Save(ms, password);
+        return ms.ToArray();
+    }
 
-                _logger.LogDebug("Creating certificate list from certificate chain");
-                var certificates = certificateChain.Select(certificateEntry => certificateEntry.Certificate).ToList();
-
-                if (createdNewStore)
-                {
-                    // If createdNewStore is true, create a new store
-                    _logger.LogDebug("Created new JKS store, setting key entry for alias '{Alias}'", al);
-                    newJksStore.SetKeyEntry(alias,
-                        keyEntry.Key,
-                        string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray(),
-                        certificates.ToArray());
-                }
-                else
-                {
-                    // If createdNewStore is false, add to existingJksStore
-                    // check if alias exists in existingJksStore
-                    if (existingJksStore.ContainsAlias(alias))
-                    {
-                        // If alias exists, delete it from existingJksStore
-                        _logger.LogDebug("Alias '{Alias}' exists in existing JKS store, deleting it", alias);
-                        existingJksStore.DeleteEntry(alias);
-                    }
-
-                    _logger.LogDebug("Setting key entry for alias '{Alias}'", alias);
-                    existingJksStore.SetKeyEntry(alias,
-                        keyEntry.Key,
-                        string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray(),
-                        certificates.ToArray());
-                }
-            }
-            else
-            {
-                if (createdNewStore)
-                {
-                    _logger.LogDebug("Created new JKS store, setting certificate entry for alias '{Alias}'", alias);
-                    _logger.LogDebug("Setting certificate entry for new JKS store, alias '{Alias}'", alias);
-                    newJksStore.SetCertificateEntry(alias, newCert.GetCertificate(alias).Certificate);
-                }
-                else
-                {
-                    _logger.LogDebug("Setting certificate entry for existing JKS store, alias '{Alias}'", alias);
-                    existingJksStore.SetCertificateEntry(alias, newCert.GetCertificate(alias).Certificate);
-                }
-            }
-        }
-
-        using var outStream = new MemoryStream();
-        if (createdNewStore)
-        {
-            _logger.LogDebug("Created new JKS store, saving it to outStream");
-            newJksStore.Save(outStream,
-                string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-        }
-        else
-        {
-            _logger.LogDebug("Saving existing JKS store to outStream");
-            existingJksStore.Save(outStream,
-                string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
-        }
-
-        // Return existingJksStore as byte[]
-        _logger.LogDebug("JKS store operation complete");
-        _logger.MethodExit(MsLogLevel.Debug);
-        return outStream.ToArray();
+    /// <summary>
+    /// Converts a password string to char array, handling null/empty.
+    /// </summary>
+    private static char[] PasswordToChars(string password)
+    {
+        return string.IsNullOrEmpty(password) ? [] : password.ToCharArray();
     }
 }

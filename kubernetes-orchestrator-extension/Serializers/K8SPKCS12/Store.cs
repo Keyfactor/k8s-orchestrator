@@ -140,187 +140,97 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
-        _logger.MethodEntry(MsLogLevel.Debug);
+        _logger.LogDebug("CreateOrUpdatePkcs12: alias='{Alias}', remove={Remove}, includeChain={IncludeChain}", alias, remove, includeChain);
+        var passwordChars = PasswordToChars(existingStorePassword);
 
-        _logger.LogDebug("Creating or updating PKCS12 store for alias '{Alias}'", alias);
-        // If existingStore is null, create a new store
+        // Load or create the target PKCS12 store
         var storeBuilder = new Pkcs12StoreBuilder();
-        var existingPkcs12Store = storeBuilder.Build();
-        var pkcs12StoreNew = storeBuilder.Build();
-        var createdNewStore = false;
+        var targetStore = storeBuilder.Build();
 
-        // If existingStore is not null, load it into pkcs12Store
         if (existingStore != null)
         {
-            _logger.LogDebug("Attempting to load existing Pkcs12Store");
             using var ms = new MemoryStream(existingStore);
-            existingPkcs12Store.Load(ms,
-                string.IsNullOrEmpty(existingStorePassword)
-                    ? Array.Empty<char>()
-                    : existingStorePassword.ToCharArray());
-            _logger.LogDebug("Existing Pkcs12Store loaded");
+            targetStore.Load(ms, passwordChars);
 
-            _logger.LogDebug("Checking if alias '{Alias}' exists in existingPkcs12Store", alias);
-            if (existingPkcs12Store.ContainsAlias(alias))
+            // Handle removal or alias cleanup
+            if (targetStore.ContainsAlias(alias))
             {
-                // If alias exists, delete it from existingPkcs12Store
-                _logger.LogDebug("Alias '{Alias}' exists in existingPkcs12Store", alias);
-                _logger.LogDebug("Deleting alias '{Alias}' from existingPkcs12Store", alias);
-                existingPkcs12Store.DeleteEntry(alias);
-                if (remove)
-                {
-                    // If remove is true, save existingPkcs12Store and return
-                    _logger.LogDebug("Alias '{Alias}' was removed from existing store", alias);
-                    using var mms = new MemoryStream();
-                    _logger.LogDebug("Saving removal operation");
-                    existingPkcs12Store.Save(mms,
-                        string.IsNullOrEmpty(existingStorePassword)
-                            ? Array.Empty<char>()
-                            : existingStorePassword.ToCharArray(), new SecureRandom());
-
-                    _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-                    _logger.MethodExit(MsLogLevel.Debug);
-                    return mms.ToArray();
-                }
+                _logger.LogDebug("Deleting existing alias '{Alias}'", alias);
+                targetStore.DeleteEntry(alias);
+                if (remove) return SavePkcs12Store(targetStore, passwordChars);
             }
             else if (remove)
             {
-                // If alias does not exist and remove is true, return existingStore
-                _logger.LogDebug("Alias '{Alias}' does not exist in existingPkcs12Store, nothing to remove", alias);
-                using var existingPkcs12StoreMs = new MemoryStream();
-                existingPkcs12Store.Save(existingPkcs12StoreMs,
-                    string.IsNullOrEmpty(existingStorePassword)
-                        ? Array.Empty<char>()
-                        : existingStorePassword.ToCharArray(),
-                    new SecureRandom());
-
-                _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-                _logger.MethodExit(MsLogLevel.Debug);
-                return existingPkcs12StoreMs.ToArray();
+                _logger.LogDebug("Alias '{Alias}' not found, nothing to remove", alias);
+                return SavePkcs12Store(targetStore, passwordChars);
             }
         }
-        else
+
+        // Parse the new certificate from PKCS12 bytes
+        var newCert = LoadNewCertificate(storeBuilder, newPkcs12Bytes, newCertPassword, alias);
+
+        // Add entries from new certificate to target store
+        foreach (var al in newCert.Aliases)
         {
-            _logger.LogDebug("Attempting to create new Pkcs12Store");
-            createdNewStore = true;
+            if (newCert.IsKeyEntry(al))
+            {
+                var keyEntry = newCert.GetKey(al);
+                var certificateChain = newCert.GetCertificateChain(al);
+                if (!includeChain)
+                    certificateChain = [new X509CertificateEntry(certificateChain[0].Certificate)];
+
+                if (targetStore.ContainsAlias(alias))
+                    targetStore.DeleteEntry(alias);
+
+                targetStore.SetKeyEntry(alias, keyEntry, certificateChain);
+            }
+            else
+            {
+                targetStore.SetCertificateEntry(alias, newCert.GetCertificate(alias));
+            }
         }
 
+        return SavePkcs12Store(targetStore, passwordChars);
+    }
+
+    /// <summary>
+    /// Loads a new certificate from PKCS12 bytes, falling back to raw X509 parsing.
+    /// </summary>
+    private Pkcs12Store LoadNewCertificate(Pkcs12StoreBuilder storeBuilder, byte[] pkcs12Bytes, string password, string alias)
+    {
         var newCert = storeBuilder.Build();
 
         try
         {
-            _logger.LogDebug("Attempting to load pkcs12 bytes");
-            using var newPkcs12Ms = new MemoryStream(newPkcs12Bytes);
-            newCert.Load(newPkcs12Ms,
-                string.IsNullOrEmpty(newCertPassword) ? Array.Empty<char>() : newCertPassword.ToCharArray());
-            _logger.LogDebug("pkcs12 bytes loaded");
+            using var ms = new MemoryStream(pkcs12Bytes);
+            newCert.Load(ms, PasswordToChars(password));
         }
         catch (Exception)
         {
-            _logger.LogError("Unknown error loading pkcs12 bytes, attempting to parse certificate");
-            var certificateParser = new X509CertificateParser();
-            var certificate = certificateParser.ReadCertificate(newPkcs12Bytes);
-            _logger.LogDebug("Certificate parse successful, attempting to create new Pkcs12Store from certificate");
-
-            // create new Pkcs12Store from certificate
-            storeBuilder = new Pkcs12StoreBuilder();
+            _logger.LogDebug("PKCS12 load failed, parsing as raw X509 certificate");
+            var certificate = new X509CertificateParser().ReadCertificate(pkcs12Bytes);
             newCert = storeBuilder.Build();
-
-            _logger.LogDebug("Attempting to set PKCS12 certificate entry using alias '{Alias}'", alias);
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));
-            _logger.LogDebug("PKCS12 certificate entry set using alias '{Alias}'", alias);
         }
 
+        return newCert;
+    }
 
-        // Iterate through newCert aliases. WARNING: This assumes there is only one alias in the newCert
-        _logger.LogTrace("Iterating through PKCS12 certificate aliases");
-        foreach (var al in newCert.Aliases)
-        {
-            _logger.LogTrace("Handling alias {Alias}", al);
-            if (newCert.IsKeyEntry(al))
-            {
-                _logger.LogDebug("Attempting to parse key for alias {Alias}", al);
-                var keyEntry = newCert.GetKey(al);
-                _logger.LogDebug("Key parsed for alias {Alias}", al);
+    /// <summary>
+    /// Saves a PKCS12 store to a byte array.
+    /// </summary>
+    private static byte[] SavePkcs12Store(Pkcs12Store store, char[] password)
+    {
+        using var ms = new MemoryStream();
+        store.Save(ms, password, new SecureRandom());
+        return ms.ToArray();
+    }
 
-                _logger.LogDebug("Attempting to parse certificate chain for alias {Alias}", al);
-                var certificateChain = newCert.GetCertificateChain(al);
-                if (!includeChain)
-                {
-                    _logger.LogDebug("includeChain is false, reducing certificate chain to only the end-entity certificate");
-                    // If includeChain is false, reduce certificate chain to only the end-entity certificate
-                    certificateChain =
-                    [
-                        new X509CertificateEntry(certificateChain[0].Certificate)
-                    ];
-                }
-                _logger.LogDebug("Certificate chain parsed for alias {Alias}", al);
-                if (createdNewStore)
-                {
-                    // If createdNewStore is true, create a new store
-                    _logger.LogDebug("Attempting to set key entry for alias '{Alias}'", alias);
-                    pkcs12StoreNew.SetKeyEntry(
-                        alias,
-                        keyEntry,
-                        certificateChain
-                    );
-                }
-                else
-                {
-                    // If createdNewStore is false, add to existingPkcs12Store
-                    // check if alias exists in existingPkcs12Store
-                    if (existingPkcs12Store.ContainsAlias(alias))
-                    {
-                        _logger.LogDebug("Removing existing entry for alias '{Alias}'", alias);
-                        // If alias exists, delete it from existingPkcs12Store
-                        existingPkcs12Store.DeleteEntry(alias);
-                    }
-
-                    _logger.LogDebug("Attempting to set key entry for alias '{Alias}'", alias);
-                    existingPkcs12Store.SetKeyEntry(
-                        alias,
-                        keyEntry,
-                        // string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
-                        certificateChain
-                    );
-                }
-            }
-            else
-            {
-                if (createdNewStore)
-                {
-                    _logger.LogDebug("Attempting to set certificate entry for alias '{Alias}'", alias);
-                    pkcs12StoreNew.SetCertificateEntry(alias, newCert.GetCertificate(alias));
-                }
-                else
-                {
-                    _logger.LogDebug("Attempting to set certificate entry for alias '{Alias}'", alias);
-                    existingPkcs12Store.SetCertificateEntry(alias, newCert.GetCertificate(alias));
-                }
-            }
-        }
-
-        using var outStream = new MemoryStream();
-        if (createdNewStore)
-        {
-            _logger.LogDebug("Attempting to save new Pkcs12Store");
-            pkcs12StoreNew.Save(outStream,
-                string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
-                new SecureRandom());
-            _logger.LogDebug("New Pkcs12Store saved");
-        }
-        else
-        {
-            _logger.LogDebug("Attempting to save existing Pkcs12Store");
-            existingPkcs12Store.Save(outStream,
-                string.IsNullOrEmpty(existingStorePassword) ? Array.Empty<char>() : existingStorePassword.ToCharArray(),
-                new SecureRandom());
-            _logger.LogDebug("Existing Pkcs12Store saved");
-        }
-        // Return existingPkcs12Store as byte[]
-
-        _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-        _logger.MethodExit(MsLogLevel.Debug);
-        return outStream.ToArray();
+    /// <summary>
+    /// Converts a password string to char array, handling null/empty.
+    /// </summary>
+    private static char[] PasswordToChars(string password)
+    {
+        return string.IsNullOrEmpty(password) ? Array.Empty<char>() : password.ToCharArray();
     }
 }
