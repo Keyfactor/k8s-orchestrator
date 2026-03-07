@@ -9,7 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Serializers.K8SPKCS12;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Org.BouncyCastle.Pkcs;
 using Xunit;

@@ -288,12 +288,23 @@ public abstract class SecretHandlerBase : ISecretHandler
         Dictionary<string, byte[]> inventory,
         string defaultFieldName)
     {
+        var result = ParseKeystoreAliasCore(alias, inventory, defaultFieldName);
+        Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'",
+            alias, result.fieldName ?? "(none)", result.certAlias);
+        return result;
+    }
+
+    /// <summary>
+    /// Core alias parsing logic, separated for testability.
+    /// </summary>
+    internal static (string fieldName, string certAlias, byte[] existingData, string existingKeyName) ParseKeystoreAliasCore(
+        string alias,
+        Dictionary<string, byte[]> inventory,
+        string defaultFieldName)
+    {
         var separatorIdx = alias.IndexOf('/');
         var fieldName = separatorIdx > 0 ? alias[..separatorIdx] : null;
         var certAlias = separatorIdx > 0 ? alias[(separatorIdx + 1)..] : alias;
-
-        Logger.LogDebug("Parsed alias '{Alias}' → field='{Field}', certAlias='{CertAlias}'",
-            alias, fieldName ?? "(none)", certAlias);
 
         byte[] existingData = null;
         string existingKeyName = fieldName ?? defaultFieldName;
