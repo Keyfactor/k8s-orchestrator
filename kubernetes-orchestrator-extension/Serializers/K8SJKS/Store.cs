@@ -248,6 +248,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
+        _logger.MethodEntry(MsLogLevel.Debug);
         _logger.LogDebug("CreateOrUpdateJks: alias='{Alias}', remove={Remove}, includeChain={IncludeChain}", alias, remove, includeChain);
         var passwordChars = PasswordToChars(existingStorePassword);
 
@@ -262,11 +263,16 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             {
                 _logger.LogDebug("Deleting existing alias '{Alias}'", alias);
                 targetStore.DeleteEntry(alias);
-                if (remove) return SaveJksStore(targetStore, passwordChars);
+                if (remove)
+                {
+                    _logger.MethodExit(MsLogLevel.Debug);
+                    return SaveJksStore(targetStore, passwordChars);
+                }
             }
             else if (remove)
             {
                 _logger.LogDebug("Alias '{Alias}' not found, nothing to remove", alias);
+                _logger.MethodExit(MsLogLevel.Debug);
                 return SaveJksStore(targetStore, passwordChars);
             }
         }
@@ -297,7 +303,9 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             }
         }
 
-        return SaveJksStore(targetStore, passwordChars);
+        var result = SaveJksStore(targetStore, passwordChars);
+        _logger.MethodExit(MsLogLevel.Debug);
+        return result;
     }
 
     /// <summary>
@@ -305,10 +313,12 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
     /// </summary>
     private void LoadExistingJksStore(JksStore jksStore, byte[] storeBytes, string password)
     {
+        _logger.MethodEntry(MsLogLevel.Debug);
         try
         {
             using var ms = new MemoryStream(storeBytes);
             jksStore.Load(ms, PasswordToChars(password));
+            _logger.MethodExit(MsLogLevel.Debug);
         }
         catch (Exception ex)
         {
@@ -340,6 +350,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
     /// </summary>
     private Pkcs12Store LoadNewCertificate(byte[] pkcs12Bytes, string password, string alias)
     {
+        _logger.MethodEntry(MsLogLevel.Debug);
         var storeBuilder = new Pkcs12StoreBuilder();
         var newCert = storeBuilder.Build();
 
@@ -356,6 +367,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));
         }
 
+        _logger.MethodExit(MsLogLevel.Debug);
         return newCert;
     }
 

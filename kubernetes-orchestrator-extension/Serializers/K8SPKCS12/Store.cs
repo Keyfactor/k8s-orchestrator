@@ -140,6 +140,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
+        _logger.MethodEntry(MsLogLevel.Debug);
         _logger.LogDebug("CreateOrUpdatePkcs12: alias='{Alias}', remove={Remove}, includeChain={IncludeChain}", alias, remove, includeChain);
         var passwordChars = PasswordToChars(existingStorePassword);
 
@@ -157,11 +158,16 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             {
                 _logger.LogDebug("Deleting existing alias '{Alias}'", alias);
                 targetStore.DeleteEntry(alias);
-                if (remove) return SavePkcs12Store(targetStore, passwordChars);
+                if (remove)
+                {
+                    _logger.MethodExit(MsLogLevel.Debug);
+                    return SavePkcs12Store(targetStore, passwordChars);
+                }
             }
             else if (remove)
             {
                 _logger.LogDebug("Alias '{Alias}' not found, nothing to remove", alias);
+                _logger.MethodExit(MsLogLevel.Debug);
                 return SavePkcs12Store(targetStore, passwordChars);
             }
         }
@@ -190,7 +196,9 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             }
         }
 
-        return SavePkcs12Store(targetStore, passwordChars);
+        var result = SavePkcs12Store(targetStore, passwordChars);
+        _logger.MethodExit(MsLogLevel.Debug);
+        return result;
     }
 
     /// <summary>
@@ -198,6 +206,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
     /// </summary>
     private Pkcs12Store LoadNewCertificate(Pkcs12StoreBuilder storeBuilder, byte[] pkcs12Bytes, string password, string alias)
     {
+        _logger.MethodEntry(MsLogLevel.Debug);
         var newCert = storeBuilder.Build();
 
         try
@@ -213,6 +222,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));
         }
 
+        _logger.MethodExit(MsLogLevel.Debug);
         return newCert;
     }
 
