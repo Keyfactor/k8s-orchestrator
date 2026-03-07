@@ -77,15 +77,30 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
         if (!_fixture.SkipCleanup)
         {
-            foreach (var (secretName, ns) in _createdSecrets)
+            // Batch delete using label selector (faster than individual deletions)
+            var labelSelector = $"{ManagedByLabelKey}={TestManagedByLabel},{TestRunIdLabelKey}={_testRunId}";
+            foreach (var ns in new[] { TestNamespace1, TestNamespace2 })
             {
                 try
                 {
-                    await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, ns);
+                    await _k8sClient.CoreV1.DeleteCollectionNamespacedSecretAsync(
+                        ns, labelSelector: labelSelector);
                 }
                 catch (Exception)
                 {
-                    // Ignore cleanup errors
+                    // Fall back to individual deletion
+                    foreach (var (secretName, secretNs) in _createdSecrets)
+                    {
+                        if (secretNs != ns) continue;
+                        try
+                        {
+                            await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, ns);
+                        }
+                        catch (Exception)
+                        {
+                            // Ignore cleanup errors
+                        }
+                    }
                 }
             }
         }

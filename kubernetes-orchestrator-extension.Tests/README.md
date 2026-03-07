@@ -42,6 +42,29 @@ make test-kubeclient
 make testall
 ```
 
+### Coverage
+```bash
+make test-coverage          # Run all tests with coverage collection + HTML report generation
+make test-coverage-open     # Open HTML coverage report in browser
+make test-coverage-install  # Install reportgenerator tool (one-time setup)
+```
+
+Coverage reports are generated to `coverage/` using Coverlet and ReportGenerator.
+
+### CI / Utility
+```bash
+make test-ci                       # CI-optimized: single framework (net8.0), faster
+make test-cluster-cleanup          # Clean up test namespaces and CSRs
+make test-all-with-cleanup         # Run all tests with pre/post cleanup
+make test-integration-no-cleanup   # Run integration tests, leave secrets for inspection
+make test-cluster-setup            # Display cluster setup instructions
+```
+
+### Interactive
+```bash
+make test                   # Interactive single test selection (uses fzf)
+```
+
 ---
 
 ## K8SJKS - Java Keystore Store Type
@@ -757,12 +780,175 @@ Tests to ensure sensitive data is never logged.
 
 ---
 
+## SecretHandlerBase Tests
+
+Regression tests for shared handler logic extracted to `SecretHandlerBase`.
+
+### Unit Tests (`Unit/SecretHandlerBaseTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **IsSecretEmpty** | |
+| `IsSecretEmpty_NullSecret_ReturnsTrue` | Null secret is considered empty |
+| `IsSecretEmpty_NullData_ReturnsTrue` | Secret with null data is empty |
+| `IsSecretEmpty_EmptyDataDictionary_ReturnsTrue` | Secret with empty data dict is empty |
+| `IsSecretEmpty_TlsSecretWithEmptyFields_ReturnsTrue` | TLS secret with zero-length fields (from create-if-missing) is empty |
+| `IsSecretEmpty_OpaqueSecretWithEmptyFields_ReturnsTrue` | Opaque secret with zero-length fields is empty |
+| `IsSecretEmpty_AllNullValues_ReturnsTrue` | All null values means empty |
+| `IsSecretEmpty_MixedNullAndEmptyValues_ReturnsTrue` | Mix of null and empty values means empty |
+| `IsSecretEmpty_TlsSecretWithCert_ReturnsFalse` | Secret with certificate data is NOT empty |
+| `IsSecretEmpty_TlsSecretWithBothFields_ReturnsFalse` | Secret with both cert and key is NOT empty |
+| `IsSecretEmpty_OpaqueSecretWithCertData_ReturnsFalse` | Opaque secret with data is NOT empty |
+| `IsSecretEmpty_SecretWithSingleByteValue_ReturnsFalse` | Even a single byte makes it non-empty |
+| `IsSecretEmpty_OneEmptyOneNonEmpty_ReturnsFalse` | If ANY field has data, not empty |
+| **ParseKeystoreAliasCore** | |
+| `ParseKeystoreAliasCore_NoSeparator_*` | Alias without `/` returns null fieldName |
+| `ParseKeystoreAliasCore_WithSeparator_SplitsCorrectly` | `field/alias` splits at `/` |
+| `ParseKeystoreAliasCore_FieldPresentInInventory_*` | Returns existing keystore data when field matches |
+| `ParseKeystoreAliasCore_NullInventory_UsesDefaultFieldName` | Falls back to default field name |
+| **ValidateCertOnlyUpdateCore** | |
+| `ValidateCertOnlyUpdateCore_NullSecret_DoesNotThrow` | No-op when secret is null |
+| `ValidateCertOnlyUpdateCore_NullData_DoesNotThrow` | No-op when data is null |
+| `ValidateCertOnlyUpdateCore_FieldHasCertNotKey_DoesNotThrow` | Certificate content (not key) is OK |
+| `ValidateCertOnlyUpdateCore_TlsKeyHasPrivateKey_Throws` | Existing private key blocks cert-only update |
+| `ValidateCertOnlyUpdateCore_RsaPrivateKeyHeader_Throws` | RSA private key header also detected |
+| `ValidateCertOnlyUpdateCore_OpaqueKeyFields_ThrowsOnFirstMatch` | Checks all opaque key field names |
+
+---
+
+## SecretHandlerFactory Tests
+
+### Unit Tests (`Unit/SecretHandlerFactoryTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| `CreateHandler_ValidStoreType_ReturnsCorrectHandler` | Each store type maps to correct handler class |
+| `CreateHandler_InvalidStoreType_ThrowsException` | Unknown store type throws |
+
+---
+
+## CertificateOperations Tests
+
+### Unit Tests (`Unit/CertificateOperationsTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| `ReadDerCertificate_ValidBase64_ReturnsCert` | DER parsing from base64 |
+| `ReadPemCertificate_ValidPem_ReturnsCert` | PEM parsing returns certificate |
+| `ReadPemCertificate_InvalidPem_ReturnsNull` | Invalid PEM returns null (no throw) |
+| `LoadCertificateChain_MultiCert_ReturnsAll` | Multi-cert PEM returns full chain |
+| `ConvertToPem_Certificate_ReturnsPemString` | Certificate to PEM conversion |
+| `ExtractPrivateKeyAsPem_*` | Private key export from PKCS12 stores |
+| `ExtractPrivateKeyAsPem_EmptyStore_ThrowsException` | Empty store throws ArgumentException |
+| `ExtractPrivateKeyAsPem_DifferentKeyTypes_ReturnsKeyPem` | RSA and EC key types |
+
+---
+
+## Services Tests
+
+### StoreConfigurationParser Tests (`Services/StoreConfigurationParserTests.cs`)
+
+Tests for parsing store properties JSON into typed configuration objects.
+
+### PasswordResolver Tests (`Services/PasswordResolverTests.cs`)
+
+Tests for PAM-aware password resolution and buddy-secret password lookups.
+
+### StorePathResolver Tests (`Services/StorePathResolverTests.cs`)
+
+Tests for parsing `namespace/secretName` store paths.
+
+### KeystoreOperations Tests (`Services/KeystoreOperationsTests.cs`)
+
+Tests for JKS/PKCS12 keystore manipulation operations.
+
+---
+
+## Utility Tests
+
+### PrivateKeyFormatUtilities Tests (`Utilities/PrivateKeyFormatUtilitiesTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| `ExportPrivateKeyAsPem_Pkcs8_*` | PKCS8 PEM export for all key types |
+| `ExportPrivateKeyAsPem_Pkcs1_*` | PKCS1 PEM export for RSA/EC/DSA |
+| `GetAlgorithmName_*` | Key type detection (RSA, EC, DSA, Ed25519, Ed448) |
+
+### LoggingUtilities Tests (`Unit/Utilities/LoggingUtilitiesTests.cs`)
+
+Tests for safe logging helpers (certificate summary, private key redaction).
+
+### KubeconfigParser Tests (`Unit/Clients/KubeconfigParserTests.cs`)
+
+Tests for kubeconfig JSON parsing and validation.
+
+### SecretOperations Tests (`Clients/SecretOperationsTests.cs`)
+
+Tests for Kubernetes secret CRUD operation helpers.
+
+---
+
+## Reenrollment Tests
+
+### Unit Tests (`Unit/ReenrollmentTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| `Reenrollment_AllStoreTypes_ReturnsNotImplemented` | All 6 store type reenrollment stubs return failure |
+
+---
+
+## Job Base Tests
+
+### PAMUtilities Tests (`Unit/Jobs/PAMUtilitiesTests.cs`)
+
+Tests for PAM credential resolution integration.
+
+### DiscoveryBase Tests (`Unit/Jobs/DiscoveryBaseTests.cs`)
+
+Tests for shared discovery job logic.
+
+### ManagementBase Tests (`Unit/Jobs/ManagementBaseTests.cs`)
+
+Tests for shared management job logic and routing.
+
+### JobBase Models Tests (`Unit/JobBaseModelsTests.cs`)
+
+Tests for DTO models (KubernetesCertStore, KubeCreds, Cert).
+
+### K8SCertificateContext Tests (`Unit/K8SCertificateContextTests.cs`)
+
+Tests for certificate context model with computed properties.
+
+---
+
+## Enum Tests
+
+### SecretTypes Tests (`Enums/SecretTypesTests.cs`)
+
+Tests for SecretType and StoreType enum parsing, conversion, and edge cases.
+
+---
+
 ## Test Infrastructure
+
+### Test Counts (as of 2026-03-06)
+
+- **Unit Tests**: 1,156
+- **Integration Tests**: 215
+- **Total**: 1,371
+- **Frameworks**: net8.0 and net10.0 (tests run on both)
 
 ### Helpers
 
 - **`CertificateTestHelper.cs`** - Generates test certificates with various key types (RSA, EC, DSA, Ed25519, Ed448) and chain configurations
+- **`CachedCertificateProvider.cs`** - Thread-safe cache for generated certificates; prevents expensive key generation in repeated tests
 - **`SkipUnlessAttribute.cs`** - Custom xUnit attribute to skip tests unless specific environment variables are set
+
+### Fixtures
+
+- **`IntegrationTestFixture.cs`** - Shared per-collection fixture providing kubeconfig, K8s client, and PAM resolver
+- **`IntegrationTestBase.cs`** - Base class for integration tests with namespace creation, secret tracking, and batch cleanup
 
 ### Environment Variables
 
