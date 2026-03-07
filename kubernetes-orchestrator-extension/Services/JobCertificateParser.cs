@@ -69,6 +69,9 @@ public class JobCertificateParser
 
     /// <summary>
     /// Detects certificate format and routes to the appropriate parser.
+    /// Order: PKCS12 → PEM → DER → error.
+    /// PEM is checked before DER because X509CertificateParser (used by IsDerFormat)
+    /// can also parse PEM data, which would cause multi-cert PEM chains to be truncated.
     /// </summary>
     private K8SJobCertificate DetectAndRoute(byte[] certBytes, string password,
         K8SJobCertificate jobCert, bool includeCertChain, dynamic config)
@@ -81,19 +84,20 @@ public class JobCertificateParser
                 certBytes, password, jobCert, config);
         }
 
-        // Check DER format
-        if (CertificateUtilities.IsDerFormat(certBytes))
-        {
-            _logger.LogDebug("Certificate data is in DER format (no private key)");
-            return ParseDerCertificate(certBytes, jobCert, includeCertChain);
-        }
-
-        // Check PEM format
+        // Check PEM format before DER — X509CertificateParser (used by IsDerFormat) can also
+        // parse PEM data, so PEM must be detected first to handle multi-cert chains correctly.
         var dataStr = Encoding.UTF8.GetString(certBytes);
         if (dataStr.Contains("-----BEGIN CERTIFICATE-----"))
         {
             _logger.LogDebug("Certificate data is in PEM format");
             return ParsePemCertificate(dataStr, jobCert);
+        }
+
+        // Check DER format
+        if (CertificateUtilities.IsDerFormat(certBytes))
+        {
+            _logger.LogDebug("Certificate data is in DER format (no private key)");
+            return ParseDerCertificate(certBytes, jobCert, includeCertChain);
         }
 
         _logger.LogError("Failed to parse certificate data as PKCS12, DER, or PEM format");

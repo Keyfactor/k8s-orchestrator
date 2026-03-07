@@ -129,82 +129,21 @@ public class Pkcs12SecretHandler : SecretHandlerBase
     /// <inheritdoc />
     public override List<InventoryEntry> GetInventoryEntries(long jobId)
     {
-        LogMethodEntry(nameof(GetInventoryEntries));
+        var aliasedCerts = GetCertificatesWithAliases(jobId);
+        var entries = new List<InventoryEntry>();
 
-        try
+        foreach (var kvp in aliasedCerts)
         {
-            var keys = BuildAllowedKeys(DefaultAllowedKeys);
-            var k8sData = KubeClient.GetPkcs12Secret(
-                Context.KubeSecretName,
-                Context.KubeNamespace,
-                "", "",
-                keys.ToList());
-
-            var serializer = new Pkcs12CertificateStoreSerializer(null);
-            var entries = new List<InventoryEntry>();
-
-            foreach (var (keyName, keyBytes) in k8sData.Inventory)
+            entries.Add(new InventoryEntry
             {
-                var password = ResolvePassword(k8sData.Secret);
-                var store = serializer.DeserializeRemoteCertificateStore(keyBytes, keyName, password);
-
-                // Check if ANY entry in the store has a private key (global flag)
-                var storeHasPrivateKey = store.Aliases.Any(a => store.IsKeyEntry(a));
-
-                foreach (var alias in store.Aliases)
-                {
-                    var certsList = new List<string>();
-                    var isKeyEntry = store.IsKeyEntry(alias);
-
-                    if (isKeyEntry)
-                    {
-                        var certChain = store.GetCertificateChain(alias);
-                        if (certChain == null) continue;
-
-                        foreach (var cert in certChain)
-                        {
-                            var pem = new StringBuilder();
-                            pem.AppendLine("-----BEGIN CERTIFICATE-----");
-                            pem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
-                            pem.AppendLine("-----END CERTIFICATE-----");
-                            certsList.Add(pem.ToString());
-                        }
-                    }
-                    else
-                    {
-                        var certEntry = store.GetCertificate(alias);
-                        if (certEntry == null) continue;
-
-                        var pem = new StringBuilder();
-                        pem.AppendLine("-----BEGIN CERTIFICATE-----");
-                        pem.AppendLine(Convert.ToBase64String(certEntry.Certificate.GetEncoded()));
-                        pem.AppendLine("-----END CERTIFICATE-----");
-                        certsList.Add(pem.ToString());
-                    }
-
-                    var fullAlias = $"{keyName}/{alias}";
-                    entries.Add(new InventoryEntry
-                    {
-                        Alias = fullAlias,
-                        Certificates = certsList,
-                        // PKCS12 inventory uses a global flag: if ANY entry has a private key,
-                        // ALL entries report HasPrivateKey=true
-                        HasPrivateKey = storeHasPrivateKey
-                    });
-                }
-            }
-
-            return entries;
+                Alias = kvp.Key,
+                Certificates = kvp.Value,
+                // PKCS12 keystores typically contain private keys
+                HasPrivateKey = true
+            });
         }
-        catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
-        {
-            throw new StoreNotFoundException(
-                $"PKCS12 keystore secret '{Context.KubeSecretName}' was not found in namespace '{Context.KubeNamespace}'.");
-        }
-        finally
-        {
-            LogMethodExit(nameof(GetInventoryEntries));
-        }
+
+        return entries;
     }
 
     /// <inheritdoc />
