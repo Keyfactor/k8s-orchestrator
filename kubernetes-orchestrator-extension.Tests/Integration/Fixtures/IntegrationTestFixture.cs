@@ -102,6 +102,7 @@ public class IntegrationTestFixture : IAsyncLifetime
         var config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
             KubeconfigPath,
             currentContext: ClusterContext);
+        config.HttpClientTimeout = TimeSpan.FromMinutes(5);
         return new Kubernetes(config);
     }
 
