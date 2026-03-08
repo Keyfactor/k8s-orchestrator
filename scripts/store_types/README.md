@@ -100,9 +100,5 @@ make store-types-gen-scripts   # uses doctool if installed, otherwise python3
 
 Or directly:
 ```bash
-# via doctool
 doctool generate-store-type-scripts --manifest-path integration-manifest.json --output-dir scripts/store_types
-
-# via standalone script
-python3 scripts/store_types/generate_scripts.py
 ```

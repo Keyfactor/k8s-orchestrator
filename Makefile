@@ -992,14 +992,9 @@ api-get-jobs: ## Get recent orchestrator jobs (last 10)
 ##@ Store Type Management
 
 .PHONY: store-types-gen-scripts
-store-types-gen-scripts: ## Regenerate store type scripts from integration-manifest.json
-	@if command -v doctool &> /dev/null; then \
-		doctool generate-store-type-scripts --manifest-path integration-manifest.json --output-dir scripts/store_types; \
-	elif command -v python3 &> /dev/null; then \
-		python3 scripts/store_types/generate_scripts.py; \
-	else \
-		echo "ERROR: doctool or python3 required"; exit 1; \
-	fi
+store-types-gen-scripts: ## Regenerate store type scripts from integration-manifest.json (requires doctool)
+	@if ! command -v doctool &> /dev/null; then echo "ERROR: doctool required — see https://github.com/Keyfactor/doctool"; exit 1; fi
+	doctool generate-store-type-scripts --manifest-path integration-manifest.json --output-dir scripts/store_types
 
 .PHONY: store-types-create
 store-types-create: ## Create all 7 store types in Command via kfutil (reads integration-manifest.json)
