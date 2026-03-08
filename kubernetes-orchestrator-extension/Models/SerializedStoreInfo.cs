@@ -9,9 +9,18 @@ using System.Security.Cryptography.X509Certificates;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Models;
 
+/// <summary>
+/// Data model containing the serialized contents of a certificate store along with its path.
+/// Used to transport serialized store data between operations.
+/// </summary>
+/// <remarks>
+/// Inherits from X509Certificate2 to allow treating the store info as a certificate when needed.
+/// </remarks>
 internal class SerializedStoreInfo : X509Certificate2
 {
+    /// <summary>Full file path where the serialized store should be written.</summary>
     public string FilePath { get; set; }
 
+    /// <summary>The serialized store contents as raw bytes.</summary>
     public byte[] Contents { get; set; }
 }
