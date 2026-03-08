@@ -8,35 +8,6 @@
 ## Features
 - feat(terraform): Add reusable Terraform modules for all 7 store types to support dev/test cluster provisioning.
 
-## Bug Fixes
-- fix(management): Fix alias routing for `K8SJKS` and `K8SPKCS12` — `HandleAdd` and `HandleRemove` now correctly extract the field name and cert alias from `<fieldName>/<certAlias>` format instead of passing the full alias string to the keystore serializer.
-- fix(management): Route `CertStoreOperationType.Create` to `HandleAdd` so "create if missing" jobs work correctly. Fix `CreateEmptyStore` to use the buddy-secret password when configured.
-- fix(management): Correct buddy password path parsing in `K8SJKS` and `K8SPKCS12` handlers — `<namespace>/<secretName>` is now parsed correctly.
-- fix(store-type/k8scert): Properly include certificate chain when inventorying CSRs.
-- fix(client): Handle null return from `SecretOperations.GetSecret()` — throw `StoreNotFoundException` instead of null reference exception.
-- fix(security): Remove password length from redacted log output to avoid leaking information.
-- fix(handlers): Remove unused exception variable in `OpaqueSecretHandler` and `TlsSecretHandler` catch blocks.
-
-## Refactoring
-- refactor: Extract handler pattern — secret operations for each store type are now delegated to dedicated handler classes (`OpaqueSecretHandler`, `TlsSecretHandler`, `JksSecretHandler`, `Pkcs12SecretHandler`, `ClusterSecretHandler`, `NamespaceSecretHandler`, `CertificateSecretHandler`) via `SecretHandlerFactory`.
-- refactor: Extract `CertificateChainExtractor`, `StoreConfigurationParser`, `PasswordResolver`, `JobCertificateParser`, and `StorePathResolver` services from `JobBase` and `KubeClient`, reducing `JobBase` by ~1000 lines.
-- refactor: Extract `SecretOperations` and `CertificateOperations` from `KubeClient` — Kubernetes CRUD operations are now separated into dedicated classes.
-- refactor: Extract `ParseKeystoreAlias` helper to `SecretHandlerBase`, removing ~1200 lines of duplicated alias-parsing logic.
-- refactor: Lift `ValidateCertOnlyUpdate` to `SecretHandlerBase` — cert-only update validation is now shared across TLS and Opaque handlers.
-- refactor: Simplify `JksSecretHandler` and `Pkcs12SecretHandler` `CreateOrUpdate` methods by extracting `LoadExistingStore`, `LoadNewCertificate`, `SaveStore`, and `PasswordToChars` helpers.
-- refactor: Convert all log string concatenation to structured logging throughout `JobBase` and `KubeClient`.
-- refactor: Replace hardcoded polling delays in `K8SCert` integration tests with proper condition polling.
-- refactor: Remove dead `X509Certificate2Collection` methods and `GetKeyBytes(X509Certificate2)`.
-
-## Tests
-- test: Add comprehensive unit test suite — `StoreConfigurationParser`, `LoggingUtilities`, `StoreNotFoundException`, `CertificateUtilities`, `KubeconfigParser`, `K8SJobCertificate`, `K8SCertificateContext`, `DiscoveryBase`, `PAMUtilities`, `ParseKeystoreAliasCore`, and alias routing regression tests for `K8SJKS`/`K8SPKCS12`.
-- test: Add integration tests for `KubeCertificateManagerClient`, multi-alias and buddy password scenarios for `K8SJKS` and `K8SPKCS12`.
-- test: Add `CachedCertificateProvider` to eliminate redundant certificate generation across test runs, significantly reducing test suite execution time.
-
-## Chores
-- chore(ci): Migrate to Keyfactor Actions v6.
-- chore(ci): Configure signoff notifications via starter workflow.
-
 # 1.3.0
 
 ## Features
