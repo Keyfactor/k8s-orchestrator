@@ -989,6 +989,54 @@ api-get-jobs: ## Get recent orchestrator jobs (last 10)
 		-H "x-keyfactor-requested-with: APIClient" | \
 		jq -r '.[] | "\(.JobId) | \(.JobTypeName) | \(.Status) | \(.Requested)"'
 
+##@ Store Type Management
+
+.PHONY: store-types-gen-scripts
+store-types-gen-scripts: ## Regenerate store type scripts from integration-manifest.json
+	@if command -v doctool &> /dev/null; then \
+		doctool generate-store-type-scripts --manifest-path integration-manifest.json --output-dir scripts/store_types; \
+	elif command -v python3 &> /dev/null; then \
+		python3 scripts/store_types/generate_scripts.py; \
+	else \
+		echo "ERROR: doctool or python3 required"; exit 1; \
+	fi
+
+.PHONY: store-types-create
+store-types-create: ## Create all 7 store types in Command via kfutil (reads integration-manifest.json)
+	@if ! command -v kfutil &> /dev/null; then \
+		echo "ERROR: kfutil not found. See https://github.com/Keyfactor/kfutil#quickstart"; \
+		exit 1; \
+	fi
+	kfutil store-types create --from-file integration-manifest.json
+
+.PHONY: store-types-update
+store-types-update: ## Pull store type definitions from Command and refresh integration-manifest.json
+	@if ! command -v kfutil &> /dev/null; then \
+		echo "ERROR: kfutil not found. See https://github.com/Keyfactor/kfutil#quickstart"; \
+		exit 1; \
+	fi
+	kfutil store-types get --name K8SCert    --output-to-integration-manifest
+	kfutil store-types get --name K8SCluster --output-to-integration-manifest
+	kfutil store-types get --name K8SJKS     --output-to-integration-manifest
+	kfutil store-types get --name K8SNS      --output-to-integration-manifest
+	kfutil store-types get --name K8SPKCS12  --output-to-integration-manifest
+	kfutil store-types get --name K8SSecret  --output-to-integration-manifest
+	kfutil store-types get --name K8STLSSecr --output-to-integration-manifest
+	@$(MAKE) store-types-split
+
+.PHONY: store-types-split
+store-types-split: ## Split integration-manifest.json into per-store-type JSON files
+	@if ! command -v jq &> /dev/null; then \
+		echo "ERROR: jq not found"; \
+		exit 1; \
+	fi; \
+	count=$$(jq '.about.orchestrator.store_types | length' integration-manifest.json); \
+	for i in $$(seq 0 $$((count - 1))); do \
+		name=$$(jq -r ".about.orchestrator.store_types[$$i].ShortName" integration-manifest.json); \
+		jq ".about.orchestrator.store_types[$$i]" integration-manifest.json > "$$name.json"; \
+		echo "  wrote $$name.json"; \
+	done
+
 ##@ Kubernetes CSR Management (for K8SCert testing)
 
 .PHONY: csr-create
