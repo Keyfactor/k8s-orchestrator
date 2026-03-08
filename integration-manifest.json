@@ -50,7 +50,7 @@
           "Name": "K8SCert",
           "ShortName": "K8SCert",
           "Capability": "K8SCert",
-          "ClientMachineDescription": "This can be anything useful, recommend using the k8s cluster name or identifier.",
+          "ClientMachineDescription": "The Kubernetes cluster name or identifier.",
           "LocalStore": false,
           "SupportedOperations": {
             "Add": false,
@@ -79,31 +79,13 @@
               "Required": true
             },
             {
-              "Name": "KubeNamespace",
-              "DisplayName": "KubeNamespace",
-        "Description": "The K8S namespace to use to manage the K8S secret object.",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "default",
-              "Required": false
-            },
-            {
               "Name": "KubeSecretName",
               "DisplayName": "KubeSecretName",
-        "Description": "The name of the K8S secret object.",
+              "Description": "The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "",
               "Required": false
-            },
-            {
-              "Name": "KubeSecretType",
-              "DisplayName": "KubeSecretType",
-        "Description": "This defaults to and must be `csr`",
-              "Type": "String",
-              "DependsOn": "",
-              "DefaultValue": "cert",
-              "Required": true
             }
           ],
           "EntryParameters": [],
@@ -142,7 +124,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -222,11 +204,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `jks`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `jks`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "jks",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "CertificateDataFieldName",
@@ -262,7 +244,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "StorePasswordPath",
@@ -337,7 +319,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -403,7 +385,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "CertificateDataFieldName",
@@ -470,11 +452,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "Kube Secret Type",
-              "Description": "This defaults to and must be `pkcs12`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `pkcs12`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "pkcs12",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "StorePasswordPath",
@@ -536,11 +518,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `secret`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `secret`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "secret",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "IncludeCertChain",
@@ -549,7 +531,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
@@ -629,11 +611,11 @@
             {
               "Name": "KubeSecretType",
               "DisplayName": "KubeSecretType",
-              "Description": "This defaults to and must be `tls_secret`",
+              "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `tls_secret`.",
               "Type": "String",
               "DependsOn": "",
               "DefaultValue": "tls_secret",
-              "Required": true
+              "Required": false
             },
             {
               "Name": "IncludeCertChain",
@@ -642,7 +624,7 @@
               "DependsOn": null,
               "DefaultValue": "true",
               "Required": false,
-              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed."
+              "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
             },
             {
               "Name": "SeparateChain",
