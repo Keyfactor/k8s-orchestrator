@@ -45,8 +45,6 @@ public abstract class JobBase
     protected internal bool IncludeCertChain { get; set; } =
         true; //Don't arbitrarily change this to false without specifying BREAKING CHANGE in the release notes.
 
-    protected internal bool SkipTlsValidation { get; set; }
-
     public K8SJobCertificate K8SCertificate { get; set; }
 
     protected internal string Capability { get; set; }
@@ -60,8 +58,6 @@ public abstract class JobBase
     protected internal string KubeSecretType { get; set; }
 
     protected internal string KubeSvcCreds { get; set; }
-
-    protected internal string KubeHost { get; set; }
 
     protected internal string CertificateDataFieldName { get; set; }
 
@@ -78,8 +74,6 @@ public abstract class JobBase
     protected string StorePassword { get; set; }
 
     public string ExtensionName => "K8S";
-
-    public string KubeCluster { get; set; }
 
     public bool PasswordIsK8SSecret { get; set; }
 
@@ -118,8 +112,8 @@ public abstract class JobBase
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.MethodEntry(MsLogLevel.Debug);
 
-        SkipTlsValidation = !config.UseSSL;
-        Logger.LogInformation("UseSSL={UseSSL}, SkipTlsValidation={Skip}", config.UseSSL, SkipTlsValidation);
+        var skipTlsValidation = !config.UseSSL;
+        Logger.LogInformation("UseSSL={UseSSL}, SkipTlsValidation={Skip}", config.UseSSL, skipTlsValidation);
 
         InitializeStoreCore(
             config.Capability,
@@ -355,9 +349,9 @@ public abstract class JobBase
 
         try
         {
-            KubeHost = KubeClient.GetHost();
-            KubeCluster = KubeClient.GetClusterName();
-            Logger.LogTrace("KubeHost: {KubeHost}, KubeCluster: {KubeCluster}", KubeHost, KubeCluster);
+            var host = KubeClient.GetHost();
+            var cluster = KubeClient.GetClusterName();
+            Logger.LogTrace("KubeHost: {KubeHost}, KubeCluster: {KubeCluster}", host, cluster);
         }
         catch (Exception ex)
         {
@@ -442,30 +436,20 @@ public abstract class JobBase
     /// <summary>
     /// Constructs the canonical store path based on cluster, namespace, secret type, and secret name.
     /// </summary>
-    public string GetStorePath()
+    private string GetStorePath()
     {
         Logger.MethodEntry(MsLogLevel.Debug);
         try
         {
-            var storePath = StorePath;
-
-            string secretType;
-            if (Capability.Contains("K8SNS"))
-                secretType = SecretTypes.Namespace;
-            else if (Capability.Contains("K8SCluster"))
-                secretType = SecretTypes.Cluster;
-            else
-                secretType = SecretTypes.Normalize(KubeSecretType);
-
+            var secretType = DeriveSecretType();
             Logger.LogTrace("secretType: {SecretType}", secretType);
 
             if (SecretTypes.IsNamespaceType(secretType))
             {
                 Logger.LogDebug("Kubernetes namespace resource type");
                 KubeSecretType = SecretTypes.Namespace;
-                storePath = $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
                 Logger.MethodExit(MsLogLevel.Debug);
-                return storePath;
+                return $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
             }
 
             if (SecretTypes.IsClusterType(secretType))
@@ -473,23 +457,12 @@ public abstract class JobBase
                 Logger.LogDebug("Kubernetes cluster resource type");
                 KubeSecretType = SecretTypes.Cluster;
                 Logger.MethodExit(MsLogLevel.Debug);
-                return storePath;
+                return StorePath;
             }
 
-            if (SecretTypes.IsSimpleSecretType(secretType))
-            {
-                secretType = SecretTypes.Opaque;
-            }
-            else if (SecretTypes.IsCsrType(secretType))
-            {
-                secretType = SecretTypes.Certificate;
-            }
-            else if (!SecretTypes.IsKeystoreType(secretType))
-            {
-                Logger.LogWarning("Unknown secret type '{SecretType}' will use value provided", secretType);
-            }
+            secretType = NormalizeSecretTypeForPath(secretType);
 
-            storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
+            var storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
             Logger.LogDebug("Returning storePath: {StorePath}", storePath);
             Logger.MethodExit(MsLogLevel.Debug);
             return storePath;
@@ -500,5 +473,27 @@ public abstract class JobBase
             Logger.MethodExit(MsLogLevel.Debug);
             return StorePath;
         }
+    }
+
+    /// <summary>
+    /// Derives the secret type from the capability string or normalizes from KubeSecretType.
+    /// </summary>
+    private string DeriveSecretType()
+    {
+        if (Capability.Contains("K8SNS")) return SecretTypes.Namespace;
+        if (Capability.Contains("K8SCluster")) return SecretTypes.Cluster;
+        return SecretTypes.Normalize(KubeSecretType);
+    }
+
+    /// <summary>
+    /// Normalizes secret type strings to their canonical form for path construction.
+    /// </summary>
+    private string NormalizeSecretTypeForPath(string secretType)
+    {
+        if (SecretTypes.IsSimpleSecretType(secretType)) return SecretTypes.Opaque;
+        if (SecretTypes.IsCsrType(secretType)) return SecretTypes.Certificate;
+        if (!SecretTypes.IsKeystoreType(secretType))
+            Logger.LogWarning("Unknown secret type '{SecretType}' will use value provided", secretType);
+        return secretType;
     }
 }
