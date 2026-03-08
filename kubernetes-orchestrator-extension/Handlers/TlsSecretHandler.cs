@@ -60,7 +60,7 @@ public class TlsSecretHandler : SecretHandlerBase
             var secret = GetSecret();
             return ExtractCertificatesFromSecret(secret);
         }
-        catch (HttpOperationException e)
+        catch (HttpOperationException)
         {
             Logger.LogError("Kubernetes TLS secret '{Name}' was not found in namespace '{Namespace}'",
                 Context.KubeSecretName, Context.KubeNamespace);
