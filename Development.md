@@ -16,7 +16,7 @@ This document describes how to build and test the Kubernetes Orchestrator Extens
 
 ## Prerequisites
 
-- .NET 8.0 SDK or later
+- .NET 8.0 SDK or later (.NET 10.0 SDK recommended — project targets both `net8.0` and `net10.0`)
 - Access to a Kubernetes cluster (for integration tests)
 - `kubectl` configured with appropriate context (default: `kf-integrations`)
 - `fzf` (optional, for interactive test selection)
@@ -30,7 +30,7 @@ dotnet build -c Release # Build for release
 
 ## Testing
 
-The project uses xUnit for testing with comprehensive unit and integration test suites (~1158 unit tests, ~215 integration tests).
+The project uses xUnit for testing with comprehensive unit and integration test suites (~1337 unit tests, ~200 integration tests).
 
 ### Unit Tests
 
@@ -222,6 +222,19 @@ make debug-wait-job            # Wait for jobs to complete (polls logs)
 make debug-get-cert-info CERT_ID=43  # Get certificate info from Command
 ```
 
+### Keystore Inspection
+
+Inspect JKS or PKCS12 keystores stored in Kubernetes secrets:
+
+```bash
+make inspect-jks SECRET=my-jks-secret                          # Inspect JKS (default namespace, default password)
+make inspect-jks SECRET=my-jks NS=my-namespace INSPECT_PASSWORD=mypass
+make inspect-jks-manual SECRET=my-jks                          # Manual inspection (outputs raw commands)
+make inspect-pkcs12 SECRET=my-pkcs12-secret
+make inspect-pkcs12 SECRET=my-pkcs12 NS=my-namespace INSPECT_PASSWORD=mypass
+make inspect-pkcs12-manual SECRET=my-pkcs12
+```
+
 ### CSR Testing
 
 For K8SCert (Certificate Signing Request) testing:
@@ -273,7 +286,7 @@ Run `make help` to see all available targets with descriptions, organized by cat
 | **General** | `help` |
 | **Development** | `reset`, `setup`, `newtest`, `installpackage` |
 | **Testing** | `testall`, `test`, `test-unit`, `test-integration`, `test-integration-fast`, `test-integration-full`, `test-integration-smoke-net10`, `test-ci`, `test-setup`, `test-coverage`, `test-coverage-install`, `test-coverage-unit`, `test-coverage-summary`, `test-coverage-open`, `test-coverage-clean`, `coverage-summary`, `coverage-summary-all`, `coverage-uncovered`, `coverage-uncovered-all`, `test-watch`, `test-single`, `test-store-jks`, `test-store-pkcs12`, `test-store-secret`, `test-store-tls`, `test-store-cluster`, `test-store-ns`, `test-store-cert`, `test-kubeclient`, `test-handlers`, `test-base-jobs`, `test-cluster-setup`, `test-cluster-cleanup`, `test-store-type`, `test-integration-no-cleanup`, `test-all-with-cleanup` |
-| **Debugging** | `debug-build`, `debug-container-id`, `debug-restart`, `debug-logs`, `debug-logs-follow`, `debug-get-token`, `debug-schedule-tls`, `debug-schedule-opaque`, `debug-schedule-both`, `debug-check-tls-secret`, `debug-check-opaque-secret`, `debug-check-secrets`, `debug-wait-job`, `debug-loop`, `debug-loop-both`, `debug-schedule-tls-cert`, `debug-loop-cert43`, `debug-loop-cert44`, `debug-get-cert-info` |
+| **Debugging** | `debug-build`, `debug-container-id`, `debug-restart`, `debug-logs`, `debug-logs-follow`, `debug-get-token`, `debug-schedule-tls`, `debug-schedule-opaque`, `debug-schedule-both`, `debug-check-tls-secret`, `debug-check-opaque-secret`, `debug-check-secrets`, `debug-wait-job`, `debug-loop`, `debug-loop-both`, `debug-schedule-tls-cert`, `debug-loop-cert43`, `debug-loop-cert44`, `debug-get-cert-info`, `inspect-jks`, `inspect-jks-manual`, `inspect-pkcs12`, `inspect-pkcs12-manual` |
 | **OAuth** | `token`, `token-refresh`, `token-show`, `token-clear`, `token-get` |
 | **Command API** | `api-list-stores`, `api-list-certs`, `api-get-cert`, `api-get-jobs` |
 | **CSR Management** | `csr-create`, `csr-create-approved`, `csr-approve`, `csr-deny`, `csr-list`, `csr-list-test`, `csr-describe`, `csr-delete`, `csr-cleanup`, `csr-create-batch`, `csr-create-with-chain`, `csr-create-batch-with-chain` |

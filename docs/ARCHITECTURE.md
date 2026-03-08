@@ -145,6 +145,7 @@ Reusable business logic services.
 ```
 Services/
 ├── CertificateChainExtractor.cs   # Extracts certs from secret data fields
+├── JobCertificateParser.cs        # Certificate format detection and extraction from job configs
 ├── KeystoreOperations.cs          # JKS/PKCS12 keystore manipulation
 ├── PasswordResolver.cs            # PAM-aware password resolution
 ├── StoreConfigurationParser.cs    # Parses store property JSON
@@ -212,14 +213,14 @@ InventoryJobConfiguration
 └─────────┬───────────┘
           │
           ▼
-┌─────────────────────┐      ┌─────────────────────┐
+┌─────────────────────┐      ┌─────────────────────┐      ┌─────────────────────┐
 │  KubeClient         │ ────▶│  Kubernetes API     │
 │  - GetSecret()      │      │  - GET /secrets     │
 └─────────────────────┘      └─────────────────────┘
           │
           ▼
 ┌─────────────────────┐
-│  KeystoreManager    │ (for JKS/PKCS12 only)
+│  KeystoreOperations │ (for JKS/PKCS12 only)
 │  - Parse keystore   │
 │  - Extract certs    │
 └─────────────────────┘
@@ -263,7 +264,7 @@ ManagementJobConfiguration
           │                         │
           ▼                         ▼
 ┌─────────────────────┐   ┌─────────────────────┐
-│  SecretOperations   │   │  KeystoreManager    │
+│  SecretOperations   │   │  KeystoreOperations │
 │  - BuildNewSecret() │   │  - UpdateKeystore() │
 │  - UpdateSecret()   │   └─────────────────────┘
 └─────────────────────┘
