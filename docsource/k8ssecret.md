@@ -24,4 +24,20 @@ the Kubernetes secret.
 
 - `<secret_name>` (when certificate is stored directly)
 
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-secret](../terraform/modules/k8s-secret/) for full documentation.
+
+```hcl
+module "secret_store" {
+  source = "./terraform/modules/k8s-secret"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-cluster/my-namespace/my-opaque-secret"
+  kubeconfig_path  = "./kubeconfig.json"
+
+  certificate_ids = ["12345"]
+}
+```
 

@@ -24,3 +24,20 @@ the Kubernetes secret.
 
 - `<secret_name>` (the TLS secret name)
 
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-tls](../terraform/modules/k8s-tls/) for full documentation.
+
+```hcl
+module "tls_store" {
+  source = "./terraform/modules/k8s-tls"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-cluster/my-namespace/my-tls-secret"
+  kubeconfig_path  = "./kubeconfig.json"
+
+  certificate_ids = ["12345"]
+}
+```
+

@@ -58,6 +58,21 @@ Create a K8SCert store for a specific CSR:
 3. Set `KubeSecretName` to the CSR name (e.g., `my-app-client-cert`)
 4. Run inventory to track that specific certificate
 
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-cert](../terraform/modules/k8s-cert/) for full documentation.
+
+```hcl
+module "k8s_cert_store" {
+  source = "./terraform/modules/k8s-cert"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-k8s-cluster"
+  kubeconfig_path  = "./kubeconfig.json"
+}
+```
+
 ## Limitations
 
 - **Read-Only**: K8SCert does not support Add or Remove operations. CSRs must be created and approved through Kubernetes APIs or kubectl.
