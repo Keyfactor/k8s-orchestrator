@@ -1,0 +1,37 @@
+# Automatically label PRs based on changed files
+# Used by the PR Quality Gate workflow
+
+'documentation':
+  - changed-files:
+    - any-glob-to-any-file: ['*.md', 'docs/**/*', 'docsource/**/*']
+
+'dependencies':
+  - changed-files:
+    - any-glob-to-any-file: ['**/packages.lock.json', '**/*.csproj', '**/Directory.Build.props']
+
+'ci/cd':
+  - changed-files:
+    - any-glob-to-any-file: ['.github/**/*', 'Makefile', '*.yml', '*.yaml']
+
+'security':
+  - changed-files:
+    - any-glob-to-any-file: ['**/security/**/*', '**/auth/**/*']
+
+'tests':
+  - changed-files:
+    - any-glob-to-any-file: ['TestConsole/**/*', '**/*Test*.cs', '**/*Tests/**/*']
+
+'bug-fix':
+  - head-branch: ['^fix/', '^bugfix/', '^hotfix/']
+
+'feature':
+  - head-branch: ['^feature/', '^feat/']
+
+'breaking-change':
+  - body-contains: ['BREAKING CHANGE', 'breaking change', 'breaking-change']
+
+'needs-review':
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'kubernetes-orchestrator-extension/Jobs/**/*'
+      - 'kubernetes-orchestrator-extension/Clients/**/*'
