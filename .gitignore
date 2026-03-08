@@ -352,3 +352,13 @@ MigrationBackup/
 # OAuth token cache (Makefile)
 .oauth_token
 .oauth_token_expiry
+
+coverage
+*.env*
+
+CLAUDE.md
+.claude
+dev_k8s_cluster
+*meow*
+*keyfactor-orchestrator-sa-context*
+*kubeconfig*
