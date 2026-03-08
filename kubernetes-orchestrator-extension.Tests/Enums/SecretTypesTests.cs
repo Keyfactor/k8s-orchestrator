@@ -35,7 +35,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsTlsType_NonTlsTypes_ReturnsFalse(string type)
+    public void IsTlsType_NonTlsTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsTlsType(type));
     }
@@ -63,7 +63,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsOpaqueType_NonOpaqueTypes_ReturnsFalse(string type)
+    public void IsOpaqueType_NonOpaqueTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsOpaqueType(type));
     }
@@ -94,7 +94,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsCsrType_NonCsrTypes_ReturnsFalse(string type)
+    public void IsCsrType_NonCsrTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsCsrType(type));
     }
@@ -122,7 +122,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsPkcs12Type_NonPkcs12Types_ReturnsFalse(string type)
+    public void IsPkcs12Type_NonPkcs12Types_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsPkcs12Type(type));
     }
@@ -147,7 +147,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsJksType_NonJksTypes_ReturnsFalse(string type)
+    public void IsJksType_NonJksTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsJksType(type));
     }
@@ -176,7 +176,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsKeystoreType_NonKeystoreTypes_ReturnsFalse(string type)
+    public void IsKeystoreType_NonKeystoreTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsKeystoreType(type));
     }
@@ -202,7 +202,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsNamespaceType_NonNamespaceTypes_ReturnsFalse(string type)
+    public void IsNamespaceType_NonNamespaceTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsNamespaceType(type));
     }
@@ -228,7 +228,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsClusterType_NonClusterTypes_ReturnsFalse(string type)
+    public void IsClusterType_NonClusterTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsClusterType(type));
     }
@@ -255,7 +255,7 @@ public class SecretTypesTests
     [InlineData("invalid")]
     [InlineData("")]
     [InlineData(null)]
-    public void IsAggregateStoreType_NonAggregateTypes_ReturnsFalse(string type)
+    public void IsAggregateStoreType_NonAggregateTypes_ReturnsFalse(string? type)
     {
         Assert.False(SecretTypes.IsAggregateStoreType(type));
     }

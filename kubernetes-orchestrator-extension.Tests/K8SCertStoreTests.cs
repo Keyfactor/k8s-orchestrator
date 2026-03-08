@@ -320,7 +320,7 @@ public class K8SCertStoreTests
     [InlineData("*", true)]         // wildcard = cluster-wide mode
     [InlineData("my-csr", false)]   // specific name = single mode
     [InlineData("test-csr-123", false)]
-    public void InventoryMode_DeterminesCorrectMode(string kubeSecretName, bool expectedClusterWide)
+    public void InventoryMode_DeterminesCorrectMode(string? kubeSecretName, bool expectedClusterWide)
     {
         // Act
         var isClusterWideMode = string.IsNullOrWhiteSpace(kubeSecretName) || kubeSecretName == "*";

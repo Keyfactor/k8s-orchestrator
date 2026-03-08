@@ -322,7 +322,7 @@ public class StoreConfigurationParserTests
     [Theory]
     [InlineData(null)]
     [InlineData("")]
-    public void Parse_WithNullOrEmptyCapability_DoesNotDeriveSecretType(string capability)
+    public void Parse_WithNullOrEmptyCapability_DoesNotDeriveSecretType(string? capability)
     {
         // Arrange
         var properties = new Dictionary<string, object>();
