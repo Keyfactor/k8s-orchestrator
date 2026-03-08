@@ -26,6 +26,10 @@
 - chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.
 - chore(docs): Document supported key types for all store types.
 - chore(util): Add verbose logging to PAM credential resolver.
+- chore(refactor): Remove dead code from `JobBase` — unused static arrays, dead properties (`KubeHost`, `KubeCluster`, `SkipTlsValidation`, `OperationType`, `Overwrite`, `KeyEntry`, `ManagementConfig`, `DiscoveryConfig`, `InventoryConfig`), unused `WarningJob()`, `HasPrivateKey()`, and `CertChainSeparator`.
+- chore(refactor): Simplify JKS serializer `CreateOrUpdateJks` — extract `LoadExistingJksStore()`, `LoadNewCertificate()`, `SaveJksStore()`, `PasswordToChars()` helpers. CRAP score reduced from 60 to 16.
+- chore(refactor): Simplify PKCS12 serializer `CreateOrUpdatePkcs12` — same helper extraction pattern. CRAP score reduced from 36 to 16.
+- chore(refactor): Simplify `GetStorePath()` in `JobBase` — extract `DeriveSecretType()` and `NormalizeSecretTypeForPath()` helpers, make method private.
 
 # 1.2.2
 

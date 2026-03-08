@@ -30,7 +30,7 @@ dotnet build -c Release # Build for release
 
 ## Testing
 
-The project uses xUnit for testing with comprehensive unit and integration test suites (~1138 unit tests, ~213 integration tests).
+The project uses xUnit for testing with comprehensive unit and integration test suites (~1158 unit tests, ~215 integration tests).
 
 ### Unit Tests
 
@@ -159,7 +159,22 @@ Handlers/                    # Secret operation handlers
 └── CertificateSecretHandler.cs
 
 Services/                    # Business logic
+├── StoreConfigurationParser.cs   # Parses job config to StoreConfiguration
+├── PasswordResolver.cs           # Resolves passwords from secrets or direct values
+├── CertificateChainExtractor.cs  # Certificate chain parsing and extraction
+├── KeystoreOperations.cs         # JKS/PKCS12 keystore operations
+├── JobCertificateParser.cs       # Certificate format detection and extraction
+└── StorePathResolver.cs          # Resolves store paths to namespace/name
+
+Serializers/                 # Store-type serialization
+├── K8SJKS/Store.cs          # JKS keystore handling (BouncyCastle)
+└── K8SPKCS12/Store.cs       # PKCS12 handling (BouncyCastle)
+
 Clients/                     # Kubernetes API wrapper
+├── KubeClient.cs            # Authenticated K8S client wrapper
+├── SecretOperations.cs      # Secret CRUD operations
+├── CertificateOperations.cs # CSR operations
+└── KubeconfigParser.cs      # Kubeconfig JSON parsing
 ```
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for detailed architecture documentation.
