@@ -15,6 +15,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using k8s.Models;
+using Keyfactor.PKI.Extensions;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.X509;
@@ -204,7 +205,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
             try
             {
                 var subject = certificate.SubjectDN.ToString();
-                var thumbprint = CertificateUtilities.GetThumbprint(certificate);
+                var thumbprint = certificate.Thumbprint();
                 var notBefore = certificate.NotBefore.ToString("yyyy-MM-dd");
                 var notAfter = certificate.NotAfter.ToString("yyyy-MM-dd");
 

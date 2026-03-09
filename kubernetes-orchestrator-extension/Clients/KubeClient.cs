@@ -27,6 +27,7 @@ using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Extensions;
+using Keyfactor.PKI.Extensions;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -506,7 +507,7 @@ public class KubeCertificateManagerClient
             _logger.LogTrace("cert subject: {Subject}", cert?.SubjectDN?.ToString());
 
             _logger.LogDebug("Getting certificate Common Name.");
-            var certName = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities.GetSubjectCN(cert);
+            var certName = cert.CommonName();
             _logger.LogTrace("certName: {CertName}", certName);
 
             _logger.LogDebug("Adding certificate {CertName} discovered location to list", certName);

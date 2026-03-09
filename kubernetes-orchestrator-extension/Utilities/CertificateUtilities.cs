@@ -5,7 +5,6 @@ using System.Linq;
 using System.Text;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Enums;
-using Keyfactor.PKI.Extensions;
 using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Asn1.Pkcs;
@@ -214,47 +213,6 @@ public static class CertificateUtilities
     #region Certificate Properties
 
     /// <summary>
-    /// Get the certificate thumbprint (SHA-1 hash of DER-encoded certificate)
-    /// </summary>
-    /// <param name="cert">Certificate</param>
-    /// <returns>Uppercase hexadecimal string representation of SHA-1 hash</returns>
-    public static string GetThumbprint(X509Certificate cert)
-    {
-        Logger.LogTrace("GetThumbprint called for certificate: {Subject}", cert?.SubjectDN?.ToString() ?? "null");
-
-        if (cert == null)
-        {
-            Logger.LogError("Certificate is null");
-            throw new ArgumentNullException(nameof(cert));
-        }
-
-        try
-        {
-            var thumbprint = BouncyCastleX509Extensions.Thumbprint(cert);
-            Logger.LogTrace("Computed thumbprint: {Thumbprint}", thumbprint);
-            return thumbprint;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error computing thumbprint: {Message}", ex.Message);
-            throw;
-        }
-    }
-
-    /// <summary>
-    /// Get the Common Name (CN) from the certificate subject
-    /// </summary>
-    /// <param name="cert">Certificate</param>
-    /// <returns>Subject Common Name or empty string if not found</returns>
-    public static string GetSubjectCN(X509Certificate cert)
-    {
-        if (cert == null)
-            throw new ArgumentNullException(nameof(cert));
-
-        return BouncyCastleX509Extensions.CommonName(cert) ?? string.Empty;
-    }
-
-    /// <summary>
     /// Get the full subject Distinguished Name
     /// </summary>
     /// <param name="cert">Certificate</param>
@@ -327,19 +285,6 @@ public static class CertificateUtilities
             throw new ArgumentNullException(nameof(cert));
 
         return cert.NotAfter;
-    }
-
-    /// <summary>
-    /// Get the certificate serial number
-    /// </summary>
-    /// <param name="cert">Certificate</param>
-    /// <returns>Serial number as hexadecimal string</returns>
-    public static string GetSerialNumber(X509Certificate cert)
-    {
-        if (cert == null)
-            throw new ArgumentNullException(nameof(cert));
-
-        return BouncyCastleX509Extensions.SerialNumber(cert);
     }
 
     /// <summary>
@@ -657,19 +602,6 @@ public static class CertificateUtilities
 
         Logger.LogDebug("No recognizable format detected, returning Unknown");
         return CertificateFormat.Unknown;
-    }
-
-    /// <summary>
-    /// Convert certificate to PEM format
-    /// </summary>
-    /// <param name="cert">Certificate</param>
-    /// <returns>PEM-encoded certificate string</returns>
-    public static string ConvertToPem(X509Certificate cert)
-    {
-        if (cert == null)
-            throw new ArgumentNullException(nameof(cert));
-
-        return PemUtilities.DERToPEM(cert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
     }
 
     /// <summary>

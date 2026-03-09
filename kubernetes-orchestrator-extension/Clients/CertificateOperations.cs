@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
+using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.X509;
@@ -94,7 +95,7 @@ public class CertificateOperations
     public string ConvertToPem(X509Certificate certificate)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        var pem = CertificateUtilities.ConvertToPem(certificate);
+        var pem = PemUtilities.DERToPEM(certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         _logger.MethodExit(LogLevel.Debug);
         return pem;
     }

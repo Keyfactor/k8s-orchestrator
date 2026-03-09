@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
+using Keyfactor.PKI.Extensions;
+using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Pkcs;
@@ -37,14 +39,14 @@ public class K8SCertificateContext
     /// Certificate thumbprint (SHA-1 hash, uppercase hex)
     /// </summary>
     public string Thumbprint => Certificate != null
-        ? CertificateUtilities.GetThumbprint(Certificate)
+        ? Certificate.Thumbprint()
         : string.Empty;
 
     /// <summary>
     /// Certificate subject Common Name
     /// </summary>
     public string SubjectCN => Certificate != null
-        ? CertificateUtilities.GetSubjectCN(Certificate)
+        ? Certificate.CommonName() ?? string.Empty
         : string.Empty;
 
     /// <summary>
@@ -82,7 +84,7 @@ public class K8SCertificateContext
     /// Certificate serial number
     /// </summary>
     public string SerialNumber => Certificate != null
-        ? CertificateUtilities.GetSerialNumber(Certificate)
+        ? Certificate.SerialNumber()
         : string.Empty;
 
     /// <summary>
@@ -102,7 +104,7 @@ public class K8SCertificateContext
     /// </summary>
     public string CertPem
     {
-        get => _certPem ?? (Certificate != null ? CertificateUtilities.ConvertToPem(Certificate) : string.Empty);
+        get => _certPem ?? (Certificate != null ? PemUtilities.DERToPEM(Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate) : string.Empty);
         set => _certPem = value;
     }
     private string _certPem;
@@ -122,7 +124,7 @@ public class K8SCertificateContext
     /// </summary>
     public List<string> ChainPem
     {
-        get => _chainPem ?? (Chain?.Select(CertificateUtilities.ConvertToPem).ToList() ?? new List<string>());
+        get => _chainPem ?? (Chain?.Select(c => PemUtilities.DERToPEM(c.GetEncoded(), PemUtilities.PemObjectType.Certificate)).ToList() ?? new List<string>());
         set => _chainPem = value;
     }
     private List<string> _chainPem;
@@ -327,7 +329,7 @@ public class K8SCertificateContext
             if (!string.IsNullOrWhiteSpace(chainPem))
             {
                 context.Chain = CertificateUtilities.LoadCertificateChain(chainPem);
-                context._chainPem = context.Chain.Select(CertificateUtilities.ConvertToPem).ToList();
+                context._chainPem = context.Chain.Select(c => PemUtilities.DERToPEM(c.GetEncoded(), PemUtilities.PemObjectType.Certificate)).ToList();
                 Logger.LogDebug("Certificate chain loaded: {Count} certificates", context.Chain.Count);
             }
             else
@@ -433,7 +435,7 @@ public class K8SCertificateContext
 
         try
         {
-            var pem = CertificateUtilities.ConvertToPem(Certificate);
+            var pem = PemUtilities.DERToPEM(Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
             Logger.LogTrace("Certificate exported to PEM: {Pem}", LoggingUtilities.RedactCertificatePem(pem));
             return pem;
         }

@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
+using Keyfactor.PKI.PEM;
 using Org.BouncyCastle.Asn1.X509;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
@@ -215,54 +216,6 @@ public class CertificateUtilitiesTests
     #region Certificate Property Tests
 
     [Fact]
-    public void GetThumbprint_ValidCertificate_ReturnsUppercaseHex()
-    {
-        // Arrange
-        var (cert, _) = GenerateTestRsaCertificate();
-
-        // Act
-        var thumbprint = CertificateUtilities.GetThumbprint(cert);
-
-        // Assert
-        Assert.NotNull(thumbprint);
-        Assert.NotEmpty(thumbprint);
-        Assert.Equal(40, thumbprint.Length); // SHA-1 hash is 40 hex characters
-        Assert.All(thumbprint, c => Assert.True(char.IsDigit(c) || (c >= 'A' && c <= 'F')));
-    }
-
-    [Fact]
-    public void GetThumbprint_MatchesX509Certificate2_ForValidation()
-    {
-        // Arrange
-        var (bcCert, keyPair) = GenerateTestRsaCertificate();
-        var pkcs12Bytes = GeneratePkcs12(bcCert, keyPair);
-
-        // Convert to X509Certificate2 for comparison
-        var x509Cert2 = new X509Certificate2(pkcs12Bytes, "password");
-
-        // Act
-        var bcThumbprint = CertificateUtilities.GetThumbprint(bcCert);
-        var x509Thumbprint = x509Cert2.Thumbprint;
-
-        // Assert
-        Assert.Equal(x509Thumbprint, bcThumbprint);
-    }
-
-    [Fact]
-    public void GetSubjectCN_ValidCertificate_ExtractsCorrectCN()
-    {
-        // Arrange
-        var expectedCN = "Test Subject CN";
-        var (cert, _) = GenerateTestRsaCertificate(expectedCN);
-
-        // Act
-        var actualCN = CertificateUtilities.GetSubjectCN(cert);
-
-        // Assert
-        Assert.Equal(expectedCN, actualCN);
-    }
-
-    [Fact]
     public void GetSubjectDN_ValidCertificate_ReturnsFullDN()
     {
         // Arrange
@@ -315,21 +268,6 @@ public class CertificateUtilitiesTests
         // Assert
         Assert.True(notAfter > DateTime.UtcNow);
         Assert.True(notAfter < DateTime.UtcNow.AddYears(2));
-    }
-
-    [Fact]
-    public void GetSerialNumber_ValidCertificate_ReturnsHexString()
-    {
-        // Arrange
-        var (cert, _) = GenerateTestRsaCertificate();
-
-        // Act
-        var serialNumber = CertificateUtilities.GetSerialNumber(cert);
-
-        // Assert
-        Assert.NotNull(serialNumber);
-        Assert.NotEmpty(serialNumber);
-        Assert.All(serialNumber, c => Assert.True(char.IsDigit(c) || (c >= 'A' && c <= 'F')));
     }
 
     [Fact]
@@ -509,7 +447,7 @@ public class CertificateUtilitiesTests
     {
         // Arrange
         var (cert, _) = GenerateTestRsaCertificate();
-        var pem = CertificateUtilities.ConvertToPem(cert);
+        var pem = PemUtilities.DERToPEM(cert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
 
         // Act
         var chain = CertificateUtilities.LoadCertificateChain(pem);
@@ -526,8 +464,8 @@ public class CertificateUtilitiesTests
         // Arrange
         var (cert1, _) = GenerateTestRsaCertificate("Cert1");
         var (cert2, _) = GenerateTestRsaCertificate("Cert2");
-        var pem1 = CertificateUtilities.ConvertToPem(cert1);
-        var pem2 = CertificateUtilities.ConvertToPem(cert2);
+        var pem1 = PemUtilities.DERToPEM(cert1.GetEncoded(), PemUtilities.PemObjectType.Certificate);
+        var pem2 = PemUtilities.DERToPEM(cert2.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         var combinedPem = pem1 + pem2;
 
         // Act
@@ -601,7 +539,7 @@ public class CertificateUtilitiesTests
     {
         // Arrange
         var (cert, _) = GenerateTestRsaCertificate();
-        var pem = CertificateUtilities.ConvertToPem(cert);
+        var pem = PemUtilities.DERToPEM(cert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         var pemBytes = Encoding.UTF8.GetBytes(pem);
 
         // Act
@@ -661,21 +599,6 @@ public class CertificateUtilitiesTests
     }
 
     [Fact]
-    public void ConvertToPem_ValidCertificate_ReturnsValidPem()
-    {
-        // Arrange
-        var (cert, _) = GenerateTestRsaCertificate();
-
-        // Act
-        var pem = CertificateUtilities.ConvertToPem(cert);
-
-        // Assert
-        Assert.NotNull(pem);
-        Assert.Contains("-----BEGIN CERTIFICATE-----", pem);
-        Assert.Contains("-----END CERTIFICATE-----", pem);
-    }
-
-    [Fact]
     public void ConvertToDer_ValidCertificate_ReturnsValidDer()
     {
         // Arrange
@@ -689,22 +612,6 @@ public class CertificateUtilitiesTests
         Assert.NotEmpty(derBytes);
         // DER should start with 0x30 (SEQUENCE tag)
         Assert.Equal(0x30, derBytes[0]);
-    }
-
-    [Fact]
-    public void ConvertToPem_RoundTrip_PreservesData()
-    {
-        // Arrange
-        var (cert, _) = GenerateTestRsaCertificate();
-        var originalDer = cert.GetEncoded();
-
-        // Act
-        var pem = CertificateUtilities.ConvertToPem(cert);
-        var parsedCert = CertificateUtilities.ParseCertificateFromPem(pem);
-        var roundTripDer = parsedCert.GetEncoded();
-
-        // Assert
-        Assert.Equal(originalDer, roundTripDer);
     }
 
     #endregion
@@ -826,24 +733,6 @@ public class CertificateUtilitiesTests
     #endregion
 
     #region Null Argument Tests
-
-    [Fact]
-    public void GetThumbprint_NullCertificate_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetThumbprint(null));
-    }
-
-    [Fact]
-    public void GetSubjectCN_NullCertificate_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetSubjectCN(null));
-    }
-
-    [Fact]
-    public void ConvertToPem_NullCertificate_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.ConvertToPem(null));
-    }
 
     [Fact]
     public void ConvertToDer_NullCertificate_ThrowsArgumentNullException()

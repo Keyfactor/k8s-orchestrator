@@ -18,6 +18,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
+using Keyfactor.PKI.Extensions;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 using CertificateUtilities = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities;
@@ -1378,7 +1379,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
 
         // Get the original thumbprint
-        var originalThumbprint = CertificateUtilities.GetThumbprint(existingCert.Certificate);
+        var originalThumbprint = BouncyCastleX509Extensions.Thumbprint(existingCert.Certificate);
 
         // Prepare replacement certificate (same alias, different key+cert)
         var replacementCert = CachedCertificateProvider.GetOrCreate(KeyType.EcP384, "Replacement PKCS12 Cert");
@@ -1428,7 +1429,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
 
         // Verify thumbprint changed (it's a different cert now)
         var newCert = store.GetCertificate("mycert");
-        var newThumbprint = CertificateUtilities.GetThumbprint(newCert.Certificate);
+        var newThumbprint = BouncyCastleX509Extensions.Thumbprint(newCert.Certificate);
         Assert.NotEqual(originalThumbprint, newThumbprint);
     }
 

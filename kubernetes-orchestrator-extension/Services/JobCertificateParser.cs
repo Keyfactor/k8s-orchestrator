@@ -14,6 +14,8 @@ using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
+using Keyfactor.PKI.Extensions;
+using Keyfactor.PKI.PEM;
 using Microsoft.Extensions.Logging;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.X509;
@@ -148,9 +150,9 @@ public class JobCertificateParser
         var bcCert = x509Obj.Certificate;
         _logger.LogDebug("Certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(bcCert));
 
-        jobCert.CertPem = CertificateUtilities.ConvertToPem(bcCert);
+        jobCert.CertPem = PemUtilities.DERToPEM(bcCert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         jobCert.CertBytes = bcCert.GetEncoded();
-        jobCert.CertThumbprint = CertificateUtilities.GetThumbprint(bcCert);
+        jobCert.CertThumbprint = bcCert.Thumbprint();
         jobCert.Pkcs12 = rawBytes;
         jobCert.CertificateEntry = x509Obj;
 
@@ -160,7 +162,7 @@ public class JobCertificateParser
         {
             _logger.LogDebug("Certificate chain: {Count} certificates", chain.Length);
             jobCert.CertificateEntryChain = chain;
-            jobCert.ChainPem = chain.Select(c => CertificateUtilities.ConvertToPem(c.Certificate)).ToList();
+            jobCert.ChainPem = chain.Select(c => PemUtilities.DERToPEM(c.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate)).ToList();
         }
 
         // Extract private key
@@ -221,9 +223,9 @@ public class JobCertificateParser
 
         _logger.LogDebug("DER certificate loaded: {Summary}", LoggingUtilities.GetCertificateSummary(bcCert));
 
-        jobCert.CertPem = CertificateUtilities.ConvertToPem(bcCert);
+        jobCert.CertPem = PemUtilities.DERToPEM(bcCert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         jobCert.CertBytes = bcCert.GetEncoded();
-        jobCert.CertThumbprint = CertificateUtilities.GetThumbprint(bcCert);
+        jobCert.CertThumbprint = bcCert.Thumbprint();
         jobCert.CertificateEntry = new X509CertificateEntry(bcCert);
         jobCert.HasPrivateKey = false;
         jobCert.CertificateEntryChain = new[] { jobCert.CertificateEntry };
@@ -268,9 +270,9 @@ public class JobCertificateParser
         var leafCert = certificates[0];
         _logger.LogDebug("Leaf certificate: {Summary}", LoggingUtilities.GetCertificateSummary(leafCert));
 
-        jobCert.CertPem = CertificateUtilities.ConvertToPem(leafCert);
+        jobCert.CertPem = PemUtilities.DERToPEM(leafCert.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         jobCert.CertBytes = leafCert.GetEncoded();
-        jobCert.CertThumbprint = CertificateUtilities.GetThumbprint(leafCert);
+        jobCert.CertThumbprint = leafCert.Thumbprint();
         jobCert.CertificateEntry = new X509CertificateEntry(leafCert);
         jobCert.HasPrivateKey = false;
 
@@ -279,7 +281,7 @@ public class JobCertificateParser
             .ToArray();
 
         jobCert.ChainPem = certificates
-            .Select(CertificateUtilities.ConvertToPem)
+            .Select(c => PemUtilities.DERToPEM(c.GetEncoded(), PemUtilities.PemObjectType.Certificate))
             .ToList();
 
         _logger.LogInformation("PEM certificate(s) parsed: {Count} certificate(s), no private key", certificates.Count);

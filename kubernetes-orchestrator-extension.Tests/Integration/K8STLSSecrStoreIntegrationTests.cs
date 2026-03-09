@@ -17,6 +17,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
+using Keyfactor.PKI.Extensions;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 using CertificateUtilities = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities;
@@ -1184,7 +1185,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         var pfxPassword = "testpassword";
 
         // Calculate expected thumbprint BEFORE deployment
-        var expectedThumbprint = CertificateUtilities.GetThumbprint(certInfo.Certificate);
+        var expectedThumbprint = BouncyCastleX509Extensions.Thumbprint(certInfo.Certificate);
         var expectedSubject = certInfo.Certificate.SubjectDN.ToString();
 
         // Add certificate
@@ -1230,7 +1231,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
         var deployedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
 
-        var deployedThumbprint = CertificateUtilities.GetThumbprint(deployedCert);
+        var deployedThumbprint = BouncyCastleX509Extensions.Thumbprint(deployedCert);
         var deployedSubject = deployedCert.SubjectDN.ToString();
 
         Assert.True(expectedThumbprint == deployedThumbprint,
@@ -1270,7 +1271,7 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         using var invReader = new System.IO.StringReader(inventoriedCertPem);
         var invPemReader = new Org.BouncyCastle.OpenSsl.PemReader(invReader);
         var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)invPemReader.ReadObject();
-        var inventoriedThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
+        var inventoriedThumbprint = BouncyCastleX509Extensions.Thumbprint(inventoriedCert);
 
         Assert.True(expectedThumbprint == inventoriedThumbprint,
             $"Inventoried certificate thumbprint doesn't match. Expected: {expectedThumbprint}, Got: {inventoriedThumbprint}");
@@ -1343,12 +1344,12 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
             Assert.Single(inventoriedCerts);
 
             // Verify the certificate matches what we created
-            var expectedThumbprint = CertificateUtilities.GetThumbprint(certInfo.Certificate);
+            var expectedThumbprint = BouncyCastleX509Extensions.Thumbprint(certInfo.Certificate);
             var inventoriedCertPem = inventoriedCerts[0].Certificates.First();
             using var reader = new System.IO.StringReader(inventoriedCertPem);
             var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
             var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
-            var actualThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
+            var actualThumbprint = BouncyCastleX509Extensions.Thumbprint(inventoriedCert);
 
             Assert.Equal(expectedThumbprint, actualThumbprint);
         }

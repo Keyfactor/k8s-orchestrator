@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
+using Keyfactor.PKI.PEM;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Generators;
 using Org.BouncyCastle.Security;
@@ -382,7 +383,7 @@ public class LoggingUtilitiesTests
     {
         // Arrange
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test Summary PEM");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
+        var pem = PemUtilities.DERToPEM(certInfo.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
 
         // Act
         var result = LoggingUtilities.GetCertificateSummaryFromPem(pem);

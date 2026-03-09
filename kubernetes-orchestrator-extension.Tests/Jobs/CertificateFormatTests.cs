@@ -157,29 +157,6 @@ public class CertificateFormatTests
 
     #endregion
 
-    #region Certificate Thumbprint Tests
-
-    [Fact]
-    public void GetThumbprint_DerCertificate_ReturnsValidThumbprint()
-    {
-        // Arrange
-        var derBytes = GenerateDerCertificate(KeyType.Rsa2048);
-        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
-        var cert = parser.ReadCertificate(derBytes);
-
-        // Act
-        var thumbprint = CertificateUtilities.GetThumbprint(cert);
-
-        // Assert
-        Assert.NotNull(thumbprint);
-        Assert.NotEmpty(thumbprint);
-        // SHA1 thumbprint is 40 hex characters
-        Assert.Equal(40, thumbprint.Length);
-        Assert.Matches("^[0-9A-Fa-f]+$", thumbprint);
-    }
-
-    #endregion
-
     #region PEM/DER Round-Trip Tests
 
     [Theory]

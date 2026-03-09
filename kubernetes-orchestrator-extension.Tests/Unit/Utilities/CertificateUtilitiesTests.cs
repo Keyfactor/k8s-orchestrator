@@ -39,7 +39,7 @@ public class CertificateUtilitiesTests
     public void ParseCertificate_PemFormat_ReturnsCertificate()
     {
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "ParseCert PEM Test");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
+        var pem = PemUtilities.DERToPEM(certInfo.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         var pemBytes = Encoding.UTF8.GetBytes(pem);
 
         var result = CertificateUtilities.ParseCertificate(pemBytes);
@@ -64,7 +64,7 @@ public class CertificateUtilitiesTests
     public void ParseCertificate_ExplicitPemFormat_ReturnsCertificate()
     {
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "ParseCert Explicit PEM");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
+        var pem = PemUtilities.DERToPEM(certInfo.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         var pemBytes = Encoding.UTF8.GetBytes(pem);
 
         var result = CertificateUtilities.ParseCertificate(pemBytes, CertificateFormat.Pem);
@@ -182,27 +182,6 @@ public class CertificateUtilitiesTests
     #region Certificate Property Tests
 
     [Fact]
-    public void GetThumbprint_NullCert_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetThumbprint(null));
-    }
-
-    [Fact]
-    public void GetThumbprint_ValidCert_ReturnsHexString()
-    {
-        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Thumbprint Test");
-        var result = CertificateUtilities.GetThumbprint(certInfo.Certificate);
-        Assert.NotNull(result);
-        Assert.NotEmpty(result);
-    }
-
-    [Fact]
-    public void GetSubjectCN_NullCert_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetSubjectCN(null));
-    }
-
-    [Fact]
     public void GetSubjectDN_NullCert_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetSubjectDN(null));
@@ -262,21 +241,6 @@ public class CertificateUtilitiesTests
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "NotAfter Test");
         var result = CertificateUtilities.GetNotAfter(certInfo.Certificate);
         Assert.True(result > DateTime.UtcNow);
-    }
-
-    [Fact]
-    public void GetSerialNumber_NullCert_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.GetSerialNumber(null));
-    }
-
-    [Fact]
-    public void GetSerialNumber_ValidCert_ReturnsString()
-    {
-        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Serial Test");
-        var result = CertificateUtilities.GetSerialNumber(certInfo.Certificate);
-        Assert.NotNull(result);
-        Assert.NotEmpty(result);
     }
 
     [Fact]
@@ -480,7 +444,7 @@ public class CertificateUtilitiesTests
         var sb = new StringBuilder();
         foreach (var ci in chain)
         {
-            sb.AppendLine(CertificateUtilities.ConvertToPem(ci.Certificate));
+            sb.AppendLine(PemUtilities.DERToPEM(ci.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate));
         }
 
         var result = CertificateUtilities.LoadCertificateChain(sb.ToString());
@@ -492,7 +456,7 @@ public class CertificateUtilitiesTests
     public void LoadCertificateChain_SingleCert_ReturnsOne()
     {
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Single Chain Cert");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
+        var pem = PemUtilities.DERToPEM(certInfo.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
 
         var result = CertificateUtilities.LoadCertificateChain(pem);
 
@@ -558,7 +522,7 @@ public class CertificateUtilitiesTests
     public void DetectFormat_PemData_ReturnsPem()
     {
         var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Detect PEM");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
+        var pem = PemUtilities.DERToPEM(certInfo.Certificate.GetEncoded(), PemUtilities.PemObjectType.Certificate);
         Assert.Equal(CertificateFormat.Pem, CertificateUtilities.DetectFormat(Encoding.UTF8.GetBytes(pem)));
     }
 
@@ -582,24 +546,9 @@ public class CertificateUtilitiesTests
     #region ConvertToPem/ConvertToDer Tests
 
     [Fact]
-    public void ConvertToPem_NullCert_ThrowsArgumentNullException()
-    {
-        Assert.Throws<ArgumentNullException>(() => CertificateUtilities.ConvertToPem(null));
-    }
-
-    [Fact]
     public void ConvertToDer_NullCert_ThrowsArgumentNullException()
     {
         Assert.Throws<ArgumentNullException>(() => CertificateUtilities.ConvertToDer(null));
-    }
-
-    [Fact]
-    public void ConvertToPem_ValidCert_ReturnsPemString()
-    {
-        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Convert PEM");
-        var pem = CertificateUtilities.ConvertToPem(certInfo.Certificate);
-        Assert.Contains("-----BEGIN CERTIFICATE-----", pem);
-        Assert.Contains("-----END CERTIFICATE-----", pem);
     }
 
     [Fact]
