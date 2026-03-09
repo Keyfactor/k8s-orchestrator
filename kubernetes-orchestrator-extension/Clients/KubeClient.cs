@@ -8,10 +8,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -170,56 +170,24 @@ public class KubeCertificateManagerClient
     private IKubernetes GetKubeClient(string kubeconfig)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        _logger.LogTrace("Getting executing assembly location");
-        var strExeFilePath = Assembly.GetExecutingAssembly().Location;
-        _logger.LogTrace("Executing assembly location: {ExeFilePath}", strExeFilePath);
 
-        _logger.LogTrace("Getting executing assembly directory");
-        var strWorkPath = Path.GetDirectoryName(strExeFilePath);
-        _logger.LogTrace("Executing assembly directory: {WorkPath}", strWorkPath);
-
-        var credentialFileName = kubeconfig;
-        _logger.LogDebug("Calling KubeconfigParser.Parse()");
-        // Use the parser, but handle initialization order (parser may not be set yet in constructor)
+        // Use the parser; handle initialization order (parser may not be set yet in constructor)
         var parser = _kubeconfigParser ?? new KubeconfigParser(_logger);
+        _logger.LogDebug("Calling KubeconfigParser.Parse()");
         var k8SConfiguration = parser.Parse(kubeconfig);
         _logger.LogDebug("Finished calling KubeconfigParser.Parse()");
 
-        // use k8sConfiguration over credentialFileName
         KubernetesClientConfiguration config;
-        if (k8SConfiguration != null) // Config defined in store parameters takes highest precedence
+        try
         {
-            try
-            {
-                _logger.LogDebug(
-                    "Config defined in store parameters takes highest precedence - calling BuildConfigFromConfigObject()");
-                config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
-                _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
-            }
-            catch (Exception e)
-            {
-                _logger.LogError("Error building config from config object: {Error}", e.Message);
-                config = KubernetesClientConfiguration.BuildDefaultConfig();
-            }
+            _logger.LogDebug("Calling BuildConfigFromConfigObject()");
+            config = KubernetesClientConfiguration.BuildConfigFromConfigObject(k8SConfiguration);
+            _logger.LogDebug("Finished calling BuildConfigFromConfigObject()");
         }
-        else if
-            (string.IsNullOrEmpty(
-                 credentialFileName)) // If no config defined in store parameters, use default config. This should never happen though.
+        catch (Exception e)
         {
-            _logger.LogWarning(
-                "No config defined in store parameters, using default config. This should never happen!");
+            _logger.LogError("Error building config from config object: {Error}", e.Message);
             config = KubernetesClientConfiguration.BuildDefaultConfig();
-            _logger.LogDebug("Finished calling BuildDefaultConfig()");
-        }
-        else
-        {
-            _logger.LogDebug("Calling BuildConfigFromConfigFile()");
-            config = KubernetesClientConfiguration.BuildConfigFromConfigFile(
-                strWorkPath != null && !credentialFileName.Contains(strWorkPath)
-                    ? Path.Join(strWorkPath, credentialFileName)
-                    : // Else attempt to load config from file
-                    credentialFileName); // Else attempt to load config from file
-            _logger.LogDebug("Finished calling BuildConfigFromConfigFile()");
         }
 
         _logger.LogDebug("Creating Kubernetes client");
@@ -228,7 +196,6 @@ public class KubeCertificateManagerClient
             IKubernetes client = new Kubernetes(config);
             _logger.LogDebug("Finished creating Kubernetes client");
 
-            _logger.LogTrace("Setting Client property");
             Client = client;
             _logger.MethodExit(LogLevel.Debug);
             return client;
