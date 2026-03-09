@@ -6,6 +6,7 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Microsoft.Extensions.Logging;
@@ -18,6 +19,28 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Handlers;
 /// </summary>
 public static class SecretHandlerFactory
 {
+    private static readonly Dictionary<string, Func<KubeCertificateManagerClient, ILogger, ISecretOperationContext, ISecretHandler>> _factories = new()
+    {
+        [SecretTypes.Tls]         = (c, l, ctx) => new TlsSecretHandler(c, l, ctx),
+        [SecretTypes.Opaque]      = (c, l, ctx) => new OpaqueSecretHandler(c, l, ctx),
+        [SecretTypes.Jks]         = (c, l, ctx) => new JksSecretHandler(c, l, ctx),
+        [SecretTypes.Pkcs12]      = (c, l, ctx) => new Pkcs12SecretHandler(c, l, ctx),
+        [SecretTypes.Certificate] = (c, l, ctx) => new CertificateSecretHandler(c, l, ctx),
+        [SecretTypes.Cluster]     = (c, l, ctx) => new ClusterSecretHandler(c, l, ctx),
+        [SecretTypes.Namespace]   = (c, l, ctx) => new NamespaceSecretHandler(c, l, ctx),
+    };
+
+    private static readonly Dictionary<string, string> _handlerTypeNames = new()
+    {
+        [SecretTypes.Tls]         = nameof(TlsSecretHandler),
+        [SecretTypes.Opaque]      = nameof(OpaqueSecretHandler),
+        [SecretTypes.Jks]         = nameof(JksSecretHandler),
+        [SecretTypes.Pkcs12]      = nameof(Pkcs12SecretHandler),
+        [SecretTypes.Certificate] = nameof(CertificateSecretHandler),
+        [SecretTypes.Cluster]     = nameof(ClusterSecretHandler),
+        [SecretTypes.Namespace]   = nameof(NamespaceSecretHandler),
+    };
+
     /// <summary>
     /// Creates a secret handler for the specified secret type.
     /// </summary>
@@ -37,18 +60,10 @@ public static class SecretHandlerFactory
             throw new ArgumentNullException(nameof(secretType), "Secret type cannot be null or empty");
 
         var normalizedType = SecretTypes.Normalize(secretType);
+        if (_factories.TryGetValue(normalizedType, out var factory))
+            return factory(kubeClient, logger, context);
 
-        return normalizedType switch
-        {
-            SecretTypes.Tls => new TlsSecretHandler(kubeClient, logger, context),
-            SecretTypes.Opaque => new OpaqueSecretHandler(kubeClient, logger, context),
-            SecretTypes.Jks => new JksSecretHandler(kubeClient, logger, context),
-            SecretTypes.Pkcs12 => new Pkcs12SecretHandler(kubeClient, logger, context),
-            SecretTypes.Certificate => new CertificateSecretHandler(kubeClient, logger, context),
-            SecretTypes.Cluster => new ClusterSecretHandler(kubeClient, logger, context),
-            SecretTypes.Namespace => new NamespaceSecretHandler(kubeClient, logger, context),
-            _ => throw new NotSupportedException($"Secret type '{secretType}' (normalized: '{normalizedType}') is not supported")
-        };
+        throw new NotSupportedException($"Secret type '{secretType}' (normalized: '{normalizedType}') is not supported");
     }
 
     /// <summary>
@@ -61,15 +76,7 @@ public static class SecretHandlerFactory
         if (string.IsNullOrEmpty(secretType))
             return false;
 
-        var normalizedType = SecretTypes.Normalize(secretType);
-
-        return normalizedType is SecretTypes.Tls
-            or SecretTypes.Opaque
-            or SecretTypes.Jks
-            or SecretTypes.Pkcs12
-            or SecretTypes.Certificate
-            or SecretTypes.Cluster
-            or SecretTypes.Namespace;
+        return _factories.ContainsKey(SecretTypes.Normalize(secretType));
     }
 
     /// <summary>
@@ -82,10 +89,8 @@ public static class SecretHandlerFactory
         if (string.IsNullOrEmpty(secretType))
             return false;
 
-        var normalizedType = SecretTypes.Normalize(secretType);
-
         // K8SCert (Certificate) is read-only - no management
-        return normalizedType is not SecretTypes.Certificate;
+        return SecretTypes.Normalize(secretType) is not SecretTypes.Certificate;
     }
 
     /// <summary>
@@ -96,17 +101,8 @@ public static class SecretHandlerFactory
     public static string GetHandlerTypeName(string secretType)
     {
         var normalizedType = SecretTypes.Normalize(secretType);
-
-        return normalizedType switch
-        {
-            SecretTypes.Tls => nameof(TlsSecretHandler),
-            SecretTypes.Opaque => nameof(OpaqueSecretHandler),
-            SecretTypes.Jks => nameof(JksSecretHandler),
-            SecretTypes.Pkcs12 => nameof(Pkcs12SecretHandler),
-            SecretTypes.Certificate => nameof(CertificateSecretHandler),
-            SecretTypes.Cluster => nameof(ClusterSecretHandler),
-            SecretTypes.Namespace => nameof(NamespaceSecretHandler),
-            _ => $"Unknown({secretType})"
-        };
+        return _handlerTypeNames.TryGetValue(normalizedType, out var name)
+            ? name
+            : $"Unknown({secretType})";
     }
 }

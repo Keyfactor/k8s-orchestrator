@@ -6,6 +6,7 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
 
@@ -84,7 +85,7 @@ public class StoreConfigurationParser
     /// <param name="key">The property key to look up.</param>
     /// <param name="defaultValue">The default value if key is not found.</param>
     /// <returns>The property value, or the default if not found.</returns>
-    public T GetPropertyOrDefault<T>(dynamic properties, string key, T defaultValue)
+    public T GetPropertyOrDefault<T>(IDictionary<string, object> properties, string key, T defaultValue)
     {
         if (properties == null)
         {
@@ -138,7 +139,7 @@ public class StoreConfigurationParser
     /// <param name="storeProperties">Dynamic dictionary of store properties.</param>
     /// <param name="capability">The store capability string for deriving secret type.</param>
     /// <returns>A populated StoreConfiguration object.</returns>
-    public StoreConfiguration Parse(dynamic storeProperties, string capability = null)
+    public StoreConfiguration Parse(IDictionary<string, object> storeProperties, string capability = null)
     {
         _logger.LogDebug("Parsing store configuration");
 
@@ -198,7 +199,7 @@ public class StoreConfigurationParser
     /// </summary>
     /// <param name="config">The configuration to update.</param>
     /// <param name="storeProperties">The original store properties for additional lookups.</param>
-    public void ApplyKeystoreDefaults(StoreConfiguration config, dynamic storeProperties)
+    public void ApplyKeystoreDefaults(StoreConfiguration config, IDictionary<string, object> storeProperties)
     {
         var secretType = config.KubeSecretType?.ToLower();
 
@@ -242,7 +243,7 @@ public class StoreConfigurationParser
     /// <summary>
     /// Parses a boolean property with proper string handling.
     /// </summary>
-    private bool ParseBoolProperty(dynamic properties, string key, bool defaultValue)
+    private bool ParseBoolProperty(IDictionary<string, object> properties, string key, bool defaultValue)
     {
         if (properties == null) return defaultValue;
 

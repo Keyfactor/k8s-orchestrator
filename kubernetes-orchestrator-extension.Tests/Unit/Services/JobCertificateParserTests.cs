@@ -7,9 +7,9 @@
 
 using System;
 using System.Collections.Generic;
-using System.Dynamic;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Services;
+using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -34,33 +34,29 @@ public class JobCertificateParserTests
 
     #region Helper Methods
 
-    /// <summary>
-    /// Creates a dynamic config object mimicking ManagementJobConfiguration.
-    /// </summary>
-    private static dynamic CreateConfig(string base64Contents, string password = null, string storePassword = null)
+    private static ManagementJobConfiguration CreateConfig(string base64Contents, string password = null, string storePassword = null)
     {
-        dynamic config = new ExpandoObject();
-        dynamic jobCert = new ExpandoObject();
-        jobCert.Contents = base64Contents;
-        jobCert.PrivateKeyPassword = password;
-        config.JobCertificate = jobCert;
-
-        dynamic storeDetails = new ExpandoObject();
-        storeDetails.StorePassword = storePassword;
-        config.CertificateStoreDetails = storeDetails;
-
-        return config;
+        return new ManagementJobConfiguration
+        {
+            JobCertificate = new ManagementJobCertificate
+            {
+                Contents = base64Contents,
+                PrivateKeyPassword = password
+            },
+            CertificateStoreDetails = new CertificateStore
+            {
+                StorePassword = storePassword
+            }
+        };
     }
 
-    /// <summary>
-    /// Creates a config with null JobCertificate.
-    /// </summary>
-    private static dynamic CreateNullCertConfig()
+    private static ManagementJobConfiguration CreateNullCertConfig()
     {
-        dynamic config = new ExpandoObject();
-        config.JobCertificate = null;
-        config.CertificateStoreDetails = null;
-        return config;
+        return new ManagementJobConfiguration
+        {
+            JobCertificate = null,
+            CertificateStoreDetails = null
+        };
     }
 
     #endregion

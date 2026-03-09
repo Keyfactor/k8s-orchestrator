@@ -13,6 +13,7 @@ using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
+using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Logging;
 using Keyfactor.PKI.Extensions;
 using Keyfactor.PKI.PEM;
@@ -38,26 +39,26 @@ public class JobCertificateParser
     /// <summary>
     /// Parses certificate data from a management job configuration.
     /// </summary>
-    /// <param name="config">The management job configuration (dynamic).</param>
+    /// <param name="config">The management job configuration.</param>
     /// <param name="includeCertChain">Whether to include the certificate chain.</param>
     /// <returns>A populated K8SJobCertificate.</returns>
-    public K8SJobCertificate Parse(dynamic config, bool includeCertChain)
+    public K8SJobCertificate Parse(ManagementJobConfiguration config, bool includeCertChain)
     {
         _logger.LogDebug("Parsing job certificate data");
 
         var jobCert = new K8SJobCertificate();
 
         if (config.JobCertificate == null ||
-            string.IsNullOrEmpty((string)config.JobCertificate.Contents))
+            string.IsNullOrEmpty(config.JobCertificate.Contents))
         {
             _logger.LogWarning("Job certificate contents are null or empty");
             return jobCert;
         }
 
-        string password = (string)config.JobCertificate.PrivateKeyPassword ?? "";
+        string password = config.JobCertificate.PrivateKeyPassword ?? "";
         jobCert.Password = password;
 
-        byte[] certBytes = Convert.FromBase64String((string)config.JobCertificate.Contents);
+        byte[] certBytes = Convert.FromBase64String(config.JobCertificate.Contents);
         _logger.LogDebug("Certificate data length: {Length} bytes", certBytes.Length);
 
         if (certBytes.Length == 0)
@@ -76,7 +77,7 @@ public class JobCertificateParser
     /// can also parse PEM data, which would cause multi-cert PEM chains to be truncated.
     /// </summary>
     private K8SJobCertificate DetectAndRoute(byte[] certBytes, string password,
-        K8SJobCertificate jobCert, bool includeCertChain, dynamic config)
+        K8SJobCertificate jobCert, bool includeCertChain, ManagementJobConfiguration config)
     {
         // Try PKCS12 first (most common format for certs with keys)
         var pkcs12Result = TryParsePkcs12(certBytes, password);
@@ -136,7 +137,7 @@ public class JobCertificateParser
     /// Extracts certificate, key, and chain from a PKCS12 store.
     /// </summary>
     private K8SJobCertificate ParseFromPkcs12(Pkcs12Store store, string alias,
-        byte[] rawBytes, string password, K8SJobCertificate jobCert, dynamic config)
+        byte[] rawBytes, string password, K8SJobCertificate jobCert, ManagementJobConfiguration config)
     {
         _logger.LogDebug("Extracting certificate data from PKCS12 store");
 

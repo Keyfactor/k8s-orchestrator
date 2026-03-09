@@ -6,6 +6,7 @@
 // and limitations under the License.
 
 using System;
+using System.Collections.Generic;
 using Common.Logging;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
@@ -95,7 +96,7 @@ public abstract class JobBase
                 config.ServerPassword,
                 config.CertificateStoreDetails?.StorePath,
                 config.CertificateStoreDetails?.StorePassword,
-                JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties));
+                JsonConvert.DeserializeObject<Dictionary<string, object>>(config.CertificateStoreDetails.Properties));
         }
         catch (Exception ex)
         {
@@ -140,7 +141,7 @@ public abstract class JobBase
                 config.ServerPassword,
                 config.CertificateStoreDetails?.StorePath,
                 null,
-                JsonConvert.DeserializeObject(config.CertificateStoreDetails.Properties));
+                JsonConvert.DeserializeObject<Dictionary<string, object>>(config.CertificateStoreDetails.Properties));
         }
         catch (Exception ex)
         {
@@ -154,7 +155,7 @@ public abstract class JobBase
     /// </summary>
     private void InitializeStoreCore(string capability, string serverUsername,
         string serverPassword, string storePath, string storePassword,
-        dynamic storeProperties)
+        IDictionary<string, object> storeProperties)
     {
         Capability = capability;
         ServerUsername = serverUsername;
@@ -172,7 +173,7 @@ public abstract class JobBase
     /// Initializes a K8SJobCertificate from the job configuration's certificate data.
     /// Delegates to JobCertificateParser for format detection and extraction.
     /// </summary>
-    protected K8SJobCertificate InitJobCertificate(dynamic config)
+    protected K8SJobCertificate InitJobCertificate(ManagementJobConfiguration config)
     {
         Logger ??= LogHandler.GetClassLogger(GetType());
         _certParser ??= new JobCertificateParser(Logger);
@@ -269,7 +270,7 @@ public abstract class JobBase
     /// <summary>
     /// Initializes job properties from the store properties dictionary.
     /// </summary>
-    private void InitializeProperties(dynamic storeProperties)
+    private void InitializeProperties(IDictionary<string, object> storeProperties)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
         _configParser ??= new StoreConfigurationParser(Logger);
@@ -395,7 +396,7 @@ public abstract class JobBase
     /// <summary>
     /// Applies keystore-specific defaults (PKCS12/JKS) using the centralized configuration parser.
     /// </summary>
-    private void ApplyKeystoreDefaultsFromParser(dynamic storeProperties)
+    private void ApplyKeystoreDefaultsFromParser(IDictionary<string, object> storeProperties)
     {
         var secretType = KubeSecretType?.ToLower();
         if (secretType is not ("pfx" or "p12" or "pkcs12" or "jks"))
