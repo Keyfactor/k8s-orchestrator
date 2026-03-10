@@ -16,56 +16,42 @@ make test-cluster-setup     # Show cluster setup info
 make test-cluster-cleanup   # Clean up test resources
 ```
 
-**📖 Full documentation:** [MAKEFILE_TEST_TARGETS.md](MAKEFILE_TEST_TARGETS.md)
+**📖 Full documentation:** [MAKEFILE_GUIDE.md](MAKEFILE_GUIDE.md)
 
 ---
 
-## 🚀 Quick Commands (Using dotnet directly)
+## 🚀 Quick Commands
 
 ### Run All Unit Tests
 ```bash
-cd /Users/sbailey/RiderProjects/k8s-orchestrator
-dotnet test
+make test-unit
 ```
 
 ### Run Unit Tests for Specific Store Type
 ```bash
-# K8SJKS tests only
-dotnet test --filter "FullyQualifiedName~K8SJKS&FullyQualifiedName!~Integration"
-
-# All PEM-based tests (K8SSecret + K8STLSSecr)
-dotnet test --filter "FullyQualifiedName~K8SSecret|FullyQualifiedName~K8STLSSecr"
+make test-store-jks      # K8SJKS tests
+make test-store-pkcs12   # K8SPKCS12 tests
+make test-handlers       # Handler unit tests
+make test-base-jobs      # Base job class tests
+make test-single FILTER=K8SJKSStoreTests  # Any filter pattern
 ```
 
 ### Run Integration Tests (Requires K8s Cluster)
 ```bash
-# Option 1: Use existing cluster
-export RUN_INTEGRATION_TESTS=true
-dotnet test
+# Option 1: Use existing cluster with kf-integrations context
+make test-integration
 
 # Option 2: Create kind cluster first
 kind create cluster --name kf-integrations
 kubectl config rename-context kind-kf-integrations kf-integrations
-export RUN_INTEGRATION_TESTS=true
-dotnet test
+make test-integration
 ```
 
 ### Generate Code Coverage Report
 ```bash
-# Run tests with coverage
-dotnet test --collect:"XPlat Code Coverage" --results-directory ./TestResults
-
-# Install report generator (one-time)
-dotnet tool install -g dotnet-reportgenerator-globaltool
-
-# Generate HTML report
-reportgenerator \
-  -reports:"./TestResults/**/coverage.cobertura.xml" \
-  -targetdir:"./TestResults/CoverageReport" \
-  -reporttypes:Html
-
-# Open report (macOS)
-open ./TestResults/CoverageReport/index.html
+make test-coverage        # All tests (unit + integration) with HTML report
+make test-coverage-unit   # Unit tests only with HTML report
+make test-coverage-open   # Open HTML report in browser (macOS)
 ```
 
 ---
@@ -73,9 +59,9 @@ open ./TestResults/CoverageReport/index.html
 ## 📊 Test Results Summary
 
 ### Current Status
-- **Unit Tests:** 412 tests, 100% passing ✅
-- **Integration Tests:** 120 tests, 100% passing ✅
-- **Total:** 532 tests across 7 store types
+- **Unit Tests:** 1397 tests, 100% passing ✅
+- **Integration Tests:** ~200 tests, 100% passing ✅
+- **Line coverage:** 90.5% | **Branch coverage:** 81.6%
 
 ### What's Tested
 ✅ All 7 Kubernetes store types
@@ -94,13 +80,13 @@ open ./TestResults/CoverageReport/index.html
    - Fast build + quick unit tests
    - PR size and title validation
 
-2. **Unit Tests** (~10 min)
-   - All 412 unit tests
+2. **Unit Tests** (~17 min)
+   - All 1397 unit tests
    - .NET 8.0 and 10.0
    - Code coverage
 
 3. **Integration Tests** (~10 min)
-   - All 120 integration tests
+   - ~200 integration tests
    - kind cluster (K8s v1.29)
    - Framework-specific namespace isolation
    - Automatic cleanup

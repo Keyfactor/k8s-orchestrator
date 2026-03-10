@@ -18,28 +18,11 @@ Comprehensive testing guide for the Keyfactor Kubernetes Universal Orchestrator 
 
 ## Overview
 
-The test suite includes **603+ tests** across all 7 Kubernetes Orchestrator store types:
-
-- **457 unit tests** - Fast, isolated tests with no external dependencies
-- **146+ integration tests** - End-to-end tests against real Kubernetes clusters
+The test suite includes **1397+ unit tests** and **~200 integration tests** across all 7 Kubernetes Orchestrator store types.
 
 All tests use **xUnit** framework with **Moq** for mocking, **BouncyCastle** for cryptographic operations, and **Keyfactor.PKI** for certificate utilities.
 
-### Test Coverage by Store Type
-
-| Store Type | Unit Tests | Integration Tests | Total |
-|------------|-----------|------------------|-------|
-| K8SJKS (Java Keystores) | ~80 | 14 | ~94 |
-| K8SPKCS12 (PKCS12/PFX) | ~75 | 13 | ~88 |
-| K8SCert (CSRs) | ~25 | 7 | ~32 |
-| K8SSecret (Opaque PEM) | ~53 | 25 | ~78 |
-| K8STLSSecr (TLS Secrets) | ~58 | 25 | ~83 |
-| K8SCluster (Cluster-wide) | ~55 | 21 | ~76 |
-| K8SNS (Namespace) | ~55 | 27 | ~82 |
-| Utilities/CertificateFormat | ~56 | - | ~56 |
-| **Total** | **~457** | **~146** | **~603** |
-
-> **Note**: Counts are approximate due to parameterized tests. Run `dotnet test --list-tests` for exact counts.
+> **Note**: Counts are approximate due to parameterized tests. Run `make test-unit` and check the summary line for the current exact count.
 
 ---
 
@@ -73,26 +56,72 @@ See [MAKEFILE_GUIDE.md](MAKEFILE_GUIDE.md) for complete documentation of all Mak
 ```
 kubernetes-orchestrator-extension.Tests/
 ├── Attributes/
-│   └── SkipUnlessAttribute.cs        # Conditional test execution
+│   ├── SkipUnlessAttribute.cs            # Conditional test execution (Fact)
+│   └── SkipUnlessTheoryAttribute.cs      # Conditional test execution (Theory)
 ├── Helpers/
-│   └── CertificateTestHelper.cs      # Certificate generation utilities
-├── Integration/                       # Integration tests (require K8s)
+│   ├── CertificateTestHelper.cs          # Certificate/key generation utilities
+│   ├── CachedCertificateProvider.cs      # Thread-safe cert cache (use instead of direct generation)
+│   └── KeyTypeTestData.cs                # xUnit theory data for key types
+├── Integration/                           # Integration tests (require K8s cluster)
+│   ├── Collections/                       # xUnit collection fixtures (parallel isolation)
+│   ├── Fixtures/
+│   │   └── IntegrationTestFixture.cs
+│   ├── IntegrationTestBase.cs
 │   ├── K8SCertStoreIntegrationTests.cs
 │   ├── K8SClusterStoreIntegrationTests.cs
 │   ├── K8SJKSStoreIntegrationTests.cs
 │   ├── K8SNSStoreIntegrationTests.cs
 │   ├── K8SPKCS12StoreIntegrationTests.cs
 │   ├── K8SSecretStoreIntegrationTests.cs
-│   └── K8STLSSecrStoreIntegrationTests.cs
-├── Utilities/                         # Utility tests
-│   └── CertificateUtilitiesTests.cs
-├── K8SCertStoreTests.cs              # Unit tests
+│   ├── K8STLSSecrStoreIntegrationTests.cs
+│   └── KubeClientIntegrationTests.cs
+├── Unit/                                  # Focused unit tests (no network)
+│   ├── Clients/
+│   │   ├── KubeCertificateManagerClientTests.cs
+│   │   └── KubeconfigParserTests.cs
+│   ├── Handlers/
+│   │   ├── AliasRoutingRegressionTests.cs
+│   │   └── HandlerNoNetworkTests.cs
+│   ├── Jobs/
+│   │   ├── DiscoveryBaseTests.cs
+│   │   ├── ExceptionTests.cs
+│   │   ├── K8SJobCertificateTests.cs
+│   │   ├── ManagementBaseTests.cs
+│   │   └── PAMUtilitiesTests.cs
+│   ├── Services/
+│   │   ├── CertificateChainExtractorTests.cs
+│   │   └── JobCertificateParserTests.cs
+│   ├── Utilities/
+│   │   ├── CertificateUtilitiesTests.cs
+│   │   └── LoggingUtilitiesTests.cs
+│   ├── CertificateOperationsTests.cs
+│   ├── K8SCertificateContextTests.cs
+│   ├── ReenrollmentTests.cs
+│   ├── SecretHandlerBaseTests.cs
+│   └── SecretHandlerFactoryTests.cs
+├── Clients/                               # Client-layer unit tests
+│   ├── KubeconfigParserTests.cs
+│   └── SecretOperationsTests.cs
+├── Enums/
+│   └── SecretTypesTests.cs
+├── Jobs/
+│   └── CertificateFormatTests.cs
+├── Services/                              # Service-layer unit tests
+│   ├── KeystoreOperationsTests.cs
+│   ├── PasswordResolverTests.cs
+│   ├── StoreConfigurationParserTests.cs
+│   └── StorePathResolverTests.cs
+├── Utilities/                             # Utility unit tests
+│   ├── CertificateUtilitiesTests.cs
+│   └── PrivateKeyFormatUtilitiesTests.cs
+├── K8SCertStoreTests.cs                  # Store-type serializer unit tests
 ├── K8SClusterStoreTests.cs
 ├── K8SJKSStoreTests.cs
 ├── K8SNSStoreTests.cs
 ├── K8SPKCS12StoreTests.cs
 ├── K8SSecretStoreTests.cs
-└── K8STLSSecrStoreTests.cs
+├── K8STLSSecrStoreTests.cs
+└── LoggingSafetyTests.cs
 ```
 
 ### Test Naming Convention
@@ -124,30 +153,21 @@ Examples:
 
 ### Unit Tests
 
-Unit tests run quickly (3-5 minutes) and have no external dependencies.
+Unit tests have no external dependencies. The full suite takes ~17 minutes due to RSA key generation across 11 key types on two frameworks; individual test classes are fast.
 
 #### Run All Unit Tests
 
 ```bash
-# From repository root
-dotnet test kubernetes-orchestrator-extension.Tests/Keyfactor.Orchestrators.K8S.Tests.csproj
-
-# Or with detailed output
-dotnet test kubernetes-orchestrator-extension.Tests/Keyfactor.Orchestrators.K8S.Tests.csproj \
-  --verbosity detailed
+make test-unit
 ```
 
-#### Run Tests for Specific Store Type
+#### Run Tests for Specific Store Type or Class
 
 ```bash
-# K8SJKS tests
-dotnet test --filter "FullyQualifiedName~K8SJKSStoreTests&FullyQualifiedName!~Integration"
-
-# K8STLSSecr tests
-dotnet test --filter "FullyQualifiedName~K8STLSSecrStoreTests&FullyQualifiedName!~Integration"
-
-# All PEM-based store tests (K8SSecret + K8STLSSecr)
-dotnet test --filter "FullyQualifiedName~K8SSecret|FullyQualifiedName~K8STLSSecr"
+make test-store-jks       # K8SJKS store tests
+make test-handlers        # Handler unit tests
+make test-base-jobs       # Base job class unit tests
+make test-single FILTER=K8SJKSStoreTests  # Any filter pattern
 ```
 
 #### Run with Code Coverage
@@ -310,8 +330,9 @@ kubectl delete namespace keyfactor-k8sjks-integration-tests
 **Store Type Tests (100% implementation complete):**
 - ✅ All 7 store types have comprehensive unit tests
 - ✅ All 7 store types have integration tests
-- ✅ All 381 unit tests passing (100% success rate)
-- ✅ All 120 integration tests passing (100% success rate)
+- ✅ All 1397 unit tests passing (100% success rate)
+- ✅ ~200 integration tests passing (100% success rate)
+- ✅ Line coverage: 90.5% | Branch coverage: 81.6% (as of 2026-03-10)
 
 **Test Scenarios Covered:**
 
@@ -371,14 +392,14 @@ Tests for the "Create Store If Missing" feature in Keyfactor Command:
 
 **1. Unit Tests (`unit-tests.yml`)**
 - Runs on: Every PR, push to main
-- Tests: All 381 unit tests
+- Tests: All 1397 unit tests
 - Frameworks: .NET 8.0 and 10.0
 - Coverage: Uploads code coverage reports
-- Duration: ~5 minutes
+- Duration: ~17 minutes
 
 **2. Integration Tests (`integration-tests.yml`)**
 - Runs on: Every PR, push to main
-- Tests: All 120 integration tests
+- Tests: ~200 integration tests
 - Kubernetes: kind cluster (v1.29)
 - Frameworks: .NET 8.0 and 10.0 (parallel with framework-specific namespaces)
 - Duration: ~10 minutes
@@ -435,8 +456,9 @@ public class YourStoreTypeTests
     [Fact]
     public void MethodName_Scenario_ExpectedResult()
     {
-        // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Test Cert");
+        // Arrange — use CachedCertificateProvider, NOT CertificateTestHelper.GenerateCertificate()
+        // Direct generation is slow (RSA key gen can take 30+ seconds per key)
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Test Cert");
 
         // Act
         var result = YourMethod(certInfo.Certificate);
@@ -452,7 +474,7 @@ public class YourStoreTypeTests
     public void MethodName_VariousKeyTypes_AllWork(KeyType keyType)
     {
         // Arrange
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType);
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, "VariousKeyTypes");
 
         // Act & Assert
         Assert.NotNull(certInfo.Certificate);
@@ -518,35 +540,42 @@ public class YourStoreIntegrationTests : IAsyncLifetime
 }
 ```
 
-### Using CertificateTestHelper
+### Using CachedCertificateProvider (Preferred)
+
+Always use `CachedCertificateProvider` for test cert data. Direct calls to `CertificateTestHelper.GenerateCertificate()` generate keys on every test run, which can add 30+ seconds per RSA key and cause multi-framework runs to take over an hour.
 
 ```csharp
-// Generate certificate with specific key type
-var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "CN=test.example.com");
+// Single certificate (cached by key type + label)
+var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "MyTest");
+var certificate = certInfo.Certificate;   // BouncyCastle X509Certificate
+var keyPair = certInfo.KeyPair;           // AsymmetricCipherKeyPair
 
-// Access components
-var certificate = certInfo.Certificate;  // BouncyCastle X509Certificate
-var keyPair = certInfo.KeyPair;          // AsymmetricCipherKeyPair
-var privateKey = certInfo.KeyPair.Private;
-var publicKey = certInfo.KeyPair.Public;
-
-// Generate certificate chain (leaf, intermediate, root)
-var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+// Certificate chain — leaf [0], intermediate [1], root [2]
+var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.EcP256, "MyChainTest");
 var leafCert = chain[0].Certificate;
 var intermediateCert = chain[1].Certificate;
 var rootCert = chain[2].Certificate;
 
-// Convert to PEM format
-var certPem = CertificateTestHelper.ConvertCertificateToPem(certificate);
-var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(privateKey);
+// PKCS12 bytes (cached)
+var pkcs12 = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "password", "MyP12Test");
+```
 
-// Generate PKCS12/JKS
+### Using CertificateTestHelper (Low-level / Integration)
+
+Use these static helpers for format conversion and JKS/PKCS12 generation inside tests, but source the cert from the cache above.
+
+```csharp
+// Convert to PEM
+var certPem = CertificateTestHelper.ConvertCertificateToPem(certificate);
+var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(keyPair.Private);
+
+// Generate PKCS12/JKS bytes from an existing cert+key
 var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(
     certificate, keyPair, password: "test123", alias: "mycert");
 var jksBytes = CertificateTestHelper.GenerateJks(
     certificate, keyPair, password: "test123", alias: "mycert");
 
-// Generate corrupted data for negative tests
+// Corrupted data for negative tests
 var corruptedData = CertificateTestHelper.GenerateCorruptedPkcs12();
 ```
 
@@ -772,10 +801,9 @@ dotnet test --filter "FullyQualifiedName~YourTestName" --verbosity diagnostic
 ### Getting Help
 
 **For test failures:**
-1. Check `UNIT_TEST_COMPLETION_SUMMARY.md` for known issues
-2. Review test logs with `--verbosity detailed`
-3. Verify environment setup matches prerequisites
-4. Check GitHub Actions logs for CI failures
+1. Review test logs: `make test-single FILTER=<FailingTestName>`
+2. Verify environment setup matches prerequisites
+3. Check GitHub Actions logs for CI failures
 
 **For integration test issues:**
 1. Verify cluster connectivity: `kubectl cluster-info`
