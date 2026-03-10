@@ -1,0 +1,108 @@
+name: ✨ Feature Request
+description: Suggest a new feature or enhancement for the Kubernetes Orchestrator Extension
+title: "[Feature]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting a new feature! Please provide as much detail as possible.
+
+  - type: dropdown
+    id: feature-type
+    attributes:
+      label: Feature Type
+      description: What type of feature are you requesting?
+      options:
+        - New Store Type Support
+        - New Operation Support
+        - Enhancement to Existing Feature
+        - Performance Improvement
+        - Better Error Handling
+        - Documentation Improvement
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: Is your feature request related to a problem? Please describe.
+      placeholder: I'm frustrated when... It would be helpful if...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution you'd like
+      placeholder: I would like to see...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+      placeholder: I've tried... but it doesn't work because...
+
+  - type: dropdown
+    id: affected-store-types
+    attributes:
+      label: Affected Store Types
+      description: Which store types would this feature affect? (select one, or "Multiple")
+      options:
+        - K8SCluster
+        - K8SNS
+        - K8SJKS
+        - K8SPKCS12
+        - K8SSecret
+        - K8STLSSecr
+        - K8SCert
+        - Multiple store types
+        - New store type
+        - All store types
+        - Not applicable
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case / Business Justification
+      description: Describe your use case and why this feature would be valuable
+      placeholder: |
+        In our environment, we need to...
+        This would benefit users who...
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation-ideas
+    attributes:
+      label: Implementation Ideas
+      description: |
+        If you have ideas about how this could be implemented, share them here.
+        Technical details, configuration examples, etc.
+      placeholder: |
+        This could be implemented by...
+        Configuration might look like...
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context, screenshots, or examples about the feature request.
+        Links to related documentation, similar features in other projects, etc.
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      options:
+        - label: I have searched existing issues and feature requests to ensure this is not a duplicate
+          required: true
+        - label: This feature aligns with the scope of the Kubernetes Orchestrator Extension
+          required: true
