@@ -725,6 +725,43 @@ Regression tests for `ManagementBase.RouteOperation`, verifying that `CertStoreO
 
 ---
 
+## Handler No-Network Tests
+
+Unit tests for handler properties and unsupported-operation paths that require no Kubernetes cluster.
+
+### Unit Tests (`Unit/Handlers/HandlerNoNetworkTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **CertificateSecretHandler** | |
+| `CertificateSecretHandler_AllowedKeys_IsEmpty` | `AllowedKeys` is empty (CSR store is read-only) |
+| `CertificateSecretHandler_SecretTypeName_IsCertificate` | `SecretTypeName` returns `"certificate"` |
+| `CertificateSecretHandler_SupportsManagement_IsFalse` | `SupportsManagement` returns `false` |
+| `CertificateSecretHandler_HasPrivateKey_ReturnsFalse` | `HasPrivateKey()` returns `false` |
+| `CertificateSecretHandler_HandleAdd_ThrowsNotSupportedException` | `HandleAdd` throws `NotSupportedException` |
+| `CertificateSecretHandler_HandleRemove_ThrowsNotSupportedException` | `HandleRemove` throws `NotSupportedException` |
+| `CertificateSecretHandler_CreateEmptyStore_ThrowsNotSupportedException` | `CreateEmptyStore` throws `NotSupportedException` |
+| **ClusterSecretHandler** | |
+| `ClusterSecretHandler_AllowedKeys_ContainsTlsCrt` | `AllowedKeys` includes `"tls.crt"` |
+| `ClusterSecretHandler_SecretTypeName_IsCluster` | `SecretTypeName` returns `"cluster"` |
+| `ClusterSecretHandler_SupportsManagement_IsTrue` | `SupportsManagement` returns `true` |
+| `ClusterSecretHandler_HasPrivateKey_ReturnsTrue` | `HasPrivateKey()` returns `true` |
+| `ClusterSecretHandler_CreateEmptyStore_ThrowsNotSupportedException` | `CreateEmptyStore` throws `NotSupportedException` |
+| `ClusterSecretHandler_HandleAdd_ShortAlias_ThrowsArgumentException` | Alias with < 4 parts throws `ArgumentException` |
+| `ClusterSecretHandler_HandleRemove_ShortAlias_ThrowsArgumentException` | Same for `HandleRemove` |
+| `ClusterSecretHandler_HandleAdd_UnsupportedInnerType_ThrowsNotSupportedException` | Unknown inner type throws `NotSupportedException` |
+| **NamespaceSecretHandler** | |
+| `NamespaceSecretHandler_AllowedKeys_ContainsTlsCrt` | `AllowedKeys` includes `"tls.crt"` |
+| `NamespaceSecretHandler_SecretTypeName_IsNamespace` | `SecretTypeName` returns `"namespace"` |
+| `NamespaceSecretHandler_SupportsManagement_IsTrue` | `SupportsManagement` returns `true` |
+| `NamespaceSecretHandler_HasPrivateKey_ReturnsTrue` | `HasPrivateKey()` returns `true` |
+| `NamespaceSecretHandler_CreateEmptyStore_ThrowsNotSupportedException` | `CreateEmptyStore` throws `NotSupportedException` |
+| `NamespaceSecretHandler_HandleAdd_ShortAlias_ThrowsArgumentException` | Alias with < 2 parts throws `ArgumentException` |
+| `NamespaceSecretHandler_HandleRemove_ShortAlias_ThrowsArgumentException` | Same for `HandleRemove` |
+| `NamespaceSecretHandler_HandleAdd_UnsupportedInnerType_ThrowsNotSupportedException` | Unknown inner type throws `NotSupportedException` |
+
+---
+
 ## Alias Routing
 
 Regression tests for the `<fieldName>/<certAlias>` alias pattern in `JksSecretHandler` and `Pkcs12SecretHandler`.
@@ -862,6 +899,31 @@ Tests for parsing `namespace/secretName` store paths.
 
 Tests for JKS/PKCS12 keystore manipulation operations.
 
+### CertificateChainExtractor Tests (`Unit/Services/CertificateChainExtractorTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **Null / whitespace inputs** | |
+| `ExtractCertificates_NullString_ReturnsEmpty` | Null PEM string returns empty list |
+| `ExtractCertificates_WhitespaceString_ReturnsEmpty` | Empty/whitespace PEM returns empty list (Theory: `""`, `"   "`, `"\t\n"`) |
+| **DER fallback** | |
+| `ExtractCertificates_Base64DerCert_UsesDerFallbackAndReturnsPem` | Base64-encoded DER cert falls back to DER reader and returns PEM |
+| `ExtractCertificates_InvalidData_ReturnsEmptyAndLogsWarning` | Junk data (neither PEM nor DER) returns empty and logs a warning |
+| **Byte array inputs** | |
+| `ExtractCertificates_NullBytes_ReturnsEmpty` | Null byte array returns empty list |
+| `ExtractCertificates_EmptyBytes_ReturnsEmpty` | Empty byte array returns empty list |
+| **ExtractAndAppendUnique** | |
+| `ExtractAndAppendUnique_NullBytes_ReturnsZero` | Null bytes appends nothing and returns 0 |
+| `ExtractAndAppendUnique_EmptyBytes_ReturnsZero` | Empty bytes appends nothing and returns 0 |
+| **ExtractFromSecretData** | |
+| `ExtractFromSecretData_NullSecretData_ReturnsEmpty` | Null secretData dict returns empty list |
+| `ExtractFromSecretData_WithCaCrt_AddsCaCertsToList` | `ca.crt` field is appended as chain cert (exercises addedCount > 0 log branch) |
+| `ExtractFromSecretData_EmptySecretData_ReturnsEmpty` | Empty secretData dict returns empty list |
+
+### JobCertificateParser Tests (`Unit/Services/JobCertificateParserTests.cs`)
+
+Tests for certificate format detection and extraction from job configurations.
+
 ---
 
 ## Utility Tests
@@ -920,6 +982,39 @@ Tests for DTO models (KubernetesCertStore, KubeCreds, Cert).
 
 Tests for certificate context model with computed properties.
 
+### K8SJobCertificate Tests (`Unit/Jobs/K8SJobCertificateTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **Null / empty inputs** | |
+| `GetCertificateContext_NullCertificateEntry_ReturnsNull` | Null `CertificateEntry` returns null context |
+| `GetCertificateContext_WithCert_NullChain_ReturnsContextWithNoCertChain` | Cert with null chain returns context with empty `Chain` and `ChainPem` |
+| `GetCertificateContext_WithCert_EmptyChainArray_ReturnsContextWithNoCertChain` | Empty chain array returns context with empty `Chain` |
+| **Chain handling** | |
+| `GetCertificateContext_WithChainNoCertPem_SetsChainSkippingLeaf` | Chain skips leaf (index 0); intermediate and root are in `Chain` |
+| `GetCertificateContext_WithChainAndEmptyChainPemList_SetsChainNoChainPem` | Empty `ChainPem` list does not override auto-computed `ChainPem` |
+| `GetCertificateContext_WithChainAndChainPem_SetsChainPemSkippingLeaf` | Explicit `ChainPem` also skips index 0 (leaf) |
+| **PEM copy** | |
+| `GetCertificateContext_CertPemAndPrivateKeyPemAreCopied` | `CertPem` and `PrivateKeyPem` are copied to context |
+| `GetCertificateContext_Certificate_IsSetFromCertificateEntry` | `Certificate` is populated from `CertificateEntry` |
+
+### Exception Tests (`Unit/Jobs/ExceptionTests.cs`)
+
+| Test Name | Description |
+|-----------|-------------|
+| **JkSisPkcs12Exception** | |
+| `JkSisPkcs12Exception_DefaultConstructor_IsException` | Default constructor produces an `Exception` |
+| `JkSisPkcs12Exception_MessageConstructor_PreservesMessage` | Message constructor preserves message |
+| `JkSisPkcs12Exception_InnerExceptionConstructor_PreservesInner` | Inner-exception constructor preserves both message and inner |
+| **InvalidK8SSecretException** | |
+| `InvalidK8SSecretException_DefaultConstructor_IsException` | Default constructor produces an `Exception` |
+| `InvalidK8SSecretException_MessageConstructor_PreservesMessage` | Message constructor preserves message |
+| `InvalidK8SSecretException_InnerExceptionConstructor_PreservesInner` | Inner-exception constructor preserves both message and inner |
+| **StoreNotFoundException** | |
+| `StoreNotFoundException_DefaultConstructor_IsException` | Default constructor produces an `Exception` |
+| `StoreNotFoundException_MessageConstructor_PreservesMessage` | Message constructor preserves message |
+| `StoreNotFoundException_InnerExceptionConstructor_PreservesInner` | Inner-exception constructor preserves both message and inner |
+
 ---
 
 ## Enum Tests
@@ -932,11 +1027,12 @@ Tests for SecretType and StoreType enum parsing, conversion, and edge cases.
 
 ## Test Infrastructure
 
-### Test Counts (as of 2026-03-06)
+### Test Counts (as of 2026-03-10)
 
-- **Unit Tests**: 1,156
-- **Integration Tests**: 215
-- **Total**: 1,371
+- **Unit Tests**: 1,397
+- **Integration Tests**: ~200
+- **Total**: ~1,600
+- **Line coverage**: 90.5% | **Branch coverage**: 81.6%
 - **Frameworks**: net8.0 and net10.0 (tests run on both)
 
 ### Helpers
