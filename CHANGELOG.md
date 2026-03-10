@@ -31,12 +31,16 @@
 - chore(tests): Add integration test suite validating end-to-end operations against live Kubernetes clusters.
 - chore(tests): Add alias routing regression tests (`AliasRoutingRegressionTests`) with 8 unit tests covering JKS and PKCS12 field-selection and certAlias correctness.
 - chore(tests): Add 4 integration tests each to `K8SJKSStoreIntegrationTests` and `K8SPKCS12StoreIntegrationTests` validating end-to-end `<fieldName>/<certAlias>` alias routing (field written to, cert alias inside keystore, inventory alias format, and remove from named field).
+- chore(tests): Add unit tests for all three constructors of `JkSisPkcs12Exception`, `InvalidK8SSecretException`, and `StoreNotFoundException` (previously at 0% line coverage).
+- chore(tests): Add 10 unit tests for `CertificateChainExtractor` covering null/empty inputs, DER fallback, invalid data, and `ca.crt` chain handling (coverage: 75% → 98.9%).
+- chore(tests): Add 26 no-network unit tests for `CertificateSecretHandler`, `ClusterSecretHandler`, and `NamespaceSecretHandler` covering property assertions, `NotSupportedException` throws, and alias-parsing `ArgumentException` paths (coverage: ~69–78% → ~82–89%).
 - chore(ci): Add GitHub Actions workflows for unit tests, integration tests, code quality, and security scanning.
 - chore(ci): Add CodeQL, dependency review, SBOM generation, and license compliance workflows.
 - chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.
 - chore(docs): Document supported key types for all store types.
 - chore(util): Add verbose logging to PAM credential resolver.
 - chore(refactor): Remove dead code from `JobBase` — unused static arrays, dead properties (`KubeHost`, `KubeCluster`, `SkipTlsValidation`, `OperationType`, `Overwrite`, `KeyEntry`, `ManagementConfig`, `DiscoveryConfig`, `InventoryConfig`), unused `WarningJob()`, `HasPrivateKey()`, and `CertChainSeparator`.
+- chore(refactor): Remove unreachable branches from `KubeClient.GetKubeClient()` — the `else if (k8SConfiguration == null)` and file-path fallback branches were provably dead because `KubeconfigParser.Parse()` always throws on failure rather than returning null. Removing them reduced cyclomatic complexity from 14 to 6 and CRAP score from 137 to 26.8.
 - chore(refactor): Simplify JKS serializer `CreateOrUpdateJks` — extract `LoadExistingJksStore()`, `LoadNewCertificate()`, `SaveJksStore()`, `PasswordToChars()` helpers. CRAP score reduced from 60 to 16.
 - chore(refactor): Simplify PKCS12 serializer `CreateOrUpdatePkcs12` — same helper extraction pattern. CRAP score reduced from 36 to 16.
 - chore(refactor): Simplify `GetStorePath()` in `JobBase` — extract `DeriveSecretType()` and `NormalizeSecretTypeForPath()` helpers, make method private.

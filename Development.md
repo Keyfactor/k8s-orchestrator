@@ -30,7 +30,7 @@ dotnet build -c Release # Build for release
 
 ## Testing
 
-The project uses xUnit for testing with comprehensive unit and integration test suites (~1337 unit tests, ~200 integration tests).
+The project uses xUnit for testing with comprehensive unit and integration test suites (~1397 unit tests, ~200 integration tests).
 
 ### Unit Tests
 
