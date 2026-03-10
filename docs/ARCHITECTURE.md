@@ -166,7 +166,7 @@ Clients/
 
 **KubeClient Responsibilities:**
 
-- Kubeconfig parsing and validation (via `KubeconfigParser`)
+- Kubeconfig parsing and validation (via `KubeconfigParser`) — `GetKubeClient` delegates exclusively to `KubeconfigParser.Parse()`, which throws on any error; there is no file-path or default-config fallback
 - Connection retry logic
 - TLS verification (optional skip)
 - Secret CRUD operations (via `SecretOperations`)
@@ -349,8 +349,12 @@ The extension authenticates to Kubernetes using a **kubeconfig** JSON object pro
 The extension uses custom exceptions:
 
 - **StoreNotFoundException**: Secret/CSR not found in Kubernetes
-- **InvalidOperationException**: Invalid operation for store state
+- **InvalidK8SSecretException**: Secret data is malformed or contains unexpected fields
+- **JkSisPkcs12Exception**: A secret stored as JKS contains PKCS12 data (wrong format declared)
+- **InvalidOperationException**: Invalid operation for store state (e.g., management on a read-only store)
 - **HttpOperationException**: Kubernetes API errors
+
+All three custom exception classes live in `Exceptions/` (file layout) but use the `Keyfactor.Extensions.Orchestrator.K8S.Jobs` namespace for backwards compatibility.
 
 Jobs return `JobResult` with appropriate status:
 
