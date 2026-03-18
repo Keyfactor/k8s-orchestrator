@@ -13,26 +13,51 @@ using System.Security.Cryptography;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 
+/// <summary>
+/// Serializer for Java KeyStore (JKS) certificate stores in Kubernetes secrets.
+/// Handles conversion between JKS format and BouncyCastle's Pkcs12Store for internal processing.
+/// </summary>
+/// <remarks>
+/// JKS stores are converted to PKCS12 internally because BouncyCastle provides better
+/// manipulation capabilities for PKCS12 stores. The conversion is transparent to callers.
+/// </remarks>
 internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
 {
+    /// <summary>Logger instance for diagnostic output.</summary>
     private readonly ILogger _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the JKS certificate store serializer.
+    /// </summary>
+    /// <param name="storeProperties">JSON string of store properties (currently unused).</param>
     public JksCertificateStoreSerializer(string storeProperties)
     {
         _logger = LogHandler.GetClassLogger(GetType());
     }
 
+    /// <summary>
+    /// Deserializes a JKS keystore from byte data into a Pkcs12Store for manipulation.
+    /// Handles both true JKS format and PKCS12 format that may have been stored as JKS.
+    /// </summary>
+    /// <param name="storeContents">The JKS keystore bytes.</param>
+    /// <param name="storePath">Path to the store (for logging context).</param>
+    /// <param name="storePassword">Password to decrypt the keystore.</param>
+    /// <returns>A Pkcs12Store containing the certificates and keys from the JKS.</returns>
+    /// <exception cref="ArgumentException">Thrown when store password is null or empty.</exception>
+    /// <exception cref="JkSisPkcs12Exception">Thrown when the data is actually PKCS12 format.</exception>
     public Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword)
     {
-        _logger.MethodEntry();
+        _logger.MethodEntry(MsLogLevel.Debug);
         var storeBuilder = new Pkcs12StoreBuilder();
         var pkcs12Store = storeBuilder.Build();
         var pkcs12StoreNew = storeBuilder.Build();
@@ -44,20 +69,17 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             _logger.LogError("JKS store password is null or empty for store at path '{Path}'", storePath);
             throw new ArgumentException("JKS store password is null or empty");
         }
-        
-        // _logger.LogTrace("storePassword: {Pass}", storePassword.Replace("\n","\\n")); //TODO: INSECURE - Remove this line, it is for debugging purposes only
-        // var hashedStorePassword = GetSha256Hash(storePassword);
-        // _logger.LogTrace("hashedStorePassword: {Pass}", hashedStorePassword ?? "null");
+
+        _logger.LogTrace("StorePassword: {Password}", LoggingUtilities.RedactPassword(storePassword));
+        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
 
         var jksStore = new JksStore();
 
         _logger.LogDebug("Loading JKS store");
         try
         {
-            // _logger.LogTrace("Attempting to load JKS store w/ password");
-            // _logger.LogTrace("Attempting to load JKS store w/ password '{Pass}'",
-            //     storePassword.Replace("\n","\\n")); //TODO: INSECURE - Remove this line, it is for debugging purposes only
-            
+            _logger.LogTrace("Attempting to load JKS store with provided password");
+
             using (var ms = new MemoryStream(storeContents))
             {
                 jksStore.Load(ms, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
@@ -76,9 +98,8 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                 }
                 else
                 {
-                    _logger.LogError("Unable to load JKS store using provided password '***<redacted>***'");
-                    // _logger.LogError("Unable to load JKS store using password '{Pass}'",
-                    //     storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+                    _logger.LogError("Unable to load JKS store using provided password: {Password}", LoggingUtilities.RedactPassword(storePassword));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
                 }
                 
                 throw;
@@ -94,9 +115,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                 }
                 
                 _logger.LogDebug("Attempting to load JKS store as Pkcs12Store using provided password");
-                // _logger.LogTrace("Attempting to load JKS store as Pkcs12Store w/ password '{Pass}'",
-                //     storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
-                
+
                 using (var ms = new MemoryStream(storeContents))
                 {
                     pkcs12Store.Load(ms, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
@@ -147,25 +166,30 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         // internal hashtables necessary to avoid an error later when processing store.
         var ms2 = new MemoryStream();
         _logger.LogDebug("Saving Pkcs12Store to MemoryStream using provided password");
-        // _logger.LogTrace("Saving Pkcs12Store to MemoryStream w/ password '{Pass}'",
-        //     storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
         pkcs12Store.Save(ms2, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray(),
             new SecureRandom());
         ms2.Position = 0;
 
         _logger.LogDebug("Loading Pkcs12Store from MemoryStream");
-        // _logger.LogTrace("Loading Pkcs12Store from MemoryStream w/ password '{Pass}'",
-        //     storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
         pkcs12StoreNew.Load(ms2, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
 
         _logger.LogDebug("Returning Pkcs12Store");
+        _logger.MethodExit(MsLogLevel.Debug);
         return pkcs12StoreNew;
     }
 
+    /// <summary>
+    /// Serializes a Pkcs12Store back to JKS format for storage in Kubernetes.
+    /// </summary>
+    /// <param name="certificateStore">The Pkcs12Store to serialize.</param>
+    /// <param name="storePath">Directory path for the store.</param>
+    /// <param name="storeFileName">Filename for the serialized store.</param>
+    /// <param name="storePassword">Password to encrypt the keystore.</param>
+    /// <returns>List of SerializedStoreInfo containing the JKS bytes and path.</returns>
     public List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
         string storeFileName, string storePassword)
     {
-        _logger.MethodEntry();
+        _logger.MethodEntry(MsLogLevel.Debug);
 
         var jksStore = new JksStore();
 
@@ -178,8 +202,6 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             {
                 certificates.AddRange(certificateChain.Select(certificateEntry => certificateEntry.Certificate));
                 _logger.LogDebug("Processing key entry for alias '{Alias}' using provided password", alias);
-                // _logger.LogDebug("Alias '{Alias}' is a key entry, setting key entry in JKS store using store password '{Pass}'",
-                //     alias, storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
                 jksStore.SetKeyEntry(alias, keyEntry.Key,
                     string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray(), certificates.ToArray());
             }
@@ -191,36 +213,50 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
 
         using var outStream = new MemoryStream();
         _logger.LogDebug("Saving JKS store to MemoryStream using provided password");
-        // _logger.LogDebug("Saving JKS store to MemoryStream w/ password '{Pass}'",
-        //     storePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
         jksStore.Save(outStream, string.IsNullOrEmpty(storePassword) ? [] : storePassword.ToCharArray());
 
         var storeInfo = new List<SerializedStoreInfo>
             { new() { FilePath = Path.Combine(storePath, storeFileName), Contents = outStream.ToArray() } };
 
-        _logger.MethodExit();
+        _logger.MethodExit(MsLogLevel.Debug);
         return storeInfo;
     }
 
+    /// <summary>
+    /// Returns the private key path (not applicable for JKS stores).
+    /// </summary>
+    /// <returns>Always returns null for JKS stores.</returns>
     public string GetPrivateKeyPath()
     {
         return null;
     }
 
+    /// <summary>
+    /// Creates a new JKS store or updates an existing one with a new certificate.
+    /// Handles both add and remove operations.
+    /// </summary>
+    /// <param name="newPkcs12Bytes">PKCS12 bytes containing the new certificate to add.</param>
+    /// <param name="newCertPassword">Password for the new certificate's private key.</param>
+    /// <param name="alias">Alias for the certificate entry in the JKS.</param>
+    /// <param name="existingStore">Existing JKS store bytes (null for new store).</param>
+    /// <param name="existingStorePassword">Password for the existing store.</param>
+    /// <param name="remove">True to remove the certificate, false to add.</param>
+    /// <param name="includeChain">Whether to include the certificate chain.</param>
+    /// <returns>The updated JKS store as byte array.</returns>
+    /// <exception cref="JkSisPkcs12Exception">Thrown when the existing store is actually PKCS12 format.</exception>
     public byte[] CreateOrUpdateJks(byte[] newPkcs12Bytes, string newCertPassword, string alias,
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
-        _logger.MethodEntry();
+        _logger.MethodEntry(MsLogLevel.Debug);
         // If existingStore is null, create a new store
         var existingJksStore = new JksStore();
         var newJksStore = new JksStore();
         var createdNewStore = false;
 
         _logger.LogTrace("alias: {Alias}", alias);
-        // _logger.LogTrace("newCertPassword: {Pass}",
-        //     newCertPassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
-        // _logger.LogTrace("existingStorePassword: {Pass}", existingStorePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+        _logger.LogTrace("newCertPassword: {Password}", LoggingUtilities.RedactPassword(newCertPassword));
+        _logger.LogTrace("existingStorePassword: {Password}", LoggingUtilities.RedactPassword(existingStorePassword));
 
         // If existingStore is not null, load it into jksStore
         if (existingStore != null)
@@ -239,10 +275,8 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
 
                 if (ex.Message.Contains("password incorrect or store tampered with"))
                 {
-                    _logger.LogError("Unable to load existing JKS store using provided password '***<redacted>***'");
-                    // _logger.LogError("Unable to load existing JKS store using password '{Pass}'",
-                    //     existingStorePassword ??
-                    //     "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+                    _logger.LogError("Unable to load existing JKS store using provided password: {Password}", LoggingUtilities.RedactPassword(existingStorePassword));
+                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(existingStorePassword));
                     throw;
                 }
 
@@ -308,8 +342,7 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         try
         {
             _logger.LogDebug("Loading new Pkcs12Store from newPkcs12Bytes");
-            // _logger.LogTrace("newCertPassword: {Pass}",
-            //     newCertPassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
+            _logger.LogTrace("PKCS12 data: {Data}", LoggingUtilities.RedactPkcs12Bytes(newPkcs12Bytes));
             using var pkcs12Ms = new MemoryStream(newPkcs12Bytes);
             if (pkcs12Ms.Length != 0) newCert.Load(pkcs12Ms, (newCertPassword ?? string.Empty).ToCharArray());
         }
@@ -399,22 +432,19 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         if (createdNewStore)
         {
             _logger.LogDebug("Created new JKS store, saving it to outStream");
-            // _logger.LogTrace("Saving new JKS store to outStream w/ password '{Pass}'",
-            //     existingStorePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
             newJksStore.Save(outStream,
                 string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
         }
         else
         {
             _logger.LogDebug("Saving existing JKS store to outStream");
-            // _logger.LogTrace("Saving existing JKS store to outStream w/ password '{Pass}'",
-            //     existingStorePassword ?? "null"); //TODO: INSECURE - Remove this line, it is for debugging purposes only
             existingJksStore.Save(outStream,
                 string.IsNullOrEmpty(existingStorePassword) ? [] : existingStorePassword.ToCharArray());
         }
 
         // Return existingJksStore as byte[]
-        _logger.MethodExit();
+        _logger.LogDebug("JKS store operation complete");
+        _logger.MethodExit(MsLogLevel.Debug);
         return outStream.ToArray();
     }
 }
