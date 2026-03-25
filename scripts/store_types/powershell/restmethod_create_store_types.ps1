@@ -1,229 +1,564 @@
-$username = [System.Environment]::GetEnvironmentVariable("KEYFACTOR_USERNAME", "User")
-$password = [System.Environment]::GetEnvironmentVariable("KEYFACTOR_PASSWORD", "User")
-$hostname = [System.Environment]::GetEnvironmentVariable("KEYFACTOR_HOSTNAME", "User")
-$domain = [System.Environment]::GetEnvironmentVariable("KEYFACTOR_DOMAIN", "User")
+# Creates all 7 Kubernetes Orchestrator store types via the Keyfactor Command
+# REST API using PowerShell Invoke-RestMethod.
+#
+# Authentication (first matching method is used):
+#   OAuth access token:     KEYFACTOR_AUTH_ACCESS_TOKEN
+#   OAuth client creds:     KEYFACTOR_AUTH_CLIENT_ID + KEYFACTOR_AUTH_CLIENT_SECRET
+#                           + KEYFACTOR_AUTH_TOKEN_URL
+#   Basic auth (AD):        KEYFACTOR_USERNAME + KEYFACTOR_PASSWORD + KEYFACTOR_DOMAIN
+#
+# Always required:
+#   KEYFACTOR_HOSTNAME      Command hostname (e.g. my-command.example.com)
+#
+# Auto-generated from integration-manifest.json — do not edit by hand.
+# Regenerate with: make store-types-gen-scripts
 
-if (-not $username -or -not $password -or -not $hostname -or -not $domain) {
-   Write-Host "Please set the environment variables KEYFACTOR_USERNAME, KEYFACTOR_PASSWORD, KEYFACTOR_HOSTNAME and KEYFACTOR_DOMAIN"
-   exit
+if (-not $env:KEYFACTOR_HOSTNAME) {
+    Write-Error "KEYFACTOR_HOSTNAME is required"
+    exit 1
 }
 
-$uri = "https://$hostname/keyfactorapi/certificatestoretypes"
-$auth = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("${username}@${domain}:${password}"))
+$uri     = "https://$($env:KEYFACTOR_HOSTNAME)/keyfactorapi/certificatestoretypes"
 $headers = @{
-   'Authorization' = "Basic $auth"
-   'Content-Type' = "application/json"
-   'x-keyfactor-requested-with' = "APIClient"
+    'Content-Type'               = "application/json"
+    'x-keyfactor-requested-with' = "APIClient"
 }
 
+# ---------------------------------------------------------------------------
+# Resolve auth
+# ---------------------------------------------------------------------------
+if ($env:KEYFACTOR_AUTH_ACCESS_TOKEN) {
+    $headers['Authorization'] = "Bearer $($env:KEYFACTOR_AUTH_ACCESS_TOKEN)"
+} elseif ($env:KEYFACTOR_AUTH_CLIENT_ID -and $env:KEYFACTOR_AUTH_CLIENT_SECRET -and $env:KEYFACTOR_AUTH_TOKEN_URL) {
+    Write-Host "Fetching OAuth token..."
+    $tokenBody = @{
+        grant_type    = 'client_credentials'
+        client_id     = $env:KEYFACTOR_AUTH_CLIENT_ID
+        client_secret = $env:KEYFACTOR_AUTH_CLIENT_SECRET
+    }
+    $tokenResp = Invoke-RestMethod -Method Post -Uri $env:KEYFACTOR_AUTH_TOKEN_URL -Body $tokenBody
+    $headers['Authorization'] = "Bearer $($tokenResp.access_token)"
+} elseif ($env:KEYFACTOR_USERNAME -and $env:KEYFACTOR_PASSWORD -and $env:KEYFACTOR_DOMAIN) {
+    $cred = [System.Convert]::ToBase64String(
+        [System.Text.Encoding]::ASCII.GetBytes(
+            "$($env:KEYFACTOR_USERNAME)@$($env:KEYFACTOR_DOMAIN):$($env:KEYFACTOR_PASSWORD)"))
+    $headers['Authorization'] = "Basic $cred"
+} else {
+    Write-Error "Authentication required. Set one of:`n  KEYFACTOR_AUTH_ACCESS_TOKEN`n  KEYFACTOR_AUTH_CLIENT_ID + KEYFACTOR_AUTH_CLIENT_SECRET + KEYFACTOR_AUTH_TOKEN_URL`n  KEYFACTOR_USERNAME + KEYFACTOR_PASSWORD + KEYFACTOR_DOMAIN"
+    exit 1
+}
 
+function New-StoreType {
+    param([string]$Name, [string]$Body)
+    Write-Host "Creating $Name store type..."
+    try {
+        Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $Body -ContentType "application/json" | Out-Null
+        Write-Host "  OK"
+    } catch {
+        Write-Warning "  FAILED: $($_.Exception.Message)"
+    }
+}
 
-Write-Host "Creating K8SCert store type"
-$body = @"
+# ---------------------------------------------------------------------------
+# K8SCert — The Kubernetes cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SCert" @'
 {
-    "Name": "K8SCert",
-    "ShortName": "K8SCert",
-    "Capability": "K8SCert",
-    "LocalStore": false,
-    "SupportedOperations": {
-      "Add": false,
-      "Create": false,
-      "Discovery": true,
-      "Enrollment": false,
-      "Remove": false
-    },
-    "Properties": [
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeNamespace",
-        "DisplayName": "KubeNamespace",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "default",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretName",
-        "DisplayName": "KubeSecretName",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretType",
-        "DisplayName": "KubeSecretType",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "cert",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSvcCreds",
-        "DisplayName": "KubeSvcCreds",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      }
-    ],
-    "EntryParameters": [],
-    "PasswordOptions": {
-      "EntrySupported": false,
-      "StoreRequired": false,
-      "Style": "Default"
-    },
-    "StorePathType": "",
-    "StorePathValue": "",
-    "PrivateKeyAllowed": "Forbidden",
-    "JobProperties": [],
-    "ServerRequired": false,
-    "PowerShell": false,
-    "BlueprintAllowed": false,
-    "CustomAliasAllowed": "Forbidden"
-  }
-"@
-Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body -ContentType "application/json"
+  "Name": "K8SCert",
+  "ShortName": "K8SCert",
+  "Capability": "K8SCert",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": false,
+    "Create": false,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": false
+  },
+  "Properties": [
+    {
+      "Name": "KubeSecretName",
+      "DisplayName": "KubeSecretName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "",
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": false,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Forbidden",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Forbidden"
+}
+'@
 
-Write-Host "Creating K8SSecret store type"
-$body = @"
+# ---------------------------------------------------------------------------
+# K8SCluster — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SCluster" @'
 {
-    "Name": "K8SSecret",
-    "ShortName": "K8SSecret",
-    "Capability": "K8SSecret",
-    "LocalStore": false,
-    "SupportedOperations": {
-      "Add": true,
-      "Create": true,
-      "Discovery": true,
-      "Enrollment": false,
-      "Remove": true
+  "Name": "K8SCluster",
+  "ShortName": "K8SCluster",
+  "Capability": "K8SCluster",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": false,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
     },
-    "Properties": [
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeNamespace",
-        "DisplayName": "KubeNamespace",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "default",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretName",
-        "DisplayName": "KubeSecretName",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretType",
-        "DisplayName": "KubeSecretType",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "secret",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSvcCreds",
-        "DisplayName": "KubeSvcCreds",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      }
-    ],
-    "EntryParameters": [],
-    "PasswordOptions": {
-      "EntrySupported": false,
-      "StoreRequired": false,
-      "Style": "Default"
-    },
-    "StorePathType": "",
-    "StorePathValue": "",
-    "PrivateKeyAllowed": "Optional",
-    "JobProperties": [],
-    "ServerRequired": false,
-    "PowerShell": false,
-    "BlueprintAllowed": false,
-    "CustomAliasAllowed": "Forbidden"
-  }
-"@
+    {
+      "Name": "SeparateChain",
+      "DisplayName": "Separate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "false",
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": false,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Required"
+}
+'@
 
-Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body -ContentType "application/json"
-
-Write-Host "Creating K8STLSSecr store type"
-$body = @"
+# ---------------------------------------------------------------------------
+# K8SJKS — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SJKS" @'
 {
-    "Name": "K8STLSSecr",
-    "ShortName": "K8STLSSecr",
-    "Capability": "K8STLSSecr",
-    "LocalStore": false,
-    "SupportedOperations": {
-      "Add": true,
-      "Create": true,
-      "Discovery": true,
-      "Enrollment": false,
-      "Remove": true
+  "Name": "K8SJKS",
+  "ShortName": "K8SJKS",
+  "Capability": "K8SJKS",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "KubeNamespace",
+      "DisplayName": "KubeNamespace",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "default",
+      "Required": false
     },
-    "Properties": [
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeNamespace",
-        "DisplayName": "KubeNamespace",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "default",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretName",
-        "DisplayName": "KubeSecretName",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSecretType",
-        "DisplayName": "KubeSecretType",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": "tls_secret",
-        "Required": true
-      },
-      {
-        "StoreTypeId;omitempty": 0,
-        "Name": "KubeSvcCreds",
-        "DisplayName": "KubeSvcCreds",
-        "Type": "String",
-        "DependsOn": "",
-        "DefaultValue": null,
-        "Required": true
-      }
-    ],
-    "EntryParameters": [],
-    "PasswordOptions": {
-      "EntrySupported": false,
-      "StoreRequired": false,
-      "Style": "Default"
+    {
+      "Name": "KubeSecretName",
+      "DisplayName": "KubeSecretName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
     },
-    "StorePathType": "",
-    "StorePathValue": "",
-    "PrivateKeyAllowed": "Optional",
-    "JobProperties": [],
-    "ServerRequired": false,
-    "PowerShell": false,
-    "BlueprintAllowed": false,
-    "CustomAliasAllowed": "Forbidden"
-  }
-"@
+    {
+      "Name": "KubeSecretType",
+      "DisplayName": "KubeSecretType",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "jks",
+      "Required": false
+    },
+    {
+      "Name": "CertificateDataFieldName",
+      "DisplayName": "CertificateDataFieldName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "PasswordFieldName",
+      "DisplayName": "PasswordFieldName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "password",
+      "Required": false
+    },
+    {
+      "Name": "PasswordIsK8SSecret",
+      "DisplayName": "PasswordIsK8SSecret",
+      "Type": "Bool",
+      "DependsOn": "",
+      "DefaultValue": "false",
+      "Required": false
+    },
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
+    },
+    {
+      "Name": "StorePasswordPath",
+      "DisplayName": "StorePasswordPath",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": true,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Required"
+}
+'@
+
+# ---------------------------------------------------------------------------
+# K8SNS — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SNS" @'
+{
+  "Name": "K8SNS",
+  "ShortName": "K8SNS",
+  "Capability": "K8SNS",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "KubeNamespace",
+      "DisplayName": "Kube Namespace",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "default",
+      "Required": false
+    },
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
+    },
+    {
+      "Name": "SeparateChain",
+      "DisplayName": "Separate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "false",
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": false,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Required"
+}
+'@
+
+# ---------------------------------------------------------------------------
+# K8SPKCS12 — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SPKCS12" @'
+{
+  "Name": "K8SPKCS12",
+  "ShortName": "K8SPKCS12",
+  "Capability": "K8SPKCS12",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
+    },
+    {
+      "Name": "CertificateDataFieldName",
+      "DisplayName": "CertificateDataFieldName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": ".p12",
+      "Required": true
+    },
+    {
+      "Name": "PasswordFieldName",
+      "DisplayName": "Password Field Name",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "password",
+      "Required": false
+    },
+    {
+      "Name": "PasswordIsK8SSecret",
+      "DisplayName": "Password Is K8S Secret",
+      "Type": "Bool",
+      "DependsOn": "",
+      "DefaultValue": "false",
+      "Required": false
+    },
+    {
+      "Name": "KubeNamespace",
+      "DisplayName": "Kube Namespace",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "default",
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretName",
+      "DisplayName": "Kube Secret Name",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretType",
+      "DisplayName": "Kube Secret Type",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "pkcs12",
+      "Required": false
+    },
+    {
+      "Name": "StorePasswordPath",
+      "DisplayName": "StorePasswordPath",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": true,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Required"
+}
+'@
+
+# ---------------------------------------------------------------------------
+# K8SSecret — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8SSecret" @'
+{
+  "Name": "K8SSecret",
+  "ShortName": "K8SSecret",
+  "Capability": "K8SSecret",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "KubeNamespace",
+      "DisplayName": "KubeNamespace",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretName",
+      "DisplayName": "KubeSecretName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretType",
+      "DisplayName": "KubeSecretType",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "secret",
+      "Required": false
+    },
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
+    },
+    {
+      "Name": "SeparateChain",
+      "DisplayName": "Separate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "false",
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": false,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Forbidden"
+}
+'@
+
+# ---------------------------------------------------------------------------
+# K8STLSSecr — This can be anything useful, recommend using the k8s cluster name or identifier.
+# ---------------------------------------------------------------------------
+New-StoreType "K8STLSSecr" @'
+{
+  "Name": "K8STLSSecr",
+  "ShortName": "K8STLSSecr",
+  "Capability": "K8STLSSecr",
+  "LocalStore": false,
+  "SupportedOperations": {
+    "Add": true,
+    "Create": true,
+    "Discovery": true,
+    "Enrollment": false,
+    "Remove": true
+  },
+  "Properties": [
+    {
+      "Name": "KubeNamespace",
+      "DisplayName": "KubeNamespace",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretName",
+      "DisplayName": "KubeSecretName",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": null,
+      "Required": false
+    },
+    {
+      "Name": "KubeSecretType",
+      "DisplayName": "KubeSecretType",
+      "Type": "String",
+      "DependsOn": "",
+      "DefaultValue": "tls_secret",
+      "Required": false
+    },
+    {
+      "Name": "IncludeCertChain",
+      "DisplayName": "Include Certificate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "true",
+      "Required": false
+    },
+    {
+      "Name": "SeparateChain",
+      "DisplayName": "Separate Chain",
+      "Type": "Bool",
+      "DependsOn": null,
+      "DefaultValue": "false",
+      "Required": false
+    }
+  ],
+  "EntryParameters": [],
+  "PasswordOptions": {
+    "EntrySupported": false,
+    "StoreRequired": false,
+    "Style": "Default"
+  },
+  "StorePathType": "",
+  "StorePathValue": "",
+  "PrivateKeyAllowed": "Optional",
+  "JobProperties": [],
+  "ServerRequired": true,
+  "PowerShell": false,
+  "BlueprintAllowed": false,
+  "CustomAliasAllowed": "Forbidden"
+}
+'@
+
+
+Write-Host "Completed."
