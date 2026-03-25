@@ -1,0 +1,70 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<svg width="700" height="618" viewBox="0 0 700 618" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+                        text { font-family: 'Segoe UI', Arial, sans-serif; }
+                        .title { font-size: 14px; font-weight: 600; fill: #333; }
+                        .label { font-size: 12px; fill: #555; }
+                        .value { font-size: 12px; fill: #333; }
+                        .tab-text { font-size: 11px; fill: #555; }
+                        .tab-active { font-size: 11px; fill: #333; font-weight: 600; }
+                    </style>
+  </defs>
+  <rect x="0" y="0" width="700" height="618" fill="#ffffff" stroke="#d0d0d0" rx="4" />
+  <rect x="0" y="0" width="700" height="40" fill="#f5f5f5" rx="4" />
+  <text x="20" y="26" class="title">Certificate Store Type - K8SJKS</text>
+  <g>
+    <rect x="20" y="45" width="163" height="30" fill="#ffffff" stroke="#d0d0d0" rx="3" />
+    <text x="102" y="64" text-anchor="middle" class="tab-active">Basic</text>
+    <rect x="185" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="267" y="64" text-anchor="middle" class="tab-text">Advanced</text>
+    <rect x="350" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="432" y="64" text-anchor="middle" class="tab-text">Custom Fields</text>
+    <rect x="515" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="597" y="64" text-anchor="middle" class="tab-text">Entry Parameters</text>
+  </g>
+  <g>
+    <rect x="20" y="95" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="118" class="label">Name</text>
+    <rect x="250" y="101" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="118" class="value">K8SJKS</text>
+    <text x="30" y="154" class="label">Short Name</text>
+    <rect x="250" y="137" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="154" class="value">K8SJKS</text>
+    <rect x="20" y="167" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="190" class="label">Capability</text>
+    <rect x="250" y="173" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="190" class="value">K8SJKS</text>
+    <text x="30" y="226" class="label">Supports Add</text>
+    <rect x="250" y="213" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="226" fill="white" font-size="13">✓</text>
+    <rect x="20" y="239" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="262" class="label">Supports Remove</text>
+    <rect x="250" y="249" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="262" fill="white" font-size="13">✓</text>
+    <text x="30" y="298" class="label">Supports Discovery</text>
+    <rect x="250" y="285" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="298" fill="white" font-size="13">✓</text>
+    <rect x="20" y="311" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="334" class="label">Supports Reenrollment</text>
+    <rect x="250" y="321" width="16" height="16" fill="white" stroke="#cccccc" rx="3" />
+    <text x="30" y="370" class="label">Supports Create</text>
+    <rect x="250" y="357" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="370" fill="white" font-size="13">✓</text>
+    <rect x="20" y="383" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="406" class="label">Needs Server</text>
+    <rect x="250" y="393" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="406" fill="white" font-size="13">✓</text>
+    <text x="30" y="442" class="label">Blueprint Allowed</text>
+    <rect x="250" y="429" width="16" height="16" fill="white" stroke="#cccccc" rx="3" />
+    <rect x="20" y="455" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="478" class="label">Uses PowerShell</text>
+    <rect x="250" y="465" width="16" height="16" fill="white" stroke="#cccccc" rx="3" />
+    <text x="30" y="514" class="label">Requires Store Password</text>
+    <rect x="250" y="501" width="16" height="16" fill="#0078d4" stroke="#0078d4" rx="3" />
+    <text x="253" y="514" fill="white" font-size="13">✓</text>
+    <rect x="20" y="527" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="550" class="label">Supports Entry Password</text>
+    <rect x="250" y="537" width="16" height="16" fill="white" stroke="#cccccc" rx="3" />
+  </g>
+</svg>
