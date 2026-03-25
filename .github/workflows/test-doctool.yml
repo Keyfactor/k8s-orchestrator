@@ -1,0 +1,12 @@
+name: Test doctool (dotnet)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  call-generate-readme-workflow:
+    permissions:
+      contents: write
+    uses: Keyfactor/actions/.github/workflows/generate-readme.yml@feature/dotnet-doctool
+    secrets:
+      token: ${{ secrets.V2BUILDTOKEN }}
