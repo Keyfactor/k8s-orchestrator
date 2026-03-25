@@ -2,6 +2,9 @@ name: Test doctool (dotnet)
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - break/major_refactor
 
 jobs:
   call-generate-readme-workflow:
