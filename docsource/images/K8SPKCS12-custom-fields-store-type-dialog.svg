@@ -1,0 +1,63 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<svg width="700" height="510" viewBox="0 0 700 510" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+                        text { font-family: 'Segoe UI', Arial, sans-serif; }
+                        .title { font-size: 14px; font-weight: 600; fill: #333; }
+                        .label { font-size: 12px; fill: #555; }
+                        .value { font-size: 12px; fill: #333; }
+                        .tab-text { font-size: 11px; fill: #555; }
+                        .tab-active { font-size: 11px; fill: #333; font-weight: 600; }
+                    </style>
+  </defs>
+  <rect x="0" y="0" width="700" height="510" fill="#ffffff" stroke="#d0d0d0" rx="4" />
+  <rect x="0" y="0" width="700" height="40" fill="#f5f5f5" rx="4" />
+  <text x="20" y="26" class="title">Certificate Store Type - K8SPKCS12</text>
+  <g>
+    <rect x="20" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="102" y="64" text-anchor="middle" class="tab-text">Basic</text>
+    <rect x="185" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="267" y="64" text-anchor="middle" class="tab-text">Advanced</text>
+    <rect x="350" y="45" width="163" height="30" fill="#ffffff" stroke="#d0d0d0" rx="3" />
+    <text x="432" y="64" text-anchor="middle" class="tab-active">Custom Fields</text>
+    <rect x="515" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="597" y="64" text-anchor="middle" class="tab-text">Entry Parameters</text>
+  </g>
+  <g>
+    <rect x="20" y="95" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="118" class="label">Include Certificate Chain</text>
+    <rect x="250" y="101" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="118" class="value">Type: Bool</text>
+    <text x="30" y="154" class="label">CertificateDataFieldName</text>
+    <rect x="250" y="137" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="154" class="value">Type: String</text>
+    <rect x="20" y="167" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="190" class="label">Password Field Name</text>
+    <rect x="250" y="173" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="190" class="value">Type: String</text>
+    <text x="30" y="226" class="label">Password Is K8S Secret</text>
+    <rect x="250" y="209" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="226" class="value">Type: Bool</text>
+    <rect x="20" y="239" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="262" class="label">Kube Namespace</text>
+    <rect x="250" y="245" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="262" class="value">Type: String</text>
+    <text x="30" y="298" class="label">Kube Secret Name</text>
+    <rect x="250" y="281" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="298" class="value">Type: String</text>
+    <rect x="20" y="311" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="334" class="label">Server Username</text>
+    <rect x="250" y="317" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="334" class="value">Type: Secret</text>
+    <text x="30" y="370" class="label">Server Password</text>
+    <rect x="250" y="353" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="370" class="value">Type: Secret</text>
+    <rect x="20" y="383" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="406" class="label">Kube Secret Type</text>
+    <rect x="250" y="389" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="406" class="value">Type: String</text>
+    <text x="30" y="442" class="label">StorePasswordPath</text>
+    <rect x="250" y="425" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="442" class="value">Type: String</text>
+  </g>
+</svg>

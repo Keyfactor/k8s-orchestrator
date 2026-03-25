@@ -1,0 +1,39 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<svg width="700" height="258" viewBox="0 0 700 258" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+                        text { font-family: 'Segoe UI', Arial, sans-serif; }
+                        .title { font-size: 14px; font-weight: 600; fill: #333; }
+                        .label { font-size: 12px; fill: #555; }
+                        .value { font-size: 12px; fill: #333; }
+                        .tab-text { font-size: 11px; fill: #555; }
+                        .tab-active { font-size: 11px; fill: #333; font-weight: 600; }
+                    </style>
+  </defs>
+  <rect x="0" y="0" width="700" height="258" fill="#ffffff" stroke="#d0d0d0" rx="4" />
+  <rect x="0" y="0" width="700" height="40" fill="#f5f5f5" rx="4" />
+  <text x="20" y="26" class="title">Certificate Store Type - K8SJKS</text>
+  <g>
+    <rect x="20" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="102" y="64" text-anchor="middle" class="tab-text">Basic</text>
+    <rect x="185" y="45" width="163" height="30" fill="#ffffff" stroke="#d0d0d0" rx="3" />
+    <text x="267" y="64" text-anchor="middle" class="tab-active">Advanced</text>
+    <rect x="350" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="432" y="64" text-anchor="middle" class="tab-text">Custom Fields</text>
+    <rect x="515" y="45" width="163" height="30" fill="#e8e8e8" stroke="#d0d0d0" rx="3" />
+    <text x="597" y="64" text-anchor="middle" class="tab-text">Entry Parameters</text>
+  </g>
+  <g>
+    <rect x="20" y="95" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="118" class="label">Supports Custom Alias</text>
+    <rect x="250" y="101" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="118" class="value">Required</text>
+    <text x="30" y="154" class="label">Private Key Handling</text>
+    <rect x="250" y="137" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="154" class="value">Optional</text>
+    <rect x="20" y="167" width="660" height="36" fill="#f9f9f9" rx="2" />
+    <text x="30" y="190" class="label">PFX Password Style</text>
+    <rect x="250" y="173" width="380" height="24" fill="#fafafa" stroke="#cccccc" rx="3" />
+    <text x="256" y="190" class="value">Default</text>
+  </g>
+</svg>

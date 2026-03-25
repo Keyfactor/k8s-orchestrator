@@ -7,13 +7,25 @@ the keystore contains a certificate with an alias of `mycert`, the orchestrator 
 alias `mykeystore.pkcs12/mycert`. *NOTE* *This store type cannot be managed at the `cluster` or `namespace` level as they
 should all require unique credentials.*
 
+## Supported Key Types
+
+The K8SPKCS12 store type supports certificates with the following key algorithms:
+
+| Key Type | Supported |
+|----------|-----------|
+| RSA (1024, 2048, 4096, 8192 bit) | Yes |
+| ECDSA (P-256, P-384, P-521) | Yes |
+| DSA (1024, 2048 bit) | Yes |
+| Ed25519 | Yes |
+| Ed448 | Yes |
+
 ## Discovery Job Configuration
 
 For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
   namespaces. *This cannot be left blank.*
-- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or PKCS12 data. Will use
-  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.pkcs12`,`pkcs12`.
+- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 data. Will use
+  the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.p12`,`p12`.
 
 ## Certificate Store Configuration
 
@@ -22,13 +34,34 @@ the Kubernetes secret.
 - Valid Keys: `*.pfx`, `*.pkcs12`, `*.p12`
 
 ### Storepath Patterns
+
 - `<namespace_name>/<secret_name>`
 - `<namespace_name>/secrets/<secret_name>`
 - `<cluster_name>/<namespace_name>/secrets/<secret_name>`
 
 ### Alias Patterns
+
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
-the certificate alias in the `pkcs12` data store. 
+the certificate alias in the `pkcs12` data store.
+
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-pkcs12](../terraform/modules/k8s-pkcs12/) for full documentation.
+
+```hcl
+module "pkcs12_store" {
+  source = "./terraform/modules/k8s-pkcs12"
+
+  client_machine              = "my-orchestrator"
+  agent_identifier            = "my-orchestrator"
+  store_path                  = "my-cluster/my-namespace/my-pkcs12-secret"
+  kubeconfig_path             = "./kubeconfig.json"
+  store_password              = var.pkcs12_password
+  certificate_data_field_name = "keystore.pfx"
+
+  certificate_ids = ["12345"]
+}
+```
 
