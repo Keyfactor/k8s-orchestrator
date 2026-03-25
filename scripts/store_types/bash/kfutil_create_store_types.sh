@@ -1,29 +1,32 @@
 #!/usr/bin/env bash
 
-#export KEYFACTOR_USERNAME="<your username>"
-#export KEYFACTOR_PASSWORD="<your password>"
-#export KEYFACTOR_HOSTNAME="<your Keyfactor command hostname>"
-#export KEYFACTOR_DOMAIN="<your AD domain name>"
+# Creates all 7 Kubernetes Orchestrator store types using kfutil.
+# kfutil reads store type definitions from the Keyfactor integration catalog.
+#
+# Prerequisites:
+#   - kfutil installed: https://github.com/Keyfactor/kfutil#quickstart
+#   - Auth environment variables (see README.md for options)
+#
+# Auto-generated from integration-manifest.json — do not edit by hand.
+# Regenerate with: make store-types-gen-scripts
 
-# Check kfutil is installed
-if ! command -v kfutil &> /dev/null
-then
+if ! command -v kfutil &> /dev/null; then
     echo "kfutil could not be found. Please install kfutil"
     echo "See the official docs: https://github.com/Keyfactor/kfutil#quickstart"
-    # Check if kfutil deps are already installed and if they are then provide the command to install kfutil from GitHub.
-    if command -v gh &> /dev/null || command -v zip &> /dev/null || command -v unzip &> /dev/null;
-    then
-        echo "To install kfutil, run the following command:"
-        echo "bash <(curl -s https://raw.githubusercontent.com/Keyfactor/kfutil/main/gh-dl-release.sh)"
-    fi
+    exit 1
 fi
 
-# Check environment variables are set
-if [ -z "$KEYFACTOR_USERNAME" ] || [ -z "$KEYFACTOR_PASSWORD" ] || [ -z "$KEYFACTOR_HOSTNAME" ] || [ -z "$KEYFACTOR_DOMAIN" ]; then
-    echo "Please set the environment variables KEYFACTOR_USERNAME, KEYFACTOR_PASSWORD, KEYFACTOR_HOSTNAME and KEYFACTOR_DOMAIN"
-    kfutil login 
+if [ -z "$KEYFACTOR_HOSTNAME" ]; then
+    echo "KEYFACTOR_HOSTNAME not set — launching kfutil login"
+    kfutil login
 fi
 
 kfutil store-types create --name "K8SCert"
+kfutil store-types create --name "K8SCluster"
+kfutil store-types create --name "K8SJKS"
+kfutil store-types create --name "K8SNS"
+kfutil store-types create --name "K8SPKCS12"
 kfutil store-types create --name "K8SSecret"
 kfutil store-types create --name "K8STLSSecr"
+
+echo "Done. All store types created."
