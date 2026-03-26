@@ -548,6 +548,14 @@ public class Management : JobBase, IManagementJobExtension
                 jobCertObj.Alias = config.JobCertificate.Alias;
                 // Split alias by / and get second to last element KubeSecretType
                 var splitAlias = jobCertObj.Alias.Split("/");
+                if (splitAlias.Length < 2)
+                {
+                    var invalidAliasErrMsg =
+                        "Invalid alias format for K8SNS store type. Alias pattern: `<secret_type>/<secret_name>` where `secret_type` is one of 'opaque' or 'tls' and `secret_name` is the name of the secret.";
+                    Logger.LogError(invalidAliasErrMsg);
+                    Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
+                    return FailJob(invalidAliasErrMsg, config.JobHistoryId);
+                }
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
                 Logger.LogDebug("Handling managment add job for K8SNS secret type '" + KubeSecretType + "(" + jobCertObj.Alias + ")'...");
@@ -656,6 +664,12 @@ public class Management : JobBase, IManagementJobExtension
             var splitAlias = certAlias.Split("/");
             if (Capability.Contains("K8SNS"))
             {
+                if (splitAlias.Length < 2)
+                {
+                    var errMsg = $"Invalid alias format for K8SNS store type. Expected pattern: 'secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 // Split alias by / and get second to last element KubeSecretType
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
@@ -666,6 +680,12 @@ public class Management : JobBase, IManagementJobExtension
             }
             else if (Capability.Contains("K8SCluster"))
             {
+                if (splitAlias.Length < 3)
+                {
+                    var errMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
                 KubeNamespace = splitAlias[0];
