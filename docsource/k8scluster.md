@@ -1,6 +1,6 @@
 ## Overview
 
-The `K8SCluster` store type allows for a single store to manage a k8s cluster's secrets or type `Opaque` and `kubernetes.io/tls`.
+The `K8SCluster` store type allows for a single store to manage a Kubernetes cluster's secrets of type `Opaque` and `kubernetes.io/tls`.
 
 ## Certificate Store Configuration
 
@@ -15,4 +15,17 @@ have specific keys in the Kubernetes secret.
 ### Alias Patterns
 - `<namespace_name>/secrets/<tls|opaque>/<secret_name>`
 
+## Terraform
 
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-cluster](../terraform/modules/k8s-cluster/) for full documentation.
+
+```hcl
+module "cluster_store" {
+  source = "./terraform/modules/k8s-cluster"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-k8s-cluster"
+  kubeconfig_path  = "./kubeconfig.json"
+}
+```

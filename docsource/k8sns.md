@@ -1,11 +1,11 @@
 ## Overview
 
-The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single 
-Keyfactor Command certificate store using an alias pattern of
+The `K8SNS` store type is used to manage Kubernetes secrets of type `kubernetes.io/tls` and/or type `Opaque` in a single
+Keyfactor Command certificate store. This store type manages all secrets within a specific Kubernetes namespace.
 
 ## Discovery Job Configuration
 
-For discovery of K8SNS stores you can use the following params to filter the certificates that will be discovered:
+For discovery of `K8SNS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
 namespaces. *This cannot be left blank.*
 
@@ -17,10 +17,26 @@ have specific keys in the Kubernetes secret.
 - Additional keys: `tls.key`
 
 ### Storepath Patterns
+
 - `<namespace_name>`
 - `<cluster_name>/<namespace_name>`
 
 ### Alias Patterns
+
 - `secrets/<tls|opaque>/<secret_name>`
 
+## Terraform
 
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-ns](../terraform/modules/k8s-ns/) for full documentation.
+
+```hcl
+module "ns_store" {
+  source = "./terraform/modules/k8s-ns"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-cluster/namespace/my-namespace"
+  kubeconfig_path  = "./kubeconfig.json"
+  kube_namespace   = "my-namespace"
+}
+```
