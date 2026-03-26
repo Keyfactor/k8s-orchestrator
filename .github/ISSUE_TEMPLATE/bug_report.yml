@@ -1,0 +1,193 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in the Kubernetes Orchestrator Extension
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this bug! Please fill out the information below to help us resolve the issue.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: When I try to..., I expect... but instead...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: store-type
+    attributes:
+      label: Affected Store Type
+      description: Which Kubernetes store type is affected?
+      options:
+        - K8SCluster
+        - K8SNS
+        - K8SJKS
+        - K8SPKCS12
+        - K8SSecret
+        - K8STLSSecr
+        - K8SCert
+        - Multiple store types
+        - Not sure / Not applicable
+    validations:
+      required: true
+
+  - type: dropdown
+    id: operation
+    attributes:
+      label: Affected Operation
+      description: Which orchestrator operation is affected?
+      options:
+        - Inventory
+        - Management (Add)
+        - Management (Remove)
+        - Discovery
+        - Reenrollment
+        - Store Creation
+        - Multiple operations
+        - Not sure / Not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Detailed steps to reproduce the behavior
+      placeholder: |
+        1. Configure store with...
+        2. Run operation...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: What did you expect to happen?
+      placeholder: The certificate should be added to the secret...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: Instead, I received error...
+    validations:
+      required: true
+
+  - type: input
+    id: orchestrator-version
+    attributes:
+      label: Orchestrator Extension Version
+      description: Version of the Kubernetes Orchestrator Extension
+      placeholder: e.g., 1.2.2
+    validations:
+      required: true
+
+  - type: input
+    id: command-version
+    attributes:
+      label: Keyfactor Command Version
+      description: Version of Keyfactor Command
+      placeholder: e.g., 12.4, 24.4
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kubernetes-distro
+    attributes:
+      label: Kubernetes Distribution
+      description: Which Kubernetes distribution are you using?
+      options:
+        - Azure Kubernetes Service (AKS)
+        - Amazon Elastic Kubernetes Service (EKS)
+        - Google Kubernetes Engine (GKE)
+        - Red Hat OpenShift
+        - Rancher
+        - K3s
+        - Vanilla Kubernetes
+        - Other (please specify in Additional Context)
+    validations:
+      required: true
+
+  - type: input
+    id: kubernetes-version
+    attributes:
+      label: Kubernetes Version
+      description: Version of Kubernetes
+      placeholder: e.g., 1.28, 1.29
+    validations:
+      required: true
+
+  - type: dropdown
+    id: orchestrator-platform
+    attributes:
+      label: Orchestrator Platform
+      description: Where is the Universal Orchestrator running?
+      options:
+        - Windows
+        - Linux
+        - Container
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Log Output
+      description: |
+        Please copy and paste any relevant log output. This will be automatically formatted.
+        **Important**: Redact any sensitive information (passwords, tokens, server names).
+      render: shell
+      placeholder: |
+        [Error] Failed to add certificate to secret...
+        [Debug] Connecting to Kubernetes API at...
+
+  - type: textarea
+    id: store-configuration
+    attributes:
+      label: Store Configuration
+      description: |
+        If relevant, provide your store configuration (redact sensitive information).
+        Include custom properties, store path pattern, etc.
+      render: json
+      placeholder: |
+        {
+          "StorePath": "my-namespace",
+          "Properties": {
+            "SeparateChain": "true",
+            "IncludeCertChain": "false"
+          }
+        }
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: |
+        Add any other context about the problem here.
+        - Screenshots
+        - Network configuration
+        - Service account permissions
+        - Related issues
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Pre-submission Checklist
+      description: Please confirm the following before submitting
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have redacted all sensitive information from logs and configurations
+          required: true
+        - label: I have provided all required version information
+          required: true
