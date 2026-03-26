@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 🔐 GitHub Security Advisory (Private Vulnerability Reporting)
+    url: https://github.com/Keyfactor/k8s-orchestrator/security/advisories/new
+    about: Report critical security vulnerabilities privately through GitHub Security Advisories (recommended for security issues)
+
+  - name: 📞 Keyfactor Support Portal
+    url: https://support.keyfactor.com
+    about: For Keyfactor Command support, licensing questions, or enterprise support
+
+  - name: 💬 Community Discussions
+    url: https://github.com/Keyfactor/k8s-orchestrator/discussions
+    about: Ask questions, share ideas, and discuss with the community
+
+  - name: 📖 Documentation
+    url: https://github.com/Keyfactor/k8s-orchestrator/blob/main/README.md
+    about: Read the complete documentation including installation guides and store type references
