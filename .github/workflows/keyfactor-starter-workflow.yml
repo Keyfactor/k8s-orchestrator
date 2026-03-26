@@ -19,7 +19,6 @@ jobs:
       command_token_url: ${{ vars.COMMAND_TOKEN_URL }}
       command_hostname: ${{ vars.COMMAND_HOSTNAME }}
       command_base_api_path: ${{ vars.COMMAND_API_PATH }}
-      signoff_recipients: 'sbailey@keyfactor.com'
     secrets:
       token: ${{ secrets.V2BUILDTOKEN }}
       gpg_key: ${{ secrets.KF_GPG_PRIVATE_KEY }}
@@ -29,9 +28,3 @@ jobs:
       entra_password: ${{ secrets.DOCTOOL_ENTRA_PASSWD }}
       command_client_id: ${{ secrets.COMMAND_CLIENT_ID }}
       command_client_secret: ${{ secrets.COMMAND_CLIENT_SECRET }}
-      smtp_server: ${{ secrets.SMTP_SERVER }}
-      smtp_port: ${{ secrets.SMTP_PORT }}
-      smtp_username: ${{ secrets.SMTP_USERNAME }}
-      smtp_password: ${{ secrets.SMTP_PASSWORD }}
-      email_from: ${{ secrets.EMAIL_FROM }}
-      azure_devops_token: ${{ secrets.AZURE_DEVOPS_TOKEN }}
