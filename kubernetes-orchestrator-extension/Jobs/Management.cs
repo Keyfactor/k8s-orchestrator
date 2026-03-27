@@ -688,6 +688,12 @@ public class Management : JobBase, IManagementJobExtension
             var splitAlias = certAlias.Split("/");
             if (Capability.Contains("K8SNS"))
             {
+                if (splitAlias.Length < 2)
+                {
+                    var errMsg = $"Invalid alias format for K8SNS store type. Expected pattern: 'secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 // Split alias by / and get second to last element KubeSecretType
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
@@ -695,6 +701,12 @@ public class Management : JobBase, IManagementJobExtension
             }
             else if (Capability.Contains("K8SCluster"))
             {
+                if (splitAlias.Length < 3)
+                {
+                    var errMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
                 KubeNamespace = splitAlias[0];
