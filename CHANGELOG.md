@@ -1,3 +1,8 @@
+# 1.2.3
+
+## Bug Fixes
+- fix(management): `K8SNS` and `K8SCluster` Management Remove jobs no longer throw `IndexOutOfRangeException` when alias does not contain the expected `/` delimiter.
+
 # 1.2.2
 
 ## Bug Fixes
@@ -21,6 +26,12 @@ on missing or invalid secret field name.
 
 ## Features
 - feat(client): Retry interrupted connections to k8s cluster. 
+
+# 1.1.4
+
+## Bug Fixes
+- fix(management): `K8SNS` Management Add job no longer throws `IndexOutOfRangeException` when alias does not contain the expected `/` delimiter.
+- fix(management): `K8SNS` and `K8SCluster` Management Remove jobs no longer throw `IndexOutOfRangeException` when alias does not contain the expected `/` delimiter.
 
 # 1.1.3
 
