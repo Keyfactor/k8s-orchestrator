@@ -7,30 +7,74 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using k8s.Autorest;
 using k8s.Models;
+using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SJKS;
 using Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
+using Keyfactor.Extensions.Orchestrator.K8S.Utilities;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
+using Org.BouncyCastle.Pkcs;
+using Org.BouncyCastle.Security;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 
+/// <summary>
+/// Management job implementation for Kubernetes certificate stores.
+/// Handles Add, Remove, and Create operations for certificates in Kubernetes secrets,
+/// JKS keystores, and PKCS12 keystores.
+/// </summary>
+/// <remarks>
+/// Supports the following operations:
+/// - Add/Create: Add a certificate to a store (Opaque, TLS, JKS, PKCS12)
+/// - Remove: Remove a certificate from a store
+///
+/// Supports the following store types:
+/// - Opaque secrets (K8SSecret)
+/// - TLS secrets (K8STLSSecr)
+/// - JKS keystores (K8SJKS)
+/// - PKCS12 keystores (K8SPKCS12)
+/// - Namespace-wide operations (K8SNS)
+/// - Cluster-wide operations (K8SCluster)
+/// </remarks>
 public class Management : JobBase, IManagementJobExtension
 {
+    /// <summary>
+    /// Initializes a new instance of the Management job with the specified PAM resolver.
+    /// </summary>
+    /// <param name="resolver">PAM secret resolver for credential retrieval.</param>
     public Management(IPAMSecretResolver resolver)
     {
         _resolver = resolver;
     }
 
-    //Job Entry Point
+    /// <summary>
+    /// Main entry point for the management job. Processes Add, Remove, or Create operations
+    /// for certificates in Kubernetes certificate stores.
+    /// </summary>
+    /// <param name="config">Management job configuration containing operation details and certificate data.</param>
+    /// <returns>JobResult indicating success or failure of the management operation.</returns>
+    /// <remarks>
+    /// Configuration parameters available in config:
+    /// - config.ServerUsername, config.ServerPassword - credentials for K8S API authentication
+    /// - config.CertificateStoreDetails.StorePath - location path of certificate store
+    /// - config.CertificateStoreDetails.StorePassword - password for protected stores (JKS/PKCS12)
+    /// - config.JobCertificate.Contents - Base64 encoded certificate (PKCS12 or DER)
+    /// - config.JobCertificate.Alias - certificate alias (for JKS/PKCS12)
+    /// - config.OperationType - Add, Remove, or Create
+    /// - config.Overwrite - whether to overwrite existing certificates
+    /// - config.JobCertificate.PrivateKeyPassword - password for private key in PKCS12
+    /// </remarks>
     public JobResult ProcessJob(ManagementJobConfiguration config)
     {
-        //METHOD ARGUMENTS...
         //config - contains context information passed from KF Command to this job run:
         //
         // config.Server.Username, config.Server.Password - credentials for orchestrated server - use to authenticate to certificate store server.
@@ -50,7 +94,8 @@ public class Management : JobBase, IManagementJobExtension
         //NLog Logging to c:\CMS\Logs\CMS_Agent_Log.txt
 
         Logger = LogHandler.GetClassLogger(GetType());
-        Logger.MethodEntry();
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing management job {JobId} with operation type {OperationType}", config.JobId, config.OperationType);
         K8SJobCertificate jobCertObj;
         try
         {
@@ -126,8 +171,15 @@ public class Management : JobBase, IManagementJobExtension
     }
 
 
+    /// <summary>
+    /// Creates an empty Kubernetes secret of the specified type.
+    /// Used when no certificate data is provided for a create operation.
+    /// </summary>
+    /// <param name="secretType">The type of secret to create (e.g., "tls", "secret").</param>
+    /// <returns>The created V1Secret object.</returns>
     private V1Secret creatEmptySecret(string secretType)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
         Logger.LogWarning(
             "Certificate object and certificate alias are both null or empty.  Assuming this is a 'create_store' action and populating an empty store.");
         var emptyStrArray = Array.Empty<string>();
@@ -144,42 +196,231 @@ public class Management : JobBase, IManagementJobExtension
         Logger.LogTrace(createResponse.ToString());
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with no data.");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Handles creation or update of an Opaque secret containing certificate data.
+    /// </summary>
+    /// <param name="certAlias">Alias/thumbprint of the certificate.</param>
+    /// <param name="certObj">Job certificate object containing certificate and key data.</param>
+    /// <param name="keyPasswordStr">Password for the private key.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificate.</param>
+    /// <param name="append">Whether to append to existing data.</param>
+    /// <returns>The created or updated V1Secret object.</returns>
     private V1Secret HandleOpaqueSecret(string certAlias, K8SJobCertificate certObj, string keyPasswordStr = "",
         bool overwrite = false, bool append = false)
     {
-        Logger.LogTrace("Entered HandleOpaqueSecret()");
-        Logger.LogTrace("certAlias: " + certAlias);
-        // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
-        Logger.LogTrace("overwrite: " + overwrite);
-        Logger.LogTrace("append: " + append);
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Certificate alias: {Alias}", certAlias);
+        Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(keyPasswordStr));
+        Logger.LogDebug("Operation parameters - Overwrite: {Overwrite}, Append: {Append}", overwrite, append);
+        Logger.LogDebug("Certificate metadata - SeparateChain: {SeparateChain}, IncludeCertChain: {IncludeCertChain}",
+            SeparateChain, IncludeCertChain);
+
+        // Handle "create store if missing" - when no certificate data is provided
+        // If secret already exists and no new certificate data, just return the existing secret
+        if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPem))
+        {
+            try
+            {
+                var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+                if (existingSecret != null)
+                {
+                    Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
+                    return existingSecret;
+                }
+            }
+            catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
+            {
+                Logger.LogDebug("Secret not found, will create empty secret");
+            }
+            Logger.LogWarning("No alias or certificate found. Creating empty Opaque secret.");
+            return creatEmptySecret("secret");
+        }
+
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("Opaque");
+        }
+
+        // Log certificate information
+        if (!string.IsNullOrEmpty(certObj.CertPem))
+        {
+            Logger.LogDebug("Certificate summary: {Summary}", LoggingUtilities.GetCertificateSummaryFromPem(certObj.CertPem));
+        }
+
+        Logger.LogTrace("Has private key: {HasKey}", !string.IsNullOrEmpty(certObj.PrivateKeyPem));
+        Logger.LogTrace("Chain certificates: {Count}", certObj.ChainPem?.Count ?? 0);
+
+        if (certObj.ChainPem != null && certObj.ChainPem.Count > 0)
+        {
+            for (int i = 0; i < certObj.ChainPem.Count; i++)
+            {
+                Logger.LogTrace("Chain certificate {Index}: {Summary}", i + 1,
+                    LoggingUtilities.GetCertificateSummaryFromPem(certObj.ChainPem[i]));
+            }
+        }
+
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
 
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,
             KubeNamespace,
             "secret",
             append,
-            overwrite
+            overwrite,
+            false,
+            SeparateChain,
+            IncludeCertChain
         );
-        if (createResponse == null)
-            Logger.LogError("createResponse is null");
-        else
-            Logger.LogTrace(createResponse.ToString());
 
+        if (createResponse == null)
+        {
+            var errorMsg = $"Failed to create or update Opaque secret '{KubeSecretName}' in namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}'. CreateOrUpdateCertificateStoreSecret returned null.";
+            Logger.LogError(errorMsg);
+            throw new Exception(errorMsg);
+        }
+
+        Logger.LogDebug("Secret operation result: {Summary}", LoggingUtilities.GetSecretSummary(createResponse));
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Validates that a certificate-only update is not being applied to a secret that has an existing private key.
+    /// This prevents creating an invalid state where tls.crt has a new certificate but tls.key has the old
+    /// (mismatched) private key.
+    /// </summary>
+    /// <param name="secretType">Type of secret for error message (e.g., "TLS", "Opaque").</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when attempting to deploy a certificate without a private key to an existing secret that has a private key.
+    /// </exception>
+    private void ValidateNoMismatchedKeyUpdate(string secretType)
+    {
+        Logger.LogDebug("Validating cert-only update for {SecretType} secret '{SecretName}' in namespace '{Namespace}'",
+            secretType, KubeSecretName, KubeNamespace);
+
+        try
+        {
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue("tls.key", out var existingKeyBytes))
+            {
+                // Check if the existing key has actual content (not empty)
+                if (existingKeyBytes != null && existingKeyBytes.Length > 0)
+                {
+                    var existingKeyPem = System.Text.Encoding.UTF8.GetString(existingKeyBytes).Trim();
+                    if (!string.IsNullOrEmpty(existingKeyPem) && existingKeyPem.Contains("PRIVATE KEY"))
+                    {
+                        var errorMsg = $"Cannot update {secretType} secret '{KubeSecretName}' in namespace '{KubeNamespace}' " +
+                            $"with a certificate that has no private key. The existing secret contains a private key (tls.key) " +
+                            $"which would become mismatched with the new certificate. " +
+                            $"Either include the private key with the certificate, or delete the existing secret first.";
+                        Logger.LogError(errorMsg);
+                        throw new InvalidOperationException(errorMsg);
+                    }
+                }
+            }
+            Logger.LogDebug("Validation passed: existing secret either doesn't exist or has no private key");
+        }
+        catch (StoreNotFoundException)
+        {
+            // Secret doesn't exist yet, no validation needed
+            Logger.LogDebug("Secret '{SecretName}' does not exist yet, no validation needed", KubeSecretName);
+        }
+        catch (InvalidOperationException)
+        {
+            // Re-throw our validation exception
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Log but don't fail on other errors - the actual create/update will handle them
+            Logger.LogWarning(ex, "Could not validate existing secret state, proceeding with update");
+        }
+    }
+
+    /// <summary>
+    /// Preserves the private key format when updating an existing secret.
+    /// Detects the existing key format and re-exports the new key in the same format.
+    /// If the new key algorithm doesn't support the existing format (e.g., Ed25519 with PKCS1),
+    /// falls back to PKCS8.
+    /// </summary>
+    /// <param name="certObj">Certificate object containing the new private key.</param>
+    /// <param name="keyFieldName">Name of the field containing the private key in the secret (e.g., "tls.key").</param>
+    /// <returns>PEM-encoded private key in the preserved format.</returns>
+    private string PreservePrivateKeyFormat(K8SJobCertificate certObj, string keyFieldName)
+    {
+        Logger.LogTrace("PreservePrivateKeyFormat called for field: {FieldName}", keyFieldName);
+
+        // Default format if we can't detect existing
+        var targetFormat = PrivateKeyFormat.Pkcs8;
+
+        try
+        {
+            // Try to read the existing secret to detect format
+            var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+            if (existingSecret?.Data != null && existingSecret.Data.TryGetValue(keyFieldName, out var existingKeyBytes))
+            {
+                var existingKeyPem = Encoding.UTF8.GetString(existingKeyBytes);
+                targetFormat = PrivateKeyFormatUtilities.DetectFormat(existingKeyPem);
+                Logger.LogDebug("Detected existing private key format: {Format}", targetFormat);
+            }
+            else
+            {
+                Logger.LogDebug("No existing private key found, using default format: {Format}", targetFormat);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogDebug("Could not read existing secret for format detection: {Message}. Using default format.", ex.Message);
+        }
+
+        // Re-export the new key in the detected/target format
+        // PrivateKeyFormatUtilities.ExportPrivateKeyAsPem handles fallback to PKCS8
+        // if the key algorithm doesn't support PKCS1 (e.g., Ed25519, Ed448)
+        var newKeyPem = PrivateKeyFormatUtilities.ExportPrivateKeyAsPem(certObj.PrivateKeyParameter, targetFormat);
+
+        var newAlgorithm = PrivateKeyFormatUtilities.GetAlgorithmName(certObj.PrivateKeyParameter);
+        var actualFormat = PrivateKeyFormatUtilities.DetectFormat(newKeyPem);
+
+        if (actualFormat != targetFormat)
+        {
+            Logger.LogInformation(
+                "Private key format changed from {OldFormat} to {NewFormat} because {Algorithm} does not support {OldFormat}",
+                targetFormat, actualFormat, newAlgorithm, targetFormat);
+        }
+        else
+        {
+            Logger.LogDebug("Private key format preserved: {Format}", actualFormat);
+        }
+
+        return newKeyPem;
+    }
+
+    /// <summary>
+    /// Handles creation, update, or removal of a JKS keystore secret.
+    /// </summary>
+    /// <param name="config">Management job configuration containing JKS and certificate data.</param>
+    /// <param name="remove">Whether this is a remove operation.</param>
+    /// <returns>The created or updated V1Secret object, or null if nothing to remove.</returns>
     private V1Secret HandleJksSecret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.MethodEntry();
+        Logger.MethodEntry(MsLogLevel.Debug);
         // get the jks store from the secret
         Logger.LogDebug("Attempting to serialize JKS store");
         var jksStore = new JksCertificateStoreSerializer(config.JobProperties?.ToString());
@@ -217,7 +458,30 @@ public class Management : JobBase, IManagementJobExtension
 
         var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
         Logger.LogTrace("alias: {Alias}", alias);
+
+        // Try to get StoreFileName from Properties JSON, default to "jks" if not found
         var existingDataFieldName = "jks";
+        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
+        {
+            try
+            {
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
+                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
+                {
+                    var storeFileName = storeFileNameElement.GetString();
+                    if (!string.IsNullOrEmpty(storeFileName))
+                    {
+                        existingDataFieldName = storeFileName;
+                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'jks'", ex.Message);
+            }
+        }
+
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
         if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
         {
@@ -229,6 +493,49 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogTrace("existingDataFieldName: {Name}", existingDataFieldName);
         Logger.LogTrace("alias: {Alias}", alias);
+
+        // Handle "create store if missing" - when no certificate data is provided (but NOT for Remove operations)
+        if (newCertBytes.Length == 0 && !remove)
+        {
+            Logger.LogInformation("No certificate data provided. Checking if this is a 'create store if missing' operation...");
+
+            if (k8sData.Secret != null)
+            {
+                Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
+                return k8sData.Secret;
+            }
+
+            Logger.LogInformation("Creating empty JKS keystore for 'create store if missing' operation");
+
+            // Get the store password
+            if (!string.IsNullOrEmpty(config.CertificateStoreDetails.StorePassword))
+                StorePassword = config.CertificateStoreDetails.StorePassword;
+            var emptyStorePassword = getK8SStorePassword(null);
+
+            // Create an empty JKS store with the password
+            var emptyJksStore = new JksStore();
+            using var emptyStoreStream = new MemoryStream();
+            emptyJksStore.Save(emptyStoreStream,
+                string.IsNullOrEmpty(emptyStorePassword) ? Array.Empty<char>() : emptyStorePassword.ToCharArray());
+            var emptyJksBytes = emptyStoreStream.ToArray();
+
+            Logger.LogDebug("Created empty JKS keystore with {ByteCount} bytes", emptyJksBytes.Length);
+
+            // Create k8sData with the empty keystore
+            k8sData.Inventory = new Dictionary<string, byte[]>
+            {
+                { existingDataFieldName, emptyJksBytes }
+            };
+
+            // Create the secret with the empty keystore
+            Logger.LogDebug("Calling CreateOrUpdateJksSecret() to create empty keystore secret...");
+            var createResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
+            Logger.LogInformation("Successfully created empty JKS keystore secret '{Name}' in namespace '{Namespace}'",
+                KubeSecretName, KubeNamespace);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return createResponse;
+        }
+
         byte[] existingData = null;
         if (k8sData.Secret?.Data != null)
         {
@@ -267,18 +574,26 @@ public class Management : JobBase, IManagementJobExtension
             // update the secret
             Logger.LogDebug("Calling CreateOrUpdateJksSecret()...");
             var updateResponse = KubeClient.CreateOrUpdateJksSecret(k8sData, KubeSecretName, KubeNamespace);
-            Logger.LogDebug("Exiting HandleJKSSecret()...");
+            Logger.LogDebug("JKS secret operation completed successfully");
+            Logger.MethodExit(MsLogLevel.Debug);
             return updateResponse;
         }
         catch (JkSisPkcs12Exception)
         {
+            Logger.LogDebug("JKS data is actually PKCS12, delegating to HandlePkcs12Secret");
             return HandlePkcs12Secret(config, remove);
         }
     }
 
+    /// <summary>
+    /// Handles creation, update, or removal of a PKCS12/PFX keystore secret.
+    /// </summary>
+    /// <param name="config">Management job configuration containing PKCS12 and certificate data.</param>
+    /// <param name="remove">Whether this is a remove operation.</param>
+    /// <returns>The created or updated V1Secret object, or null if nothing to remove.</returns>
     private V1Secret HandlePkcs12Secret(ManagementJobConfiguration config, bool remove = false)
     {
-        Logger.LogDebug("Entering HandlePkcs12Secret()...");
+        Logger.MethodEntry(MsLogLevel.Debug);
         // get the pkcs12 store from the secret
         var pkcs12Store = new Pkcs12CertificateStoreSerializer(config.JobProperties?.ToString());
         //getPkcs12BytesFromKubeSecret
@@ -300,13 +615,39 @@ public class Management : JobBase, IManagementJobExtension
             }
 
         // get newCert bytes from config.JobCertificate.Contents
-        var newCertBytes = Convert.FromBase64String(config.JobCertificate.Contents);
+        Logger.LogDebug("Attempting to get newCert bytes from config.JobCertificate.Contents");
+        var newCertBytes = config.JobCertificate?.Contents == null
+            ? []
+            : Convert.FromBase64String(config.JobCertificate.Contents);
 
-        var alias = config.JobCertificate.Alias;
-        Logger.LogDebug("alias: " + alias);
+        var alias = string.IsNullOrEmpty(config.JobCertificate?.Alias) ? "default" : config.JobCertificate.Alias;
+        Logger.LogDebug("alias: {Alias}", alias);
+
+        // Try to get StoreFileName from Properties JSON, default to "pkcs12" if not found
         var existingDataFieldName = "pkcs12";
+        if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.Properties))
+        {
+            try
+            {
+                using var jsonDoc = System.Text.Json.JsonDocument.Parse(config.CertificateStoreDetails.Properties);
+                if (jsonDoc.RootElement.TryGetProperty("StoreFileName", out var storeFileNameElement))
+                {
+                    var storeFileName = storeFileNameElement.GetString();
+                    if (!string.IsNullOrEmpty(storeFileName))
+                    {
+                        existingDataFieldName = storeFileName;
+                        Logger.LogDebug("Using StoreFileName from Properties: {StoreFileName}", storeFileName);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Error parsing StoreFileName from Properties: {Message}. Using default 'pkcs12'", ex.Message);
+            }
+        }
+
         // if alias contains a '/' then the pattern is 'k8s-secret-field-name/alias'
-        if (alias.Contains('/'))
+        if (!string.IsNullOrEmpty(alias) && alias.Contains('/'))
         {
             Logger.LogDebug("alias contains a '/' so splitting on '/'...");
             var aliasParts = alias.Split("/");
@@ -316,6 +657,51 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogDebug("existingDataFieldName: " + existingDataFieldName);
         Logger.LogDebug("alias: " + alias);
+
+        // Handle "create store if missing" - when no certificate data is provided (but NOT for Remove operations)
+        if (newCertBytes.Length == 0 && !remove)
+        {
+            Logger.LogInformation("No certificate data provided. Checking if this is a 'create store if missing' operation...");
+
+            if (k8sData.Secret != null)
+            {
+                Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
+                return k8sData.Secret;
+            }
+
+            Logger.LogInformation("Creating empty PKCS12 keystore for 'create store if missing' operation");
+
+            // Get the store password
+            if (!string.IsNullOrEmpty(config.CertificateStoreDetails.StorePassword))
+                StorePassword = config.CertificateStoreDetails.StorePassword;
+            var emptyStorePassword = getK8SStorePassword(null);
+
+            // Create an empty PKCS12 store with the password
+            var emptyStoreBuilder = new Pkcs12StoreBuilder();
+            var emptyPkcs12Store = emptyStoreBuilder.Build();
+            using var emptyStoreStream = new MemoryStream();
+            emptyPkcs12Store.Save(emptyStoreStream,
+                string.IsNullOrEmpty(emptyStorePassword) ? Array.Empty<char>() : emptyStorePassword.ToCharArray(),
+                new SecureRandom());
+            var emptyPkcs12Bytes = emptyStoreStream.ToArray();
+
+            Logger.LogDebug("Created empty PKCS12 keystore with {ByteCount} bytes", emptyPkcs12Bytes.Length);
+
+            // Create k8sData with the empty keystore
+            k8sData.Inventory = new Dictionary<string, byte[]>
+            {
+                { existingDataFieldName, emptyPkcs12Bytes }
+            };
+
+            // Create the secret with the empty keystore
+            Logger.LogDebug("Calling CreateOrUpdatePkcs12Secret() to create empty keystore secret...");
+            var createResponse = KubeClient.CreateOrUpdatePkcs12Secret(k8sData, KubeSecretName, KubeNamespace);
+            Logger.LogInformation("Successfully created empty PKCS12 keystore secret '{Name}' in namespace '{Namespace}'",
+                KubeSecretName, KubeNamespace);
+            Logger.MethodExit(MsLogLevel.Debug);
+            return createResponse;
+        }
+
         byte[] existingData = null;
         if (k8sData.Secret?.Data != null)
             existingData = k8sData.Secret.Data.TryGetValue(existingDataFieldName, out var value) ? value : null;
@@ -326,7 +712,7 @@ public class Management : JobBase, IManagementJobExtension
         var sPass = getK8SStorePassword(k8sData.Secret);
         Logger.LogDebug("Calling CreateOrUpdatePkcs12()...");
         var newPkcs12Store = pkcs12Store.CreateOrUpdatePkcs12(newCertBytes, config.JobCertificate.PrivateKeyPassword,
-            alias, existingData, sPass, remove);
+            alias, existingData, sPass, remove, IncludeCertChain);
         if (k8sData.Inventory == null || k8sData.Inventory.Count == 0)
         {
             Logger.LogDebug("k8sData.Pkcs12Inventory is null or empty so creating new Dictionary...");
@@ -342,7 +728,8 @@ public class Management : JobBase, IManagementJobExtension
         // update the secret
         Logger.LogDebug("Calling CreateOrUpdatePkcs12Secret()...");
         var updateResponse = KubeClient.CreateOrUpdatePkcs12Secret(k8sData, KubeSecretName, KubeNamespace);
-        Logger.LogDebug("Exiting HandlePKCS12Secret()...");
+        Logger.LogDebug("PKCS12 secret operation completed successfully");
+        Logger.MethodExit(MsLogLevel.Debug);
         return updateResponse;
     }
 
@@ -398,23 +785,55 @@ public class Management : JobBase, IManagementJobExtension
     //     return createResponse;
     // }
 
+    /// <summary>
+    /// Handles creation or update of a kubernetes.io/tls secret containing certificate data.
+    /// </summary>
+    /// <param name="certAlias">Alias/thumbprint of the certificate.</param>
+    /// <param name="certObj">Job certificate object containing certificate and key data.</param>
+    /// <param name="certPassword">Password for the certificate.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificate.</param>
+    /// <param name="append">Whether to append to existing data.</param>
+    /// <returns>The created or updated V1Secret object.</returns>
     private V1Secret HandleTlsSecret(string certAlias, K8SJobCertificate certObj, string certPassword,
         bool overwrite = false, bool append = true)
     {
-        Logger.LogTrace("Entered HandleTlsSecret()");
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing TLS secret for certificate: {Alias}", certAlias);
         Logger.LogTrace("certAlias: " + certAlias);
         // Logger.LogTrace("keyPasswordStr: " + keyPasswordStr);
         Logger.LogTrace("overwrite: " + overwrite);
         Logger.LogTrace("append: " + append);
 
+        // Handle "create store if missing" - when no certificate data is provided
+        // If secret already exists and no new certificate data, just return the existing secret
+        if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPem))
+        {
+            try
+            {
+                var existingSecret = KubeClient.GetCertificateStoreSecret(KubeSecretName, KubeNamespace);
+                if (existingSecret != null)
+                {
+                    Logger.LogInformation("Secret already exists, nothing to do for empty certificate data");
+                    return existingSecret;
+                }
+            }
+            catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
+            {
+                Logger.LogDebug("Secret not found, will create empty secret");
+            }
+            Logger.LogWarning("No alias or certificate found. Creating empty TLS secret.");
+            return creatEmptySecret("tls");
+        }
+
+        // Validate cert-only updates: prevent deploying certificate without private key to existing secret that has a key
+        var incomingHasNoPrivateKey = string.IsNullOrEmpty(certObj.PrivateKeyPem);
+        if ((overwrite || append) && incomingHasNoPrivateKey)
+        {
+            ValidateNoMismatchedKeyUpdate("TLS");
+        }
+
         try
         {
-            //if (certObj.Equals(new X509Certificate2()) && string.IsNullOrEmpty(certAlias))
-            if (string.IsNullOrEmpty(certAlias) && string.IsNullOrEmpty(certObj.CertPem))
-            {
-                Logger.LogWarning("No alias or certificate found.  Creating empty secret.");
-                return creatEmptySecret("tls");
-            }
         }
         catch (Exception ex)
         {
@@ -450,10 +869,17 @@ public class Management : JobBase, IManagementJobExtension
 
         var keyPem = certObj.PrivateKeyPem;
         if (!string.IsNullOrEmpty(keyPem)) keyPems = new[] { keyPem };
-        
+
+        // Preserve existing private key format if updating
+        var privateKeyPem = certObj.PrivateKeyPem;
+        if ((overwrite || append) && certObj.PrivateKeyParameter != null && !string.IsNullOrEmpty(privateKeyPem))
+        {
+            privateKeyPem = PreservePrivateKeyFormat(certObj, "tls.key");
+        }
+
         Logger.LogDebug("Calling CreateOrUpdateCertificateStoreSecret() to create or update secret in Kubernetes...");
         var createResponse = KubeClient.CreateOrUpdateCertificateStoreSecret(
-            certObj.PrivateKeyPem,
+            privateKeyPem,
             certObj.CertPem,
             certObj.ChainPem,
             KubeSecretName,
@@ -462,7 +888,8 @@ public class Management : JobBase, IManagementJobExtension
             append,
             overwrite,
             false,
-            SeparateChain
+            SeparateChain,
+            IncludeCertChain
         );
         if (createResponse == null)
             Logger.LogError("createResponse is null");
@@ -471,14 +898,41 @@ public class Management : JobBase, IManagementJobExtension
 
         Logger.LogInformation(
             $"Successfully created or updated secret '{KubeSecretName}' in Kubernetes namespace '{KubeNamespace}' on cluster '{KubeClient.GetHost()}' with certificate '{certAlias}'");
+        Logger.MethodExit(MsLogLevel.Debug);
         return createResponse;
     }
 
+    /// <summary>
+    /// Handles Add or Create operations for certificates based on secret type.
+    /// Routes to appropriate handler based on the store type.
+    /// </summary>
+    /// <param name="secretType">Type of secret (tls, opaque, jks, pkcs12, etc.).</param>
+    /// <param name="config">Management job configuration.</param>
+    /// <param name="jobCertObj">Job certificate object with certificate data.</param>
+    /// <param name="overwrite">Whether to overwrite existing certificates.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleCreateOrUpdate(string secretType, ManagementJobConfiguration config,
         K8SJobCertificate jobCertObj, bool overwrite = false)
     {
+        Logger.MethodEntry(MsLogLevel.Debug);
+
+        // Check for "create store if missing" operation for store types that don't support it
+        // K8SNS and K8SCluster are aggregate store types that manage multiple secrets across
+        // a namespace or cluster - there's no single "store" to create
+        var isCreateStoreIfMissing = string.IsNullOrEmpty(config.JobCertificate?.Contents);
+        if (isCreateStoreIfMissing && (secretType == "namespace" || secretType == "cluster"))
+        {
+            var storeTypeName = secretType == "namespace" ? "K8SNS" : "K8SCluster";
+            var warningMsg = $"'Create store if missing' is not supported for {storeTypeName} store type. " +
+                             $"{storeTypeName} manages multiple secrets across a {secretType} and does not represent a single secret that can be created. " +
+                             "No action taken.";
+            Logger.LogWarning(warningMsg);
+            Logger.LogInformation("End MANAGEMENT job {JobId} - {Message}", config.JobId, warningMsg);
+            return SuccessJob(config.JobHistoryId, warningMsg);
+        }
+
         var certPassword = jobCertObj.Password;
-        Logger.LogDebug("Entered HandleCreateOrUpdate()");
+        Logger.LogDebug("Processing create/update for secret type: {SecretType}", secretType);
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
 
@@ -603,10 +1057,10 @@ public class Management : JobBase, IManagementJobExtension
                 //pattern: namespace/secrets/secret_type/secert_name
                 var clusterSplitAlias = jobCertObj.Alias.Split("/");
 
-                // Check splitAlias length
-                if (clusterSplitAlias.Length < 3)
+                // Check splitAlias length - K8SCluster expects: <namespace>/secrets/<tls|opaque>/<secret_name> (4 parts)
+                if (clusterSplitAlias.Length < 4)
                 {
-                    var invalidAliasErrMsg = "Invalid alias format for K8SCluster store type. Alias";
+                    var invalidAliasErrMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{jobCertObj.Alias}'";
                     Logger.LogError(invalidAliasErrMsg);
                     Logger.LogInformation("End MANAGEMENT job " + config.JobId + " " + invalidAliasErrMsg + " Failed!");
                     return FailJob(invalidAliasErrMsg, config.JobHistoryId);
@@ -653,13 +1107,22 @@ public class Management : JobBase, IManagementJobExtension
         }
 
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.MethodExit(MsLogLevel.Debug);
         return SuccessJob(config.JobHistoryId);
     }
 
 
+    /// <summary>
+    /// Handles Remove operations for certificates.
+    /// Deletes certificates from the specified Kubernetes secret based on store type.
+    /// </summary>
+    /// <param name="secretType">Type of secret (tls, opaque, jks, pkcs12, etc.).</param>
+    /// <param name="config">Management job configuration.</param>
+    /// <returns>JobResult indicating success or failure.</returns>
     private JobResult HandleRemove(string secretType, ManagementJobConfiguration config)
     {
-        //OperationType == Remove - Delete a certificate from the certificate store passed in the config object
+        Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogDebug("Processing remove for secret type: {SecretType}", secretType);
         var kubeHost = KubeClient.GetHost();
         var jobCert = config.JobCertificate;
         var certAlias = config.JobCertificate.Alias;
@@ -688,6 +1151,13 @@ public class Management : JobBase, IManagementJobExtension
             var splitAlias = certAlias.Split("/");
             if (Capability.Contains("K8SNS"))
             {
+                // K8SNS expects: secrets/<tls|opaque>/<secret_name> (3 parts)
+                if (splitAlias.Length < 3)
+                {
+                    var errMsg = $"Invalid alias format for K8SNS store type. Expected pattern: 'secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 // Split alias by / and get second to last element KubeSecretType
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
@@ -695,6 +1165,13 @@ public class Management : JobBase, IManagementJobExtension
             }
             else if (Capability.Contains("K8SCluster"))
             {
+                // K8SCluster expects: <namespace>/secrets/<tls|opaque>/<secret_name> (4 parts)
+                if (splitAlias.Length < 4)
+                {
+                    var errMsg = $"Invalid alias format for K8SCluster store type. Expected pattern: '<namespace>/secrets/<tls|opaque>/<secret_name>' but got '{certAlias}'";
+                    Logger.LogError(errMsg);
+                    return FailJob(errMsg, config.JobHistoryId);
+                }
                 KubeSecretType = splitAlias[^2];
                 KubeSecretName = splitAlias[^1];
                 KubeNamespace = splitAlias[0];
@@ -737,6 +1214,7 @@ public class Management : JobBase, IManagementJobExtension
         }
 
         Logger.LogInformation("End MANAGEMENT job " + config.JobId + " Success!");
+        Logger.MethodExit(MsLogLevel.Debug);
         return SuccessJob(config.JobHistoryId);
     }
 }
