@@ -101,7 +101,7 @@ jobs:
             -verbosity:Warning
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: matrix.dotnet-version == '8.0.x'
         with:
           name: coverage-report-net8
@@ -117,7 +117,7 @@ jobs:
           fi
 
       - name: Upload test results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: unit-test-results-${{ matrix.dotnet-version }}
