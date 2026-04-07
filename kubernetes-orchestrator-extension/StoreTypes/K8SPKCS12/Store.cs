@@ -11,24 +11,41 @@ using System.IO;
 using Keyfactor.Extensions.Orchestrator.K8S.Models;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
+using MsLogLevel = Microsoft.Extensions.Logging.LogLevel;
 using Org.BouncyCastle.Pkcs;
 using Org.BouncyCastle.Security;
 using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.StoreTypes.K8SPKCS12;
 
+/// <summary>
+/// Serializer for PKCS12/PFX certificate stores in Kubernetes secrets.
+/// Handles loading, saving, and manipulation of PKCS12 stores.
+/// </summary>
 internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
 {
+    /// <summary>Logger instance for diagnostic output.</summary>
     private readonly ILogger _logger;
 
+    /// <summary>
+    /// Initializes a new instance of the PKCS12 certificate store serializer.
+    /// </summary>
+    /// <param name="storeProperties">JSON string of store properties (currently unused).</param>
     public Pkcs12CertificateStoreSerializer(string storeProperties)
     {
         _logger = LogHandler.GetClassLogger(GetType());
     }
 
+    /// <summary>
+    /// Deserializes a PKCS12 keystore from byte data.
+    /// </summary>
+    /// <param name="storeContents">The PKCS12 keystore bytes.</param>
+    /// <param name="storePath">Path to the store (for logging context).</param>
+    /// <param name="storePassword">Password to decrypt the keystore.</param>
+    /// <returns>A Pkcs12Store containing the certificates and keys.</returns>
     public Pkcs12Store DeserializeRemoteCertificateStore(byte[] storeContents, string storePath, string storePassword)
     {
-        _logger.MethodEntry(LogLevel.Debug);
+        _logger.MethodEntry(MsLogLevel.Debug);
 
         var storeBuilder = new Pkcs12StoreBuilder();
         var store = storeBuilder.Build();
@@ -37,14 +54,22 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         _logger.LogDebug("Loading Pkcs12Store from MemoryStream from {Path}", storePath);
         store.Load(ms, string.IsNullOrEmpty(storePassword) ? Array.Empty<char>() : storePassword.ToCharArray());
         _logger.LogDebug("Pkcs12Store loaded from {Path}", storePath);
-
+        _logger.MethodExit(MsLogLevel.Debug);
         return store;
     }
 
+    /// <summary>
+    /// Serializes a Pkcs12Store back to PKCS12 format for storage in Kubernetes.
+    /// </summary>
+    /// <param name="certificateStore">The Pkcs12Store to serialize.</param>
+    /// <param name="storePath">Directory path for the store.</param>
+    /// <param name="storeFileName">Filename for the serialized store.</param>
+    /// <param name="storePassword">Password to encrypt the keystore.</param>
+    /// <returns>List of SerializedStoreInfo containing the PKCS12 bytes and path.</returns>
     public List<SerializedStoreInfo> SerializeRemoteCertificateStore(Pkcs12Store certificateStore, string storePath,
         string storeFileName, string storePassword)
     {
-        _logger.MethodEntry(LogLevel.Debug);
+        _logger.MethodEntry(MsLogLevel.Debug);
 
         var storeBuilder = new Pkcs12StoreBuilder();
         var pkcs12Store = storeBuilder.Build();
@@ -86,20 +111,36 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             Contents = outStream.ToArray()
         });
 
-        _logger.MethodExit(LogLevel.Debug);
+        _logger.MethodExit(MsLogLevel.Debug);
         return storeInfo;
     }
 
+    /// <summary>
+    /// Returns the private key path (not applicable for PKCS12 stores).
+    /// </summary>
+    /// <returns>Always returns null for PKCS12 stores.</returns>
     public string GetPrivateKeyPath()
     {
         return null;
     }
 
+    /// <summary>
+    /// Creates a new PKCS12 store or updates an existing one with a new certificate.
+    /// Handles both add and remove operations.
+    /// </summary>
+    /// <param name="newPkcs12Bytes">PKCS12 bytes containing the new certificate to add.</param>
+    /// <param name="newCertPassword">Password for the new certificate's private key.</param>
+    /// <param name="alias">Alias for the certificate entry in the store.</param>
+    /// <param name="existingStore">Existing PKCS12 store bytes (null for new store).</param>
+    /// <param name="existingStorePassword">Password for the existing store.</param>
+    /// <param name="remove">True to remove the certificate, false to add.</param>
+    /// <param name="includeChain">Whether to include the certificate chain.</param>
+    /// <returns>The updated PKCS12 store as byte array.</returns>
     public byte[] CreateOrUpdatePkcs12(byte[] newPkcs12Bytes, string newCertPassword, string alias,
         byte[] existingStore = null, string existingStorePassword = null,
         bool remove = false, bool includeChain = true)
     {
-        _logger.MethodEntry(LogLevel.Debug);
+        _logger.MethodEntry(MsLogLevel.Debug);
 
         _logger.LogDebug("Creating or updating PKCS12 store for alias '{Alias}'", alias);
         // If existingStore is null, create a new store
@@ -138,7 +179,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
                             : existingStorePassword.ToCharArray(), new SecureRandom());
 
                     _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-                    _logger.MethodExit(LogLevel.Debug);
+                    _logger.MethodExit(MsLogLevel.Debug);
                     return mms.ToArray();
                 }
             }
@@ -154,7 +195,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
                     new SecureRandom());
 
                 _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-                _logger.MethodExit(LogLevel.Debug);
+                _logger.MethodExit(MsLogLevel.Debug);
                 return existingPkcs12StoreMs.ToArray();
             }
         }
@@ -279,7 +320,7 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
         // Return existingPkcs12Store as byte[]
 
         _logger.LogDebug("Converting existingPkcs12Store to byte[] and returning");
-        _logger.MethodExit(LogLevel.Debug);
+        _logger.MethodExit(MsLogLevel.Debug);
         return outStream.ToArray();
     }
 }
