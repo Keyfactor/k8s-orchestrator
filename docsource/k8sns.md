@@ -25,4 +25,18 @@ have specific keys in the Kubernetes secret.
 
 - `secrets/<tls|opaque>/<secret_name>`
 
+## Terraform
 
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-ns](../terraform/modules/k8s-ns/) for full documentation.
+
+```hcl
+module "ns_store" {
+  source = "./terraform/modules/k8s-ns"
+
+  client_machine   = "my-orchestrator"
+  agent_identifier = "my-orchestrator"
+  store_path       = "my-cluster/namespace/my-namespace"
+  kubeconfig_path  = "./kubeconfig.json"
+  kube_namespace   = "my-namespace"
+}
+```
