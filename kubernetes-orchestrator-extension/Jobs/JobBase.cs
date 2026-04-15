@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Common.Logging;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Extensions.Orchestrator.K8S.Enums;
@@ -28,6 +29,11 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 /// </summary>
 public abstract class JobBase
 {
+    private static readonly string ExtensionVersion =
+        typeof(JobBase).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(JobBase).Assembly.GetName().Version?.ToString()
+        ?? "unknown";
+
     protected IPAMSecretResolver _resolver;
 
     protected KubeCertificateManagerClient KubeClient;
@@ -273,6 +279,7 @@ public abstract class JobBase
     private void InitializeProperties(IDictionary<string, object> storeProperties)
     {
         Logger.MethodEntry(MsLogLevel.Debug);
+        Logger.LogInformation("K8S Orchestrator Extension version: {Version}", ExtensionVersion);
         _configParser ??= new StoreConfigurationParser(Logger);
 
         if (storeProperties == null)
