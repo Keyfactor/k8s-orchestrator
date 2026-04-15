@@ -4,7 +4,7 @@ This document describes the architecture of the Keyfactor Kubernetes Universal O
 
 ## Overview
 
-The extension enables remote management of certificate stores in Kubernetes clusters. It integrates with Keyfactor Command to provide discovery, inventory, management, and reenrollment operations for certificates stored in various Kubernetes resources.
+The extension enables remote management of certificate stores in Kubernetes clusters. It integrates with Keyfactor Command to provide discovery, inventory, and management operations for certificates stored in various Kubernetes resources.
 
 ## High-Level Architecture
 
@@ -58,12 +58,12 @@ The extension supports 7 certificate store types:
 | Store Type | Kubernetes Resource | Certificate Format | Operations |
 |------------|--------------------|--------------------|------------|
 | **K8SCert** | CertificateSigningRequest | PEM | Inventory, Discovery |
-| **K8SSecret** | Secret (Opaque) | PEM | All |
-| **K8STLSSecr** | Secret (kubernetes.io/tls) | PEM | All |
-| **K8SJKS** | Secret (Opaque) | JKS (Java Keystore) | All + Reenrollment |
-| **K8SPKCS12** | Secret (Opaque) | PKCS12/PFX | All + Reenrollment |
-| **K8SCluster** | Multiple Secrets | PEM | All |
-| **K8SNS** | Multiple Secrets | PEM | All |
+| **K8SSecret** | Secret (Opaque) | PEM | Inventory, Management, Discovery |
+| **K8STLSSecr** | Secret (kubernetes.io/tls) | PEM | Inventory, Management, Discovery |
+| **K8SJKS** | Secret (Opaque) | JKS (Java Keystore) | Inventory, Management, Discovery |
+| **K8SPKCS12** | Secret (Opaque) | PKCS12/PFX | Inventory, Management, Discovery |
+| **K8SCluster** | Multiple Secrets | PEM | Inventory, Management, Discovery |
+| **K8SNS** | Multiple Secrets | PEM | Inventory, Management, Discovery |
 
 ## Layer Architecture
 
@@ -77,8 +77,7 @@ Jobs/
 │   ├── K8SJobBase.cs       # Shared infrastructure (client, credentials, results)
 │   ├── InventoryBase.cs    # Common inventory logic
 │   ├── ManagementBase.cs   # Common management logic
-│   ├── DiscoveryBase.cs    # Common discovery logic
-│   └── ReenrollmentBase.cs # Common reenrollment logic
+│   └── DiscoveryBase.cs    # Common discovery logic
 └── StoreTypes/
     ├── K8SCert/            # CSR operations
     ├── K8SCluster/         # Cluster-wide operations
