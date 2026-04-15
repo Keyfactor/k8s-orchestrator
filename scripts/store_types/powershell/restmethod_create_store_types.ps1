@@ -30,7 +30,7 @@ $Body = @'
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -39,7 +39,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -48,7 +48,7 @@ $Body = @'
     {
       "Name": "KubeSecretName",
       "DisplayName": "KubeSecretName",
-      "Description": "The name of a specific CSR to inventory. Leave empty or set to \u0027*\u0027 to inventory ALL issued CSRs in the cluster.",
+      "Description": "The name of a specific CSR to inventory. Leave empty or set to '*' to inventory ALL issued CSRs in the cluster.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "",
@@ -96,7 +96,7 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "SeparateChain",
@@ -105,12 +105,12 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "false",
       "Required": false,
-      "Description": "Will default to \u0060false\u0060 if not set. Set this to \u0060true\u0060 if you want to deploy certificate chain to the \u0060ca.crt\u0060 field for Opaque and tls secrets."
+      "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
     },
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -119,7 +119,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -181,7 +181,7 @@ $Body = @'
     {
       "Name": "KubeSecretType",
       "DisplayName": "KubeSecretType",
-      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be \u0060jks\u0060.",
+      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `jks`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "jks",
@@ -199,7 +199,7 @@ $Body = @'
     {
       "Name": "PasswordFieldName",
       "DisplayName": "PasswordFieldName",
-      "Description": "The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if \u0060PasswordIsK8SSecret\u0060 is set to \u0060true\u0060, the field name to look at on the secret specified in \u0060StorePasswordPath\u0060.",
+      "Description": "The field name to use when looking for the JKS keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "password",
@@ -221,12 +221,12 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "StorePasswordPath",
       "DisplayName": "StorePasswordPath",
-      "Description": "The path to the K8S secret object to use as the password to the JKS keystore. Example: \u0060\u003Cnamespace\u003E/\u003Csecret_name\u003E\u0060",
+      "Description": "The path to the K8S secret object to use as the password to the JKS keystore. Example: `<namespace>/<secret_name>`",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": null,
@@ -235,7 +235,7 @@ $Body = @'
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -244,7 +244,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -301,7 +301,7 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "SeparateChain",
@@ -310,12 +310,12 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "false",
       "Required": false,
-      "Description": "Will default to \u0060false\u0060 if not set. Set this to \u0060true\u0060 if you want to deploy certificate chain to the \u0060ca.crt\u0060 field for Opaque and tls secrets."
+      "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
     },
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -324,7 +324,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -372,7 +372,7 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "CertificateDataFieldName",
@@ -385,7 +385,7 @@ $Body = @'
     {
       "Name": "PasswordFieldName",
       "DisplayName": "Password Field Name",
-      "Description": "The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if \u0060PasswordIsK8SSecret\u0060 is set to \u0060true\u0060, the field name to look at on the secret specified in \u0060StorePasswordPath\u0060.",
+      "Description": "The field name to use when looking for the PKCS12 keystore password in the K8S secret. This is either the field name to look at on the same secret, or if `PasswordIsK8SSecret` is set to `true`, the field name to look at on the secret specified in `StorePasswordPath`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "password",
@@ -421,7 +421,7 @@ $Body = @'
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -430,7 +430,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -439,7 +439,7 @@ $Body = @'
     {
       "Name": "KubeSecretType",
       "DisplayName": "Kube Secret Type",
-      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be \u0060pkcs12\u0060.",
+      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `pkcs12`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "pkcs12",
@@ -448,7 +448,7 @@ $Body = @'
     {
       "Name": "StorePasswordPath",
       "DisplayName": "StorePasswordPath",
-      "Description": "The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: \u0060\u003Cnamespace\u003E/\u003Csecret_name\u003E\u0060",
+      "Description": "The path to the K8S secret object to use as the password to the PFX/PKCS12 data. Example: `<namespace>/<secret_name>`",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": null,
@@ -510,7 +510,7 @@ $Body = @'
     {
       "Name": "KubeSecretType",
       "DisplayName": "KubeSecretType",
-      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be \u0060secret\u0060.",
+      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `secret`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "secret",
@@ -523,7 +523,7 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "SeparateChain",
@@ -532,12 +532,12 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "false",
       "Required": false,
-      "Description": "Will default to \u0060false\u0060 if not set. Set this to \u0060true\u0060 if you want to deploy certificate chain to the \u0060ca.crt\u0060 field for Opaque and tls secrets."
+      "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
     },
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -546,7 +546,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -608,7 +608,7 @@ $Body = @'
     {
       "Name": "KubeSecretType",
       "DisplayName": "KubeSecretType",
-      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be \u0060tls_secret\u0060.",
+      "Description": "DEPRECATED: This property is deprecated and will be removed in a future release. The secret type is now automatically derived from the store type. This defaults to and must be `tls_secret`.",
       "Type": "String",
       "DependsOn": "",
       "DefaultValue": "tls_secret",
@@ -621,7 +621,7 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "true",
       "Required": false,
-      "Description": "Will default to \u0060true\u0060 if not set. If set to \u0060false\u0060 only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
+      "Description": "Will default to `true` if not set. If set to `false` only the leaf cert will be deployed. Note: If the certificate in Keyfactor Command does not have a private key, it will be sent in DER format (leaf certificate only), and the chain cannot be included regardless of this setting."
     },
     {
       "Name": "SeparateChain",
@@ -630,12 +630,12 @@ $Body = @'
       "DependsOn": null,
       "DefaultValue": "false",
       "Required": false,
-      "Description": "Will default to \u0060false\u0060 if not set. Set this to \u0060true\u0060 if you want to deploy certificate chain to the \u0060ca.crt\u0060 field for Opaque and tls secrets."
+      "Description": "Will default to `false` if not set. Set this to `true` if you want to deploy certificate chain to the `ca.crt` field for Opaque and tls secrets."
     },
     {
       "Name": "ServerUsername",
       "DisplayName": "Server Username",
-      "Description": "This should be no value or \u0060kubeconfig\u0060",
+      "Description": "This should be no value or `kubeconfig`",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
@@ -644,7 +644,7 @@ $Body = @'
     {
       "Name": "ServerPassword",
       "DisplayName": "Server Password",
-      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in \u0060kubeconfig\u0060 format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
+      "Description": "The credentials to use to connect to the K8S cluster API. This needs to be in `kubeconfig` format. Example: https://github.com/Keyfactor/k8s-orchestrator/tree/main/scripts/kubernetes#example-service-account-json",
       "Type": "Secret",
       "DependsOn": "",
       "DefaultValue": null,
