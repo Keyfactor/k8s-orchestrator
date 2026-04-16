@@ -244,8 +244,8 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Tests
             // Assert
             Assert.DoesNotContain("MySecretPassword", redacted);
             Assert.DoesNotContain("123!", redacted);
+            Assert.DoesNotContain(testPassword.Length.ToString(), redacted);
             Assert.Contains("REDACTED", redacted);
-            Assert.Contains($"length: {testPassword.Length}", redacted);
         }
 
         [Fact]
