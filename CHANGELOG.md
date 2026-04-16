@@ -1,14 +1,17 @@
 # 2.0.0
 
 ## Breaking Changes
-- refactor(jobs): Job classes restructured by store type under `Jobs/StoreTypes/<StoreType>/`. Any external references to job class namespaces will need to be updated.
+- refactor(jobs): Monolithic job classes replaced with store-type-specific classes. Each store type (`K8SCert`, `K8SCluster`, `K8SJKS`, `K8SNS`, `K8SPKCS12`, `K8SSecret`, `K8STLSSecr`) now has dedicated `Inventory`, `Management`, and `Discovery` job classes under `Jobs/StoreTypes/<StoreType>/`. The `manifest.json` has been updated accordingly. Any external references to job class namespaces must be updated.
+- refactor(jobs): Dead properties removed from `JobBase`: `KubeHost`, `KubeCluster`, `SkipTlsValidation`, `OperationType`, `Overwrite`, `KeyEntry`, `ManagementConfig`, `DiscoveryConfig`, `InventoryConfig`. Any code referencing these properties must be updated.
 - refactor(client): Monolithic `KubeClient` split into focused components (`KubeClient`, `SecretOperations`, `CertificateOperations`, `KubeconfigParser`). Direct instantiation of the old client is no longer supported.
 - refactor(handlers): Secret operation logic extracted into a handler strategy pattern (`ISecretHandler`, `SecretHandlerFactory`). Store-type-specific logic no longer lives in job base classes.
 - refactor(services): Business logic extracted from `JobBase` into dedicated service classes (`StoreConfigurationParser`, `PasswordResolver`, `CertificateChainExtractor`, `JobCertificateParser`, `StorePathResolver`).
+- refactor(keystores): `KeystoreManager` class removed. JKS and PKCS12 operations are now handled by `JksSecretHandler` and `Pkcs12SecretHandler` respectively.
 - chore(crypto): Remove all usage of `System.Security.Cryptography.X509Certificate2` for certificate store operations. All cryptographic operations now use BouncyCastle exclusively.
 
 ## Features
 - feat(compat): Add `.NET 10` target — extension now ships builds for both `net8.0` and `net10.0`, supporting Keyfactor Command 24.x (net8.0) and 25.x+ (net10.0).
+- feat(terraform): Add reusable Terraform modules for all 7 store types to support dev/test cluster provisioning.
 - feat(security): Kubernetes secret replace operations now propagate `resourceVersion` to prevent lost-update races under concurrent writes.
 - feat(validation): `StorePathResolver` emits a warning log when namespace or secret name components do not conform to Kubernetes DNS subdomain rules, preserving backwards compatibility while surfacing misconfiguration.
 - feat(logging): Add `LoggingUtilities` with safe redaction helpers for passwords, private keys, certificates, kubeconfigs, and tokens — sensitive values are never written to logs.
@@ -37,15 +40,28 @@
 - fix(management): Fix alias parsing for `K8SNS` and `K8SCluster` store-types when alias contains multiple path segments.
 - fix(management): Add `IncludeCertChain` at base job level, and include in management jobs.
 - fix(management): `K8SPKCS12` and `K8SJKS` respect `IncludeCertChain` flag.
+- fix(management): "Create if missing" jobs (`CertStoreOperationType.Create`) no longer fail with "Unknown operation type: Create". `Create` is now routed identically to `Add`.
+- fix(management): `K8SJKS` and `K8SPKCS12` `CreateEmptyStore` now uses the buddy-secret password when one is configured, instead of always using an empty password.
+- fix(management): `K8SJKS` and `K8SPKCS12` alias routing now correctly interprets the `<fieldName>/<certAlias>` format. Previously, `HandleAdd` and `HandleRemove` always wrote to the first existing field in the secret and passed the full alias string (e.g. `mystore.jks/default`) to the keystore serializer; now the field name selects the target K8S secret field and only the short cert alias is used inside the JKS/PKCS12 file.
 
 ## Chores:
 - chore(tests): Add comprehensive unit test suite covering all store types and cryptographic operations.
 - chore(tests): Add integration test suite validating end-to-end operations against live Kubernetes clusters.
+- chore(tests): Add alias routing regression tests (`AliasRoutingRegressionTests`) with 8 unit tests covering JKS and PKCS12 field-selection and certAlias correctness.
+- chore(tests): Add 4 integration tests each to `K8SJKSStoreIntegrationTests` and `K8SPKCS12StoreIntegrationTests` validating end-to-end `<fieldName>/<certAlias>` alias routing (field written to, cert alias inside keystore, inventory alias format, and remove from named field).
+- chore(tests): Add unit tests for all three constructors of `JkSisPkcs12Exception`, `InvalidK8SSecretException`, and `StoreNotFoundException` (previously at 0% line coverage).
+- chore(tests): Add 10 unit tests for `CertificateChainExtractor` covering null/empty inputs, DER fallback, invalid data, and `ca.crt` chain handling (coverage: 75% → 98.9%).
+- chore(tests): Add 26 no-network unit tests for `CertificateSecretHandler`, `ClusterSecretHandler`, and `NamespaceSecretHandler` covering property assertions, `NotSupportedException` throws, and alias-parsing `ArgumentException` paths (coverage: ~69–78% → ~82–89%).
 - chore(ci): Add GitHub Actions workflows for unit tests, integration tests, code quality, and security scanning.
 - chore(ci): Add CodeQL, dependency review, SBOM generation, and license compliance workflows.
 - chore(ci): Add PR quality gate with semantic versioning validation and auto-labeling.
 - chore(docs): Document supported key types for all store types.
 - chore(util): Add verbose logging to PAM credential resolver.
+- chore(refactor): Remove dead code from `JobBase` — unused static arrays, dead properties, unused `WarningJob()`, `HasPrivateKey()`, and `CertChainSeparator`.
+- chore(refactor): Remove unreachable branches from `KubeClient.GetKubeClient()` — the `else if (k8SConfiguration == null)` and file-path fallback branches were provably dead because `KubeconfigParser.Parse()` always throws on failure rather than returning null. Cyclomatic complexity reduced from 14 to 6, CRAP score from 137 to 26.8.
+- chore(refactor): Simplify JKS serializer `CreateOrUpdateJks` — extract `LoadExistingJksStore()`, `LoadNewCertificate()`, `SaveJksStore()`, `PasswordToChars()` helpers. CRAP score reduced from 60 to 16.
+- chore(refactor): Simplify PKCS12 serializer `CreateOrUpdatePkcs12` — same helper extraction pattern. CRAP score reduced from 36 to 16.
+- chore(refactor): Simplify `GetStorePath()` in `JobBase` — extract `DeriveSecretType()` and `NormalizeSecretTypeForPath()` helpers, make method private.
 
 # 1.2.2
 
