@@ -66,8 +66,6 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
 This integration is compatible with Keyfactor Universal Orchestrator version 12.4 and later.
 
-The extension is compiled for both **.NET 8** and **.NET 10**. Use the `.NET 8` build for Universal Orchestrator versions up to and including Command 24.x, and the `.NET 10` build for Command 25.x and later. See the [installation section](#installation) for the full version matrix.
-
 ## Support
 
 The Kubernetes Universal Orchestrator extension is supported by Keyfactor. If you require support for any issues or have feature request, please open a support ticket by either contacting your Keyfactor representative or via the Keyfactor Support Portal at https://support.keyfactor.com.
