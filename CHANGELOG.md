@@ -1,3 +1,28 @@
+# 2.0.0
+
+## Breaking Changes
+- refactor(jobs): Job classes restructured by store type under `Jobs/StoreTypes/<StoreType>/`. Any external references to job class namespaces will need to be updated.
+- refactor(client): Monolithic `KubeClient` split into focused components (`KubeClient`, `SecretOperations`, `CertificateOperations`, `KubeconfigParser`). Direct instantiation of the old client is no longer supported.
+- refactor(handlers): Secret operation logic extracted into a handler strategy pattern (`ISecretHandler`, `SecretHandlerFactory`). Store-type-specific logic no longer lives in job base classes.
+- refactor(services): Business logic extracted from `JobBase` into dedicated service classes (`StoreConfigurationParser`, `PasswordResolver`, `CertificateChainExtractor`, `JobCertificateParser`, `StorePathResolver`).
+- chore(crypto): Remove all usage of `System.Security.Cryptography.X509Certificate2` for certificate store operations. All cryptographic operations now use BouncyCastle exclusively.
+
+## Features
+- feat(compat): Add `.NET 10` target — extension now ships builds for both `net8.0` and `net10.0`, supporting Keyfactor Command 24.x (net8.0) and 25.x+ (net10.0).
+- feat(security): Kubernetes secret replace operations now propagate `resourceVersion` to prevent lost-update races under concurrent writes.
+- feat(validation): `StorePathResolver` emits a warning log when namespace or secret name components do not conform to Kubernetes DNS subdomain rules, preserving backwards compatibility while surfacing misconfiguration.
+- feat(logging): Add `LoggingUtilities` with safe redaction helpers for passwords, private keys, certificates, kubeconfigs, and tokens — sensitive values are never written to logs.
+
+## Bug Fixes
+- fix(inventory): Null reference when secret not found now throws `StoreNotFoundException` instead of propagating as an unhandled null dereference.
+- fix(client): `ReadBuddyPass` throws `StoreNotFoundException` on missing password secret rather than returning null.
+- fix(chain): `SeparateChain=true` is silently overridden to `false` when `IncludeCertChain=false` — there is no chain to separate.
+
+## Chores
+- chore(tests): Add `CachedCertificateProvider` for thread-safe certificate reuse across tests, reducing test suite runtime significantly.
+- chore(docs): Add `docs/ARCHITECTURE.md` documenting layer architecture, data flow, design patterns, and authentication model.
+- chore(docs): Update compatibility section to include Command 24.x and 25.x and net8.0/net10.0 build matrix.
+
 # 1.3.0
 
 ## Features
