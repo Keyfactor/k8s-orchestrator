@@ -51,6 +51,10 @@ The service account token can be provided to the extension in one of two ways:
 To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
 information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
 
+## Terraform Modules
+
+Reusable Terraform modules are available for all store types using the [Keyfactor Terraform Provider](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest). See the [terraform/](./terraform/) directory for modules, examples, and documentation.
+
 ## Discovery
 
 **NOTE:** To use discovery jobs, you must have the store type created in Keyfactor Command and the `needs_server` 
