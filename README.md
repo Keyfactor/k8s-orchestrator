@@ -64,7 +64,7 @@ The Kubernetes Universal Orchestrator extension implements 7 Certificate Store T
 
 ## Compatibility
 
-This integration is compatible with Keyfactor Universal Orchestrator version 12.4 and later.
+This integration is compatible with Keyfactor Universal Orchestrator version 12.4 and later, including Keyfactor Command platform versions 24.x and 25.x.
 
 ## Support
 
@@ -786,7 +786,8 @@ The `K8STLSSecr` store type is used to manage Kubernetes secrets of type `kubern
    | Universal Orchestrator Version | Latest .NET version installed on the Universal Orchestrator server | `rollForward` condition in `Orchestrator.runtimeconfig.json` | `Kubernetes Orchestrator Extension` .NET version to download |
    | --------- | ----------- | ----------- | ----------- |
    | Between `11.0.0` and `11.5.1` (inclusive) | `net8.0` | `LatestMajor` | `net8.0` |
-   | `11.6` _and_ newer | `net8.0` | | `net8.0` |
+   | `11.6` _and_ newer (including Command `24.x`) | `net8.0` | | `net8.0` |
+   | Command `25.x` _and_ newer | `net10.0` | | `net10.0` |
 
     Unzip the archive containing extension assemblies to a known location.
 
