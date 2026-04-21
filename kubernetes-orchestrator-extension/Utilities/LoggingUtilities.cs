@@ -35,7 +35,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
         /// is redacted along with its length.
         /// </summary>
         /// <param name="password">The password to redact</param>
-        /// <returns>A redacted string like "***REDACTED*** (length: N)" or "EMPTY" or "NULL"</returns>
+        /// <returns>A redacted string like "***REDACTED***" or "EMPTY" or "NULL"</returns>
         public static string RedactPassword(string password)
         {
             if (password == null)
@@ -48,7 +48,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
                 return "EMPTY";
             }
 
-            return $"***REDACTED*** (length: {password.Length})";
+            return "***REDACTED***";
         }
 
         /// <summary>
@@ -354,6 +354,21 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
             if (string.IsNullOrEmpty(kubeconfigJson))
             {
                 return "EMPTY";
+            }
+
+            // Validate structure before applying the kubeconfig label
+            if (!kubeconfigJson.TrimStart().StartsWith("{"))
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
+            }
+
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(kubeconfigJson);
+            }
+            catch
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
             }
 
             // Count the number of clusters, users, and contexts

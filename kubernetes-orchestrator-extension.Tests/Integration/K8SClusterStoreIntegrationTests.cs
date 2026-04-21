@@ -12,7 +12,7 @@ using System.Text;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCluster;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -77,20 +77,30 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
 
         if (!_fixture.SkipCleanup)
         {
-            if (_k8sClient == null)
-            {
-                return;
-            }
-
-            foreach (var (secretName, ns) in _createdSecrets)
+            // Batch delete using label selector (faster than individual deletions)
+            var labelSelector = $"{ManagedByLabelKey}={TestManagedByLabel},{TestRunIdLabelKey}={_testRunId}";
+            foreach (var ns in new[] { TestNamespace1, TestNamespace2 })
             {
                 try
                 {
-                    await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, ns);
+                    await _k8sClient.CoreV1.DeleteCollectionNamespacedSecretAsync(
+                        ns, labelSelector: labelSelector);
                 }
                 catch (Exception)
                 {
-                    // Ignore cleanup errors
+                    // Fall back to individual deletion
+                    foreach (var (secretName, secretNs) in _createdSecrets)
+                    {
+                        if (secretNs != ns) continue;
+                        try
+                        {
+                            await _k8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, ns);
+                        }
+                        catch (Exception)
+                        {
+                            // Ignore cleanup errors
+                        }
+                    }
                 }
             }
         }
@@ -265,12 +275,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
             break;
         }
 
-        if (result == null)
-        {
-            throw new InvalidOperationException("ProcessJob returned null for all retry attempts.");
-        }
-
-        return result;
+        return result!;
     }
 
     #region Discovery Tests
@@ -531,7 +536,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-mgmt-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Management Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Management Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -709,7 +714,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-add-tls-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster TLS Add Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster TLS Add Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -848,7 +853,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-add-opaque-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Cluster Opaque Add Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Cluster Opaque Add Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -900,7 +905,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-rsa2048-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "RSA 2048 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "RSA 2048 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -943,7 +948,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-ecp256-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.EcP256, "EC P-256 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "EC P-256 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -986,7 +991,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         var secretName = $"test-ed25519-cluster-{Guid.NewGuid():N}";
         _createdSecrets.Add((secretName, TestNamespace1));
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Ed25519, "Ed25519 Test");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Ed25519, "Ed25519 Test");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -1034,7 +1039,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1108,7 +1113,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1263,7 +1268,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -1346,7 +1351,7 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         _createdSecrets.Add((secretName, TestNamespace1));
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
