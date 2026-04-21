@@ -171,6 +171,29 @@ public class KubeCertificateManagerClient
     {
         _logger.MethodEntry(LogLevel.Debug);
 
+        // In-cluster: if no kubeconfig is provided and KUBERNETES_SERVICE_HOST is set, the plugin is
+        // running inside a pod. Use the projected service account token mounted by kubelet — it is
+        // auto-rotated every hour and never needs to be stored in Keyfactor Command.
+        if (string.IsNullOrWhiteSpace(kubeconfig) &&
+            !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KUBERNETES_SERVICE_HOST")))
+        {
+            _logger.LogInformation("No kubeconfig provided and KUBERNETES_SERVICE_HOST detected — using projected service account token (in-cluster)");
+            try
+            {
+                var inClusterConfig = KubernetesClientConfiguration.InClusterConfig();
+                var inClusterClient = new Kubernetes(inClusterConfig);
+                Client = inClusterClient;
+                _logger.MethodExit(LogLevel.Debug);
+                return inClusterClient;
+            }
+            catch (KubeConfigException ex)
+            {
+                _logger.LogError("In-cluster config failed despite KUBERNETES_SERVICE_HOST being set: {Message}", ex.Message);
+                throw new InvalidOperationException(
+                    $"Failed to initialize in-cluster Kubernetes client. Ensure the pod's ServiceAccount has the required RBAC permissions. Error: {ex.Message}", ex);
+            }
+        }
+
         // Use the parser; handle initialization order (parser may not be set yet in constructor)
         var parser = _kubeconfigParser ?? new KubeconfigParser(_logger);
         _logger.LogDebug("Calling KubeconfigParser.Parse()");

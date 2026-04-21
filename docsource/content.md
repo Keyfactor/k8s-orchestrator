@@ -63,10 +63,20 @@ An X.509 client certificate and private key signed by the cluster CA. The certif
 Kubernetes user identity for RBAC — no ServiceAccount object is required. Certificates carry a defined
 expiry (typically 1 year, set by cluster CA policy) and can be renewed through Keyfactor.
 
+#### Option 3: In-Cluster / Pod Identity
+
+When the Universal Orchestrator runs as a pod inside the cluster it is managing, it can authenticate using
+the **projected service account token** that kubelet mounts automatically. The token is rotated every hour
+with no intervention required, and no credentials are stored in Keyfactor Command for that cluster.
+Leave **Server Password blank** in Command for stores in the UO's own cluster.
+
+> **Scope:** This option only covers the cluster the UO pod runs in. Additional clusters are still
+> configured via a kubeconfig (Options 1 or 2) in the Server Password field.
+
 #### Setup
 
-For full setup instructions, scripts, and example kubeconfig files for both authentication methods, see the
-[service account setup guide](./scripts/kubernetes/README.md).
+For full setup instructions, scripts, example kubeconfig files, and the UO deployment manifest for all
+three authentication methods, see the [service account setup guide](./scripts/kubernetes/README.md).
 
 ## Terraform Modules
 

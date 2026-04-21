@@ -4,13 +4,15 @@ This document describes how to configure Kubernetes credentials for the Keyfacto
 
 Two authentication methods are supported. Choose the one that best fits your environment:
 
-| | [Option 1: Service Account Token](#option-1-service-account-token) | [Option 2: Client Certificate](#option-2-client-certificate) |
-|---|---|---|
-| Credential type | Long-lived bearer token | X.509 client certificate + private key |
-| Expiry | None (static) | Defined by cluster CA policy (typically 1 year) |
-| K8s object required | `kubernetes.io/service-account-token` Secret | None — cluster CA signs the cert directly |
-| Rotation | Manual | Can be automated via Keyfactor |
-| Setup complexity | Lower | Slightly higher (CSR approval required) |
+| | [Option 1: Service Account Token](#option-1-service-account-token) | [Option 2: Client Certificate](#option-2-client-certificate) | [Option 3: In-Cluster / Pod Identity](#option-3-in-cluster--pod-identity) |
+|---|---|---|---|
+| Credential type | Long-lived bearer token | X.509 client certificate + private key | Projected SA token (auto-rotated) |
+| Expiry | None (static) | Defined by cluster CA policy (typically 1 year) | ~1 hour (rotated automatically by kubelet) |
+| K8s object required | `kubernetes.io/service-account-token` Secret | None — cluster CA signs the cert directly | None — mounted automatically into the pod |
+| Stored in Command | Yes (bearer token) | Yes (cert + key) | No |
+| Rotation | Manual | Manual / via Keyfactor | Fully automatic |
+| Requires UO in pod | No | No | Yes — manages its own cluster only |
+| Setup complexity | Lower | Slightly higher (CSR approval required) | Medium (UO must be deployed as a K8s pod) |
 
 Both methods produce the same output: a `kubeconfig` JSON file that you paste into the **Server Password** field of your Keyfactor Command certificate store definition.
 
@@ -212,11 +214,70 @@ kubectl get csr keyfactor-orchestrator-keyfactor-csr \
 
 ---
 
+## Option 3: In-Cluster / Pod Identity
+
+When the Universal Orchestrator runs as a pod inside the Kubernetes cluster it is managing, it can authenticate using the **projected service account token** that kubelet automatically mounts into the pod. No credentials are stored in Keyfactor Command for this cluster — the token is rotated every hour without any intervention.
+
+> **Scope:** This option manages only the cluster the UO pod runs in. To manage additional clusters from the same UO, provide a kubeconfig in the Server Password field for those store definitions as usual (Options 1 or 2).
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `kubernetes_svc_account.yaml` | Creates the ServiceAccount and RBAC (same as Option 1) |
+| `keyfactor-orchestrator-deployment.yaml` | Kubernetes `Deployment` manifest for the UO pod |
+
+### How it works
+
+1. Apply `kubernetes_svc_account.yaml` — this creates the `keyfactor-orchestrator-sa` ServiceAccount and grants it the required ClusterRole.
+2. Deploy the UO using `keyfactor-orchestrator-deployment.yaml`. The pod runs with `serviceAccountName: keyfactor-orchestrator-sa`.
+3. kubelet mounts a short-lived projected token at `/var/run/secrets/kubernetes.io/serviceaccount/token` and rotates it automatically.
+4. The plugin detects the `KUBERNETES_SERVICE_HOST` environment variable (set in every pod by Kubernetes) and calls `KubernetesClientConfiguration.InClusterConfig()` when no kubeconfig is provided.
+5. In Keyfactor Command, leave **Server Password blank** for certificate stores in this cluster — no kubeconfig needed.
+
+### Setup
+
+```bash
+# 1. Create the ServiceAccount and RBAC
+kubectl apply -f kubernetes_svc_account.yaml
+
+# 2. Edit keyfactor-orchestrator-deployment.yaml and replace all <PLACEHOLDER> values
+
+# 3. Deploy the orchestrator
+kubectl apply -f keyfactor-orchestrator-deployment.yaml
+
+# 4. Verify the pod is running
+kubectl get pods -l app=keyfactor-orchestrator
+
+# 5. Check the logs to confirm in-cluster auth was detected
+kubectl logs -l app=keyfactor-orchestrator | grep -i "in-cluster"
+```
+
+### Configuring certificate stores in Command
+
+For stores in **this cluster** (the one the UO pod runs in):
+
+- **Server Username:** `kubeconfig`
+- **Server Password:** *(leave blank)*
+
+For stores in **other clusters**, provide a kubeconfig JSON as normal (Options 1 or 2).
+
+### Notes
+
+- `replicas: 1` is required — the UO is stateful and must not be scaled horizontally.
+- The projected token is audience-bound to the kube-apiserver and cannot be used outside the cluster.
+- Resource requests/limits in the deployment manifest are starting points — adjust for your workload.
+- The `KEYFACTOR_ORCHESTRATOR_NAME` value must match the orchestrator name registered in Keyfactor Command.
+
+---
+
 ## Providing credentials to Keyfactor Command
 
-Regardless of which authentication method you use, the output JSON file is provided to the orchestrator the same way:
+For Options 1 and 2, provide the output JSON file the same way:
 
 - **Server Username:** `kubeconfig`
 - **Server Password:** paste the full contents of the `*-context.json` file
+
+For Option 3 (in-cluster), leave **Server Password blank** for stores in the UO's own cluster.
 
 This applies to both certificate store definitions and discovery job configurations.

@@ -320,10 +320,19 @@ public abstract class JobBase
 
         if (string.IsNullOrEmpty(KubeSvcCreds))
         {
-            const string credsErr =
-                "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/get_service_account_creds.sh";
-            Logger.LogError(credsErr);
-            throw new ConfigurationException(credsErr);
+            // Allow empty credentials when running inside a Kubernetes pod — GetKubeClient will
+            // detect KUBERNETES_SERVICE_HOST and use the projected service account token instead.
+            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("KUBERNETES_SERVICE_HOST")))
+            {
+                Logger.LogInformation("No kubeconfig provided — detected in-cluster environment, will use projected service account token");
+            }
+            else
+            {
+                const string credsErr =
+                    "No credentials provided to connect to Kubernetes. Please provide a kubeconfig file. See https://github.com/Keyfactor/kubernetes-orchestrator/blob/main/scripts/kubernetes/README.md";
+                Logger.LogError(credsErr);
+                throw new ConfigurationException(credsErr);
+            }
         }
 
         // Apply keystore-specific defaults using centralized configuration parser
