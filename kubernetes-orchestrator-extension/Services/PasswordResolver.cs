@@ -93,7 +93,6 @@ public class PasswordResolver
         passwordBytes = Encoding.UTF8.GetBytes(passwordString);
 
         _logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(passwordString));
-        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(passwordString));
 
         return new PasswordResult(passwordBytes, passwordString);
     }

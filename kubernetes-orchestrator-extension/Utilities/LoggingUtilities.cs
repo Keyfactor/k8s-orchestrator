@@ -12,8 +12,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using k8s.Models;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.OpenSsl;
@@ -49,33 +47,6 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
             }
 
             return "***REDACTED***";
-        }
-
-        /// <summary>
-        /// Generates a correlation ID for a password based on its SHA-256 hash.
-        /// This allows tracking the same password across multiple operations without
-        /// logging the actual password value.
-        /// </summary>
-        /// <param name="password">The password to generate a correlation ID for</param>
-        /// <returns>A correlation ID like "hash:abc123..." or "NULL" or "EMPTY"</returns>
-        public static string GetPasswordCorrelationId(string password)
-        {
-            if (password == null)
-            {
-                return "NULL";
-            }
-
-            if (string.IsNullOrEmpty(password))
-            {
-                return "EMPTY";
-            }
-
-            using (var sha256 = SHA256.Create())
-            {
-                var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                var hashPrefix = BitConverter.ToString(hashBytes).Replace("-", "").Substring(0, 16).ToLower();
-                return $"hash:{hashPrefix}";
-            }
         }
 
         #endregion

@@ -76,69 +76,6 @@ public class LoggingUtilitiesTests
 
     #endregion
 
-    #region GetPasswordCorrelationId Tests
-
-    [Fact]
-    public void GetPasswordCorrelationId_NullInput_ReturnsNull()
-    {
-        // Act
-        var result = LoggingUtilities.GetPasswordCorrelationId(null);
-
-        // Assert
-        Assert.Equal("NULL", result);
-    }
-
-    [Fact]
-    public void GetPasswordCorrelationId_EmptyInput_ReturnsEmpty()
-    {
-        // Act
-        var result = LoggingUtilities.GetPasswordCorrelationId("");
-
-        // Assert
-        Assert.Equal("EMPTY", result);
-    }
-
-    [Fact]
-    public void GetPasswordCorrelationId_ValidInput_ReturnsHashPrefix()
-    {
-        // Arrange
-        var password = "testPassword";
-
-        // Act
-        var result = LoggingUtilities.GetPasswordCorrelationId(password);
-
-        // Assert
-        Assert.StartsWith("hash:", result);
-        Assert.Equal(21, result.Length); // "hash:" (5) + 16 hex chars
-    }
-
-    [Fact]
-    public void GetPasswordCorrelationId_SamePassword_ReturnsConsistentHash()
-    {
-        // Arrange
-        var password = "consistentPassword";
-
-        // Act
-        var result1 = LoggingUtilities.GetPasswordCorrelationId(password);
-        var result2 = LoggingUtilities.GetPasswordCorrelationId(password);
-
-        // Assert
-        Assert.Equal(result1, result2);
-    }
-
-    [Fact]
-    public void GetPasswordCorrelationId_DifferentPasswords_ReturnsDifferentHashes()
-    {
-        // Act
-        var result1 = LoggingUtilities.GetPasswordCorrelationId("password1");
-        var result2 = LoggingUtilities.GetPasswordCorrelationId("password2");
-
-        // Assert
-        Assert.NotEqual(result1, result2);
-    }
-
-    #endregion
-
     #region RedactPrivateKeyPem Tests
 
     [Fact]

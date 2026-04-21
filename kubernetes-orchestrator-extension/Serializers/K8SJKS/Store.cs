@@ -71,7 +71,6 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
         }
 
         _logger.LogTrace("StorePassword: {Password}", LoggingUtilities.RedactPassword(storePassword));
-        _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
 
         var jksStore = new JksStore();
 
@@ -99,7 +98,6 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
                 else
                 {
                     _logger.LogError("Unable to load JKS store using provided password: {Password}", LoggingUtilities.RedactPassword(storePassword));
-                    _logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(storePassword));
                 }
                 
                 throw;

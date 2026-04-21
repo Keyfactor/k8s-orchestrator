@@ -13,18 +13,31 @@
 - feat(compat): Add `.NET 10` target — extension now ships builds for both `net8.0` and `net10.0`, supporting Keyfactor Command 24.x (net8.0) and 25.x+ (net10.0).
 - feat(terraform): Add reusable Terraform modules for all 7 store types to support dev/test cluster provisioning.
 - feat(security): Kubernetes secret replace operations now propagate `resourceVersion` to prevent lost-update races under concurrent writes.
-- feat(validation): `StorePathResolver` emits a warning log when namespace or secret name components do not conform to Kubernetes DNS subdomain rules, preserving backwards compatibility while surfacing misconfiguration.
+- feat(validation): `StorePathResolver` now throws `ArgumentException` on namespace or secret name components that do not conform to Kubernetes DNS subdomain rules, and throws `ConfigurationException` for store paths with 5+ segments, preventing silent misrouting.
 - feat(logging): Add `LoggingUtilities` with safe redaction helpers for passwords, private keys, certificates, kubeconfigs, and tokens — sensitive values are never written to logs.
+- feat(auth): Add client certificate authentication support (Option 2) — new `generate_client_cert_creds.sh` script, `kubernetes_svc_account_cert_auth.yaml`, and `example_kubeconfig_cert.json`. No plugin code changes required; the underlying Kubernetes C# client already supports `client-certificate-data`/`client-key-data` kubeconfig fields.
+- feat(auth): Add in-cluster / pod identity authentication (Option 3) — when the Universal Orchestrator runs as a Kubernetes pod, the extension detects `KUBERNETES_SERVICE_HOST` and calls `KubernetesClientConfiguration.InClusterConfig()` automatically. No kubeconfig is required for that cluster; leave Server Password blank (select "No value" in Command UI). New `keyfactor-orchestrator-deployment.yaml` deployment manifest included.
+- feat(audit): Add structured `AUDIT` log entries for `store_access` (STARTED/COMPLETED/FAILED) in Inventory, Management, and Discovery base classes, and `secret_read`, `secret_write`, `secret_delete` in `SecretOperations` — satisfies SOX/SOC2 audit trail requirements.
 
 ## Bug Fixes
 - fix(inventory): Null reference when secret not found now throws `StoreNotFoundException` instead of propagating as an unhandled null dereference.
 - fix(client): `ReadBuddyPass` throws `StoreNotFoundException` on missing password secret rather than returning null.
 - fix(chain): `SeparateChain=true` is silently overridden to `false` when `IncludeCertChain=false` — there is no chain to separate.
+- fix(client): `config.UseSSL` was read from the Keyfactor framework job configuration but never forwarded to `KubeCertificateManagerClient`. The value is now threaded through all three `InitializeStore` overloads and passed to the client constructor.
+- fix(management): `HandleRemove` now returns `OrchestratorJobStatusJobResult.Warning` (not `Success`) when the target secret does not exist, so Command job history correctly distinguishes "no-op" from a successful removal.
+- fix(handlers): `JksSecretHandler`, `Pkcs12SecretHandler`, and `CertificateSecretHandler` now catch typed `HttpOperationException` with `HttpStatusCode.NotFound` instead of string-matching `ex.Message.Contains("NotFound")`, closing a detection gap for non-English error messages.
+- fix(security): `LoggingUtilities.RedactKubeconfig` validates JSON structure before applying the label; non-JSON input returns `***POSSIBLY_MALFORMED_CREDENTIAL*** (length: N)` instead of silently leaking content.
+- fix(security): `KubeconfigParser.CheckTlsVerifyOverride` promotes TLS-skip notification from `LogWarning` to `LogError` with a `SECURITY_CONFIG_OVERRIDE` structured field, ensuring the override is visible in SOC2 audit log streams.
+- fix(security): Remove `GetPasswordCorrelationId` — SHA-256 hashing of low-entropy passwords is reversible via dictionary attack and provides no audit value. All call sites already have `RedactPassword` in place.
+- fix(scripts): `get_service_account_creds.sh` and `create_service_account.sh` now use direct `kubectl … -o jsonpath='{.data.token}'` queries instead of fragile `grep`/`awk` pipelines, fixing silent failures on Kubernetes v1.22+ clusters where service accounts no longer receive auto-created token Secrets.
 
 ## Chores
 - chore(tests): Add `CachedCertificateProvider` for thread-safe certificate reuse across tests, reducing test suite runtime significantly.
 - chore(docs): Add `docs/ARCHITECTURE.md` documenting layer architecture, data flow, design patterns, and authentication model.
 - chore(docs): Update compatibility section to include Command 24.x and 25.x and net8.0/net10.0 build matrix.
+- chore(docs): Rewrite `scripts/kubernetes/README.md` to document all three authentication options (SA token, client certificate, in-cluster) with a comparison table, setup scripts, example kubeconfigs, and Command UI instructions.
+- chore(security): Credential fields (`ServerPassword`, `KubeSvcCreds`) are zeroed out in `JobBase` immediately after the Kubernetes client is constructed — credentials are not held in memory longer than necessary.
+- chore(security): PAM credential resolution outcome promoted from `LogTrace` to `LogInformation` with SUCCESS/EMPTY_OR_FAILED outcome tags for SOC2 visibility.
 
 # 1.3.0
 

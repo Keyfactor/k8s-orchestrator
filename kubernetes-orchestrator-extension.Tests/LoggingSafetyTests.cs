@@ -72,8 +72,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Tests
                         continue;
 
                     // Skip if line uses LoggingUtilities.RedactPassword
-                    if (line.Contains("LoggingUtilities.RedactPassword") ||
-                        line.Contains("LoggingUtilities.GetPasswordCorrelationId"))
+                    if (line.Contains("LoggingUtilities.RedactPassword"))
                         continue;
 
                     foreach (var pattern in insecurePatterns)
@@ -246,37 +245,6 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Tests
             Assert.DoesNotContain("123!", redacted);
             Assert.DoesNotContain(testPassword.Length.ToString(), redacted);
             Assert.Contains("REDACTED", redacted);
-        }
-
-        [Fact]
-        public void LoggingUtilities_GetPasswordCorrelationId_ShouldBeConsistent()
-        {
-            // Arrange
-            var testPassword = "MySecretPassword123!";
-
-            // Act
-            var correlationId1 = LoggingUtilities.GetPasswordCorrelationId(testPassword);
-            var correlationId2 = LoggingUtilities.GetPasswordCorrelationId(testPassword);
-
-            // Assert
-            Assert.Equal(correlationId1, correlationId2);
-            Assert.DoesNotContain("MySecretPassword", correlationId1);
-            Assert.StartsWith("hash:", correlationId1);
-        }
-
-        [Fact]
-        public void LoggingUtilities_GetPasswordCorrelationId_ShouldBeDifferentForDifferentPasswords()
-        {
-            // Arrange
-            var password1 = "Password1";
-            var password2 = "Password2";
-
-            // Act
-            var correlationId1 = LoggingUtilities.GetPasswordCorrelationId(password1);
-            var correlationId2 = LoggingUtilities.GetPasswordCorrelationId(password2);
-
-            // Assert
-            Assert.NotEqual(correlationId1, correlationId2);
         }
 
         [Fact]
