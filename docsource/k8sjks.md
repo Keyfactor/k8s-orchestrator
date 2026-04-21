@@ -42,4 +42,23 @@ the Kubernetes secret.
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 Example: `test.jks/load_balancer` where `test.jks` is the field name on the `Opaque` secret and `load_balancer` is
-the certificate alias in the `jks` data store. 
+the certificate alias in the `jks` data store.
+
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-jks](../terraform/modules/k8s-jks/) for full documentation.
+
+```hcl
+module "jks_store" {
+  source = "./terraform/modules/k8s-jks"
+
+  client_machine              = "my-orchestrator"
+  agent_identifier            = "my-orchestrator"
+  store_path                  = "my-cluster/my-namespace/my-jks-secret"
+  kubeconfig_path             = "./kubeconfig.json"
+  store_password              = var.jks_password
+  certificate_data_field_name = "keystore.jks"
+
+  certificate_ids = ["12345"]
+}
+```
