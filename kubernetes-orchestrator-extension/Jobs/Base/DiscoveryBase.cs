@@ -55,11 +55,20 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
             Logger.LogDebug("Initializing store for discovery job {JobId}", config.JobId);
             InitializeStore(config);
 
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=STARTED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
+
             Logger.LogDebug("Initializing handler for discovery");
             InitializeHandler(config);
 
             if (Handler == null)
             {
+                Logger.LogInformation(
+                    "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                    "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                    GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
                 return FailJob($"No handler available for store type: {KubeSecretType}", config.JobHistoryId);
             }
 
@@ -79,11 +88,19 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
             // Submit discovered stores
             submitDiscovery.Invoke(discoveredStores);
 
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=COMPLETED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             return SuccessJob(config.JobHistoryId);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Discovery failed: {Message}", ex.Message);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             return FailJob(ex, config.JobHistoryId);
         }
         finally

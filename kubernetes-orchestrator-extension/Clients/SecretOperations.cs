@@ -253,11 +253,16 @@ public class SecretOperations
 
         try
         {
-            return _client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+            var result = _client.CoreV1.ReadNamespacedSecret(secretName, namespaceName);
+            _logger.LogInformation("AUDIT secret_read: SecretName={SecretName} Namespace={Namespace} Found={Found}",
+                secretName, namespaceName, result != null);
+            return result;
         }
         catch (k8s.Autorest.HttpOperationException ex) when (ex.Response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             _logger.LogDebug("Secret {SecretName} not found in namespace {Namespace}", secretName, namespaceName);
+            _logger.LogInformation("AUDIT secret_read: SecretName={SecretName} Namespace={Namespace} Found={Found}",
+                secretName, namespaceName, false);
             return null;
         }
     }
@@ -271,6 +276,8 @@ public class SecretOperations
     public V1Secret CreateSecret(V1Secret secret, string namespaceName)
     {
         _logger.LogDebug("Creating secret {SecretName} in namespace {Namespace}",
+            secret.Metadata?.Name, namespaceName);
+        _logger.LogInformation("AUDIT secret_write: Operation=CREATE SecretName={SecretName} Namespace={Namespace}",
             secret.Metadata?.Name, namespaceName);
 
         return _client.CoreV1.CreateNamespacedSecret(secret, namespaceName);
@@ -286,6 +293,8 @@ public class SecretOperations
     {
         _logger.LogDebug("Updating secret {SecretName} in namespace {Namespace}",
             secret.Metadata?.Name, namespaceName);
+        _logger.LogInformation("AUDIT secret_write: Operation=UPDATE SecretName={SecretName} Namespace={Namespace}",
+            secret.Metadata?.Name, namespaceName);
 
         return _client.CoreV1.ReplaceNamespacedSecret(secret, secret.Metadata.Name, namespaceName);
     }
@@ -299,6 +308,8 @@ public class SecretOperations
     public V1Status DeleteSecret(string secretName, string namespaceName)
     {
         _logger.LogDebug("Deleting secret {SecretName} from namespace {Namespace}", secretName, namespaceName);
+        _logger.LogInformation("AUDIT secret_delete: SecretName={SecretName} Namespace={Namespace}",
+            secretName, namespaceName);
 
         return _client.CoreV1.DeleteNamespacedSecret(secretName, namespaceName);
     }

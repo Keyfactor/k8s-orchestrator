@@ -375,7 +375,7 @@ public class StorePathResolver
     }
 
     /// <summary>
-    /// Resolves paths with more than 4 parts (fallback).
+    /// Resolves paths with more than 4 parts — treated as an error.
     /// </summary>
     private PathResolutionResult ResolveMultiPart(
         string[] parts,
@@ -383,19 +383,16 @@ public class StorePathResolver
         string currentSecretName,
         string storePath)
     {
-        _logger.LogWarning(
-            "Unable to resolve store path with {PartCount} parts: {StorePath}. Using first part as namespace and last as secret name",
-            parts.Length, storePath);
-
-        var multiNs = string.IsNullOrEmpty(currentNamespace) ? parts[0] : currentNamespace;
-        var multiSecret = string.IsNullOrEmpty(currentSecretName) ? parts[^1] : currentSecretName;
-        ValidateK8SName("namespace", multiNs);
-        ValidateK8SName("secret", multiSecret);
+        var warning =
+            $"Store path '{storePath}' has {parts.Length} segments which exceeds the maximum of 4 " +
+            "(cluster/namespace/type/secret). The path cannot be resolved; please correct the store configuration.";
+        _logger.LogError(warning);
         return new PathResolutionResult
         {
-            Namespace = multiNs,
-            SecretName = multiSecret,
-            Warning = $"Path has {parts.Length} parts; using first as namespace and last as secret name"
+            Namespace = currentNamespace,
+            SecretName = currentSecretName,
+            Success = false,
+            Warning = warning
         };
     }
 
@@ -404,11 +401,13 @@ public class StorePathResolver
     private void ValidateK8SName(string label, string value)
     {
         if (!string.IsNullOrEmpty(value) && value != "*" && !K8SNamePattern.IsMatch(value))
-            _logger.LogWarning(
-                "Kubernetes {Label} name '{Value}' does not conform to DNS subdomain rules " +
-                "(must match [a-z0-9][a-z0-9-.], max 253 chars). Proceeding for backwards compatibility — " +
-                "the Kubernetes API will reject this if the name is truly invalid",
-                label, value);
+        {
+            var message =
+                $"Kubernetes {label} name '{value}' does not conform to DNS subdomain rules " +
+                "(must match [a-z0-9][a-z0-9-.], max 253 chars). The Kubernetes API will reject this name.";
+            _logger.LogError(message);
+            throw new ArgumentException(message, label);
+        }
     }
 
     /// <summary>

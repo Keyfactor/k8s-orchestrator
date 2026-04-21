@@ -214,9 +214,9 @@ internal class Pkcs12CertificateStoreSerializer : ICertificateStoreSerializer
             using var ms = new MemoryStream(pkcs12Bytes);
             newCert.Load(ms, PasswordToChars(password));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _logger.LogDebug("PKCS12 load failed, parsing as raw X509 certificate");
+            _logger.LogWarning(ex, "PKCS12 load failed ({ExType}), falling back to raw X.509 parsing", ex.GetType().Name);
             var certificate = new X509CertificateParser().ReadCertificate(pkcs12Bytes);
             newCert = storeBuilder.Build();
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));

@@ -222,14 +222,13 @@ public class StorePathResolverTests
     }
 
     [Fact]
-    public void Resolve_FivePart_UsesFirstAndLast()
+    public void Resolve_FivePart_ReturnsFailure()
     {
+        // Paths with 5+ segments are treated as an error per CRIT-4/MED-4 (input validation hardening)
         var result = _resolver.Resolve("a/b/c/d/e", "CertStores.K8SSecret.Inventory", "", "");
 
-        Assert.Equal("a", result.Namespace);
-        Assert.Equal("e", result.SecretName);
-        Assert.True(result.Success);
-        Assert.NotNull(result.Warning); // Should warn about unusual path
+        Assert.False(result.Success);
+        Assert.NotNull(result.Warning); // Should explain why path is invalid
     }
 
     [Fact]

@@ -288,9 +288,10 @@ public class KubeCertificateManagerClient
     public V1Secret ReadBuddyPass(string secretName, string passwordSecretPath)
     {
         _logger.MethodEntry();
-        var (passwordNamespace, passwordSecretName) = ParsePasswordSecretPath(passwordSecretPath);
+        // Only the namespace is extracted from the path; the caller-supplied secretName is authoritative.
+        var (passwordNamespace, _) = ParsePasswordSecretPath(passwordSecretPath);
         _logger.LogDebug("Looking up buddy secret {SecretName} in namespace {Namespace}",
-            passwordSecretName, passwordNamespace);
+            secretName, passwordNamespace);
 
         var passwordSecretResponse = _secretOperations.GetSecret(secretName, passwordNamespace);
         if (passwordSecretResponse == null)
@@ -299,7 +300,7 @@ public class KubeCertificateManagerClient
         }
 
         _logger.LogDebug("Successfully found buddy secret {SecretName} in namespace {Namespace}",
-            passwordSecretName, passwordNamespace);
+            secretName, passwordNamespace);
         _logger.MethodExit();
         return passwordSecretResponse;
     }
@@ -356,16 +357,16 @@ public class KubeCertificateManagerClient
             _logger.LogDebug("New secret has ca.crt, storing chain separately in '{Namespace}/{Name}'",
                 namespaceName, secretName);
             existingSecret.Data["ca.crt"] = chainBytes;
-            _logger.LogTrace("ca.crt:\n {CaCrt}", chainBytes);
+            _logger.LogTrace("ca.crt: {CaCrt}", LoggingUtilities.RedactCertificatePem(System.Text.Encoding.UTF8.GetString(chainBytes)));
         }
         else
         {
             _logger.LogDebug("No separate chain in new secret, only updating tls.crt for '{Namespace}/{Name}'",
                 namespaceName, secretName);
-            _logger.LogTrace("updated tls.crt:\n {TlsCrt}", existingSecret.Data["tls.crt"]);
+            _logger.LogTrace("updated tls.crt: {TlsCrt}", LoggingUtilities.RedactCertificatePem(System.Text.Encoding.UTF8.GetString(existingSecret.Data["tls.crt"])));
         }
 
-        _logger.LogDebug($"Attempting to update secret {secretName} in namespace {namespaceName}");
+        _logger.LogDebug("Attempting to update secret {SecretName} in namespace {Namespace}", secretName, namespaceName);
         _logger.LogTrace("Calling ReplaceNamespacedSecret()");
         var secretResponse = Client.CoreV1.ReplaceNamespacedSecret(existingSecret, secretName, namespaceName);
         _logger.LogTrace("Finished calling ReplaceNamespacedSecret()");
@@ -572,8 +573,7 @@ public class KubeCertificateManagerClient
             }
 
             var utfCert = Encoding.UTF8.GetString(csr.Status.Certificate);
-            _logger.LogTrace("CSR {Name} has certificate: {CertPreview}...", csrName,
-                utfCert.Length > 50 ? utfCert.Substring(0, 50) : utfCert);
+            _logger.LogTrace("CSR {Name} has certificate (length: {Length})", csrName, utfCert.Length);
 
             results[csrName] = utfCert;
         }

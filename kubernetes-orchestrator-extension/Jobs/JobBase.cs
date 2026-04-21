@@ -66,6 +66,8 @@ public abstract class JobBase
 
     protected internal string KubeSvcCreds { get; set; }
 
+    protected internal bool UseSSL { get; set; } = true;
+
     protected internal string CertificateDataFieldName { get; set; }
 
     protected internal string PasswordFieldName { get; set; }
@@ -96,6 +98,7 @@ public abstract class JobBase
 
         try
         {
+            UseSSL = config.UseSSL;
             InitializeStoreCore(
                 config.Capability,
                 config.ServerUsername,
@@ -119,16 +122,24 @@ public abstract class JobBase
         Logger ??= LogHandler.GetClassLogger(GetType());
         Logger.MethodEntry(MsLogLevel.Debug);
 
-        var skipTlsValidation = !config.UseSSL;
-        Logger.LogInformation("UseSSL={UseSSL}, SkipTlsValidation={Skip}", config.UseSSL, skipTlsValidation);
+        try
+        {
+            UseSSL = config.UseSSL;
+            Logger.LogInformation("UseSSL={UseSSL}", config.UseSSL);
 
-        InitializeStoreCore(
-            config.Capability,
-            config.ServerUsername,
-            config.ServerPassword,
-            null,
-            null,
-            config.JobProperties);
+            InitializeStoreCore(
+                config.Capability,
+                config.ServerUsername,
+                config.ServerPassword,
+                null,
+                null,
+                config.JobProperties);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CRITICAL ERROR in InitializeStore(Discovery): {Message}", ex.Message);
+            throw;
+        }
     }
 
     /// <summary>
@@ -141,6 +152,7 @@ public abstract class JobBase
 
         try
         {
+            UseSSL = config.UseSSL;
             InitializeStoreCore(
                 config.Capability,
                 config.ServerUsername,
@@ -209,6 +221,7 @@ public abstract class JobBase
         if (!result.Success)
         {
             Logger.LogError("Failed to resolve store path: {StorePath}", spath);
+            throw new ConfigurationException($"Invalid store path '{spath}': {result.Warning ?? "path could not be resolved"}");
         }
 
         var resolvedPath = GetStorePath();
@@ -341,6 +354,9 @@ public abstract class JobBase
         // Initialize the Kubernetes client
         InitializeKubeClient();
 
+        // Clear kubeconfig reference from store properties after client construction
+        storeProperties.Remove("KubeSvcCreds");
+
         // Resolve store path and apply namespace defaults
         ResolveStorePathAndApplyDefaults();
 
@@ -356,7 +372,10 @@ public abstract class JobBase
 
         try
         {
-            KubeClient = new KubeCertificateManagerClient(KubeSvcCreds);
+            KubeClient = new KubeCertificateManagerClient(KubeSvcCreds, UseSSL);
+            // Zero out credential references immediately after client construction
+            KubeSvcCreds = null;
+            ServerPassword = null;
         }
         catch (Exception ex)
         {

@@ -356,6 +356,21 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
                 return "EMPTY";
             }
 
+            // Validate structure before applying the kubeconfig label
+            if (!kubeconfigJson.TrimStart().StartsWith("{"))
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
+            }
+
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(kubeconfigJson);
+            }
+            catch
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
+            }
+
             // Count the number of clusters, users, and contexts
             int clusterCount = kubeconfigJson.Split(new[] { "\"cluster\"" }, StringSplitOptions.None).Length - 1;
             int userCount = kubeconfigJson.Split(new[] { "\"user\"" }, StringSplitOptions.None).Length - 1;

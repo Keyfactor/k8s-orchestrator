@@ -222,7 +222,8 @@ public class CertificateSecretHandler : SecretHandlerBase
             Logger.LogDebug("CSR '{Name}' has no issued certificate yet", Context.KubeSecretName);
             return new List<string>();
         }
-        catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
+        catch (k8s.Autorest.HttpOperationException ex)
+            when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             throw new StoreNotFoundException(
                 $"Certificate Signing Request '{Context.KubeSecretName}' was not found.");

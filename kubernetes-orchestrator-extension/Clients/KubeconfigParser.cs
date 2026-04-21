@@ -182,11 +182,11 @@ public class KubeconfigParser
 
             if (skipTlsVerifyEnv && !skipTlsVerify)
             {
-                _logger.LogWarning(
-                    "Skipping TLS verification is enabled in environment variable {EnvVar}. " +
-                    "This takes the highest precedence and verification will be skipped. " +
-                    "To disable this, set the environment variable to 'false' or remove it",
-                    SkipTlsVerifyEnvVar);
+                _logger.LogError(
+                    "SECURITY_CONFIG_OVERRIDE: TLS certificate verification is disabled via environment variable " +
+                    "{EnvVar}={EnvValue}. This overrides all other settings and removes server authentication. " +
+                    "To re-enable TLS verification, set {EnvVar}=false or remove the environment variable.",
+                    SkipTlsVerifyEnvVar, skipTlsEnvStr, SkipTlsVerifyEnvVar);
                 return true;
             }
         }

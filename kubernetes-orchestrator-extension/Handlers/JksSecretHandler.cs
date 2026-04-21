@@ -96,7 +96,8 @@ public class JksSecretHandler : SecretHandlerBase
 
             return result;
         }
-        catch (Exception ex) when (ex.Message.Contains("NotFound") || ex.Message.Contains("404"))
+        catch (k8s.Autorest.HttpOperationException ex)
+            when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             throw new StoreNotFoundException(
                 $"JKS keystore secret '{Context.KubeSecretName}' was not found in namespace '{Context.KubeNamespace}'.");

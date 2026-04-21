@@ -45,6 +45,11 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
             Logger.LogDebug("Initializing store for management job {JobId}", config.JobId);
             InitializeStore(config);
 
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=STARTED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
+
             // Ensure StorePassword is set from config (Management jobs need this for keystore types)
             if (!string.IsNullOrEmpty(config.CertificateStoreDetails?.StorePassword))
             {
@@ -56,11 +61,19 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
 
             if (Handler == null)
             {
+                Logger.LogInformation(
+                    "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                    "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                    GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
                 return FailJob($"No handler available for store type: {KubeSecretType}", config.JobHistoryId);
             }
 
             if (!Handler.SupportsManagement)
             {
+                Logger.LogInformation(
+                    "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                    "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                    GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
                 return FailJob($"Management operations are not supported for store type: {KubeSecretType}", config.JobHistoryId);
             }
 
@@ -68,16 +81,29 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
                 config.OperationType, KubeSecretType, config.JobId);
 
             // Route to appropriate operation
-            return RouteOperation(config);
+            var result = RouteOperation(config);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=COMPLETED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
+            return result;
         }
         catch (StoreNotFoundException ex)
         {
             Logger.LogError("Store not found: {Message}", ex.Message);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             return FailJob($"Store not found: {ex.Message}", config.JobHistoryId);
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Management job failed: {Message}", ex.Message);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             return FailJob(ex, config.JobHistoryId);
         }
         finally
@@ -148,7 +174,12 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
         {
             // Store doesn't exist - nothing to remove
             Logger.LogWarning("Store not found, nothing to remove");
-            return SuccessJob(config.JobHistoryId);
+            return new JobResult
+            {
+                Result = OrchestratorJobStatusJobResult.Warning,
+                JobHistoryId = config.JobHistoryId,
+                FailureMessage = $"Store '{KubeNamespace}/{KubeSecretName}' was not found; no removal action was taken."
+            };
         }
     }
 }

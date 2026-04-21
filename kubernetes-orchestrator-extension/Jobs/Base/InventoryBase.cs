@@ -49,11 +49,20 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
             Logger.LogDebug("Initializing store for inventory job {JobId}", config.JobId);
             InitializeStore(config);
 
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=STARTED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
+
             Logger.LogDebug("Initializing handler for store type: {StoreType}", KubeSecretType);
             InitializeHandler(config);
 
             if (Handler == null)
             {
+                Logger.LogInformation(
+                    "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                    "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                    GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
                 return FailJob($"No handler available for store type: {KubeSecretType}", config.JobHistoryId);
             }
 
@@ -64,11 +73,20 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
             var entries = GetInventoryEntries(config.JobHistoryId);
 
             // Submit to Keyfactor
-            return SubmitInventory(config.JobHistoryId, submitInventory, entries);
+            var result = SubmitInventory(config.JobHistoryId, submitInventory, entries);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=COMPLETED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
+            return result;
         }
         catch (StoreNotFoundException ex)
         {
             Logger.LogWarning("Store not found: {Message}", ex.Message);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=COMPLETED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             // Return empty inventory for not found stores (common during initial setup)
             submitInventory.Invoke(new List<CurrentInventoryItem>());
             return SuccessJob(config.JobHistoryId, $"Store not found: {ex.Message}");
@@ -76,6 +94,10 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
         catch (Exception ex)
         {
             Logger.LogError(ex, "Inventory failed: {Message}", ex.Message);
+            Logger.LogInformation(
+                "AUDIT store_access: JobType={JobType} Capability={Capability} StorePath={StorePath} " +
+                "Namespace={Namespace} SecretName={SecretName} JobHistoryId={JobHistoryId} Outcome=FAILED",
+                GetType().Name, Capability, StorePath, KubeNamespace, KubeSecretName, config.JobHistoryId);
             return FailJob(ex, config.JobHistoryId);
         }
         finally

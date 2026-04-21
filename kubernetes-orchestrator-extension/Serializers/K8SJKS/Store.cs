@@ -359,9 +359,9 @@ internal class JksCertificateStoreSerializer : ICertificateStoreSerializer
             using var ms = new MemoryStream(pkcs12Bytes);
             if (ms.Length != 0) newCert.Load(ms, (password ?? string.Empty).ToCharArray());
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            _logger.LogDebug("PKCS12 load failed, parsing as raw X509 certificate");
+            _logger.LogWarning(ex, "JKS load failed ({ExType}), falling back to raw X.509 parsing", ex.GetType().Name);
             var certificate = new X509CertificateParser().ReadCertificate(pkcs12Bytes);
             newCert = storeBuilder.Build();
             newCert.SetCertificateEntry(alias, new X509CertificateEntry(certificate));
