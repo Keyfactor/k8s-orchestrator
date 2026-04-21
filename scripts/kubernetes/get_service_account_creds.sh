@@ -9,8 +9,12 @@ read -p "Enter the API server hostname w/ port of the cluster: " CLUSTER_API_SER
 echo "Generating kubeconfig file for service account $SA_NAME in namespace $NAMESPACE on cluster $CLUSTER_NAME at $CLUSTER_API_SERVER"
 #echo "CA_CERT: $CA_CERT" #uncomment if you need to debug
 #echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug
-SA_TOKEN=$(kubectl get secrets -n $NAMESPACE | grep -i $SA_NAME | awk '{print $1}')
-SA_TOKEN=$(kubectl get secret/$SA_TOKEN -n $NAMESPACE -o json | jq -r '.data.token' | base64 --decode)
+SA_TOKEN=$(kubectl get secret "$SA_NAME" -n "$NAMESPACE" -o jsonpath='{.data.token}' 2>/dev/null | base64 --decode)
+if [ -z "$SA_TOKEN" ]; then
+    echo "ERROR: Token secret '$SA_NAME' not found in namespace '$NAMESPACE'."
+    echo "Create it by applying kubernetes_svc_account.yaml, then re-run this script."
+    exit 1
+fi
 
 ### NOTE - If you have more than one cluster, you may need to change the index of the array ###
 CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[0].cluster."certificate-authority-data"')
