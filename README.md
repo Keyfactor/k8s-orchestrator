@@ -106,7 +106,7 @@ expiry (typically 1 year, set by cluster CA policy) and can be renewed through K
 When the Universal Orchestrator runs as a pod inside the cluster it is managing, it can authenticate using
 the **projected service account token** that kubelet mounts automatically. The token is rotated every hour
 with no intervention required, and no credentials are stored in Keyfactor Command for that cluster.
-Leave **Server Password blank** in Command for stores in the UO's own cluster.
+Leave **Server Password blank** (select "No value" in the Command UI) for stores in the UO's own cluster.
 
 > **Scope:** This option only covers the cluster the UO pod runs in. Additional clusters are still
 > configured via a kubeconfig (Options 1 or 2) in the Server Password field.
@@ -1747,7 +1747,7 @@ expiry (typically 1 year, set by cluster CA policy) and can be renewed through K
 When the Universal Orchestrator runs as a pod inside the cluster it is managing, it can authenticate using
 the **projected service account token** that kubelet mounts automatically. The token is rotated every hour
 with no intervention required, and no credentials are stored in Keyfactor Command for that cluster.
-Leave **Server Password blank** in Command for stores in the UO's own cluster.
+Leave **Server Password blank** (select "No value" in the Command UI) for stores in the UO's own cluster.
 
 > **Scope:** This option only covers the cluster the UO pod runs in. Additional clusters are still
 > configured via a kubeconfig (Options 1 or 2) in the Server Password field.
