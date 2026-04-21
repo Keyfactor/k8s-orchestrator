@@ -40,16 +40,33 @@ The Kubernetes Orchestrator Extension supports certificates with the following k
 
 ### Kubernetes API Access
 
-This orchestrator extension makes use of the Kubernetes API by using a service account
-to communicate remotely with certificate stores. The service account must exist and have the appropriate permissions.
-The service account token can be provided to the extension in one of two ways:
-- As a raw JSON file that contains the service account credentials
-- As a base64 encoded string that contains the service account credentials
+This orchestrator extension communicates with the Kubernetes API using credentials supplied as a `kubeconfig` JSON
+object. Two authentication methods are supported — choose either based on your environment and security requirements.
 
-#### Service Account Setup
+The kubeconfig can be provided to the extension in one of two ways:
+- As a raw JSON file that contains the credentials
+- As a base64 encoded string that contains the credentials
 
-To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
-information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
+In both cases set **Server Username** to `kubeconfig` and **Server Password** to the kubeconfig content.
+
+#### Option 1: Service Account Token
+
+A long-lived bearer token stored in a `kubernetes.io/service-account-token` Kubernetes Secret.
+Simple to set up; the token does not expire unless manually rotated.
+
+> **Note:** Since Kubernetes v1.22, service accounts no longer receive a token Secret automatically.
+> The setup script and YAML provided below create the Secret explicitly — do not skip this step.
+
+#### Option 2: Client Certificate
+
+An X.509 client certificate and private key signed by the cluster CA. The certificate CN is used as the
+Kubernetes user identity for RBAC — no ServiceAccount object is required. Certificates carry a defined
+expiry (typically 1 year, set by cluster CA policy) and can be renewed through Keyfactor.
+
+#### Setup
+
+For full setup instructions, scripts, and example kubeconfig files for both authentication methods, see the
+[service account setup guide](./scripts/kubernetes/README.md).
 
 ## Terraform Modules
 
