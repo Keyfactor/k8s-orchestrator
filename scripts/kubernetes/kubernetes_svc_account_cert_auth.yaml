@@ -1,0 +1,38 @@
+# RBAC resources for Keyfactor Kubernetes Orchestrator Extension - Client Certificate Authentication
+#
+# The CN of the client certificate must match the subject name in the ClusterRoleBinding below.
+# Default CN (set by generate_client_cert_creds.sh): keyfactor-orchestrator
+#
+# If you change K8S_USER_NAME when running the script, update the subjects[0].name field below to match.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: keyfactor-orchestrator
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: [] # Populate this to restrict access to specific secrets
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["certificates.k8s.io"]
+    resources: ["certificatesigningrequests"]
+    resourceNames: [] # Populate this to restrict access to specific certificatesigningrequests
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources:
+      - namespaces
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: keyfactor-orchestrator-cert-binding
+roleRef:
+  kind: ClusterRole
+  name: keyfactor-orchestrator
+  apiGroup: rbac.authorization.k8s.io
+subjects:
+  - kind: User
+    name: keyfactor-orchestrator   # Must match the CN of the client certificate
+    apiGroup: rbac.authorization.k8s.io
