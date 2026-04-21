@@ -12,8 +12,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
 using k8s.Models;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.OpenSsl;
@@ -35,7 +33,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
         /// is redacted along with its length.
         /// </summary>
         /// <param name="password">The password to redact</param>
-        /// <returns>A redacted string like "***REDACTED*** (length: N)" or "EMPTY" or "NULL"</returns>
+        /// <returns>A redacted string like "***REDACTED***" or "EMPTY" or "NULL"</returns>
         public static string RedactPassword(string password)
         {
             if (password == null)
@@ -48,34 +46,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
                 return "EMPTY";
             }
 
-            return $"***REDACTED*** (length: {password.Length})";
-        }
-
-        /// <summary>
-        /// Generates a correlation ID for a password based on its SHA-256 hash.
-        /// This allows tracking the same password across multiple operations without
-        /// logging the actual password value.
-        /// </summary>
-        /// <param name="password">The password to generate a correlation ID for</param>
-        /// <returns>A correlation ID like "hash:abc123..." or "NULL" or "EMPTY"</returns>
-        public static string GetPasswordCorrelationId(string password)
-        {
-            if (password == null)
-            {
-                return "NULL";
-            }
-
-            if (string.IsNullOrEmpty(password))
-            {
-                return "EMPTY";
-            }
-
-            using (var sha256 = SHA256.Create())
-            {
-                var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-                var hashPrefix = BitConverter.ToString(hashBytes).Replace("-", "").Substring(0, 16).ToLower();
-                return $"hash:{hashPrefix}";
-            }
+            return "***REDACTED***";
         }
 
         #endregion
@@ -354,6 +325,21 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Utilities
             if (string.IsNullOrEmpty(kubeconfigJson))
             {
                 return "EMPTY";
+            }
+
+            // Validate structure before applying the kubeconfig label
+            if (!kubeconfigJson.TrimStart().StartsWith("{"))
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
+            }
+
+            try
+            {
+                System.Text.Json.JsonDocument.Parse(kubeconfigJson);
+            }
+            catch
+            {
+                return $"***POSSIBLY_MALFORMED_CREDENTIAL*** (length: {kubeconfigJson.Length})";
             }
 
             // Count the number of clusters, users, and contexts
