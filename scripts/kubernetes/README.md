@@ -258,7 +258,7 @@ kubectl logs -l app=keyfactor-orchestrator | grep -i "in-cluster"
 For stores in **this cluster** (the one the UO pod runs in):
 
 - **Server Username:** `kubeconfig`
-- **Server Password:** *(leave blank)*
+- **Server Password:** *(leave blank — select "No value" in the Command UI)*
 
 For stores in **other clusters**, provide a kubeconfig JSON as normal (Options 1 or 2).
 
@@ -278,6 +278,6 @@ For Options 1 and 2, provide the output JSON file the same way:
 - **Server Username:** `kubeconfig`
 - **Server Password:** paste the full contents of the `*-context.json` file
 
-For Option 3 (in-cluster), leave **Server Password blank** for stores in the UO's own cluster.
+For Option 3 (in-cluster), leave **Server Password blank** (select "No value" in the Command UI) for stores in the UO's own cluster.
 
 This applies to both certificate store definitions and discovery job configurations.
