@@ -1,0 +1,91 @@
+# Keyfactor Universal Orchestrator — Kubernetes Deployment (In-Cluster Auth)
+#
+# Prerequisites:
+#   kubectl apply -f kubernetes_svc_account.yaml   # creates the ServiceAccount and RBAC
+#
+# Usage:
+#   1. Replace all <PLACEHOLDER> values below with your environment's values.
+#   2. kubectl apply -f keyfactor-orchestrator-deployment.yaml
+#
+# When deployed this way the orchestrator uses the projected service account token
+# mounted by kubelet at /var/run/secrets/kubernetes.io/serviceaccount/token.
+# The token is rotated automatically every hour — no credentials need to be stored
+# in Keyfactor Command for this cluster.
+#
+# For certificate stores in OTHER clusters, still provide a kubeconfig JSON in the
+# Server Password field of those store definitions as normal.
+---
+# Secret holding Keyfactor Command connection credentials.
+# Store sensitive values here rather than in the Deployment env directly.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: keyfactor-command-credentials
+  namespace: default
+type: Opaque
+stringData:
+  # URL of your Keyfactor Command instance (e.g. https://command.example.com)
+  KEYFACTOR_HOSTNAME: "<COMMAND_HOSTNAME>"
+  # API credentials — use an API client ID/secret or basic auth depending on your Command version
+  KEYFACTOR_AUTH_CLIENT_ID: "<CLIENT_ID>"
+  KEYFACTOR_AUTH_CLIENT_SECRET: "<CLIENT_SECRET>"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keyfactor-orchestrator
+  namespace: default
+  labels:
+    app: keyfactor-orchestrator
+spec:
+  replicas: 1   # The Universal Orchestrator is stateful — do not scale above 1
+  selector:
+    matchLabels:
+      app: keyfactor-orchestrator
+  template:
+    metadata:
+      labels:
+        app: keyfactor-orchestrator
+    spec:
+      # Uses the ServiceAccount created by kubernetes_svc_account.yaml.
+      # kubelet automatically mounts a projected service account token for this SA
+      # at /var/run/secrets/kubernetes.io/serviceaccount/token (rotated hourly).
+      serviceAccountName: keyfactor-orchestrator-sa
+      automountServiceAccountToken: true
+
+      containers:
+        - name: orchestrator
+          image: <YOUR_REGISTRY>/keyfactor-universal-orchestrator:<VERSION>
+          imagePullPolicy: IfNotPresent
+
+          env:
+            # Keyfactor Command connection
+            - name: KEYFACTOR_HOSTNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keyfactor-command-credentials
+                  key: KEYFACTOR_HOSTNAME
+            - name: KEYFACTOR_AUTH_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: keyfactor-command-credentials
+                  key: KEYFACTOR_AUTH_CLIENT_ID
+            - name: KEYFACTOR_AUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keyfactor-command-credentials
+                  key: KEYFACTOR_AUTH_CLIENT_SECRET
+
+            # Orchestrator identity — must match the name registered in Keyfactor Command
+            - name: KEYFACTOR_ORCHESTRATOR_NAME
+              value: "<ORCHESTRATOR_NAME>"
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+      restartPolicy: Always
