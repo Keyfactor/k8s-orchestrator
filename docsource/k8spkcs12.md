@@ -44,5 +44,24 @@ the Kubernetes secret.
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
-the certificate alias in the `pkcs12` data store. 
+the certificate alias in the `pkcs12` data store.
+
+## Terraform
+
+A reusable Terraform module is available for this store type. See [terraform/modules/k8s-pkcs12](../terraform/modules/k8s-pkcs12/) for full documentation.
+
+```hcl
+module "pkcs12_store" {
+  source = "./terraform/modules/k8s-pkcs12"
+
+  client_machine              = "my-orchestrator"
+  agent_identifier            = "my-orchestrator"
+  store_path                  = "my-cluster/my-namespace/my-pkcs12-secret"
+  kubeconfig_path             = "./kubeconfig.json"
+  store_password              = var.pkcs12_password
+  certificate_data_field_name = "keystore.pfx"
+
+  certificate_ids = ["12345"]
+}
+```
 
