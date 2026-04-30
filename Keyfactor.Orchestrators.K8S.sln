@@ -5,8 +5,6 @@ VisualStudioVersion = 17.3.32929.385
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Keyfactor.Orchestrators.K8S", "kubernetes-orchestrator-extension\Keyfactor.Orchestrators.K8S.csproj", "{F497D7FA-AC9F-4BB2-935F-6A7569ACC173}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestConsole", "TestConsole\TestConsole.csproj", "{8C2C6B52-E386-4DAE-B596-7EE4E64EB0F4}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "kubernetes-orchestrator-extension.Tests", "kubernetes-orchestrator-extension.Tests", "{4D988838-9BAF-C253-004D-7C7673F12805}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Keyfactor.Orchestrators.K8S.Tests", "kubernetes-orchestrator-extension.Tests\Keyfactor.Orchestrators.K8S.Tests.csproj", "{7976404A-58D7-4709-99A9-DBBA31431C69}"
