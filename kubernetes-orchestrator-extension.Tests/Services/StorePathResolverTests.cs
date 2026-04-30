@@ -274,5 +274,37 @@ public class StorePathResolverTests
         Assert.True(result.Success);
     }
 
+    [Fact]
+    public void Resolve_K8SCert_SinglePartPath_DoesNotSetSecretNameFromStorePath()
+    {
+        // K8SCert singleton behavior must be controlled by KubeSecretName,
+        // not inferred from StorePath.
+        var result = _resolver.Resolve("my-csr-name", "CertStores.K8SCert.Inventory", "", "");
+
+        Assert.Equal("", result.Namespace);
+        Assert.Equal("", result.SecretName);
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void Resolve_K8SCert_MultiPartPath_DoesNotReinterpretPath()
+    {
+        var result = _resolver.Resolve("cluster/ns/certificate/my-csr", "CertStores.K8SCert.Inventory", "", "");
+
+        Assert.Equal("", result.Namespace);
+        Assert.Equal("", result.SecretName);
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public void Resolve_K8SCert_PreservesExplicitSecretName()
+    {
+        var result = _resolver.Resolve("ignored-path-value", "CertStores.K8SCert.Inventory", "", "explicit-csr");
+
+        Assert.Equal("", result.Namespace);
+        Assert.Equal("explicit-csr", result.SecretName);
+        Assert.True(result.Success);
+    }
+
     #endregion
 }

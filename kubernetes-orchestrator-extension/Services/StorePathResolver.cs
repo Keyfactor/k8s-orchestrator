@@ -84,8 +84,21 @@ public class StorePathResolver
         var parts = storePath.Split('/');
         _logger.LogTrace("Store path has {Count} parts", parts.Length);
 
+        var isCertificateStore = IsCertificateStore(capability);
         var isNamespaceStore = IsNamespaceStore(capability);
         var isClusterStore = IsClusterStore(capability);
+
+        if (isCertificateStore)
+        {
+            // K8SCert is cluster-scoped and should not infer singleton identity from StorePath.
+            // Single-vs-cluster-wide behavior is controlled by KubeSecretName only.
+            _logger.LogDebug("K8SCert store detected, ignoring StorePath path parsing");
+            return new PathResolutionResult
+            {
+                Namespace = currentNamespace,
+                SecretName = currentSecretName
+            };
+        }
 
         return parts.Length switch
         {
@@ -436,5 +449,14 @@ public class StorePathResolver
     {
         return !string.IsNullOrEmpty(capability) &&
                capability.Contains("K8SCluster", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Determines if the capability indicates a certificate-signing-request store.
+    /// </summary>
+    private static bool IsCertificateStore(string capability)
+    {
+        return !string.IsNullOrEmpty(capability) &&
+               capability.Contains("K8SCert", StringComparison.OrdinalIgnoreCase);
     }
 }

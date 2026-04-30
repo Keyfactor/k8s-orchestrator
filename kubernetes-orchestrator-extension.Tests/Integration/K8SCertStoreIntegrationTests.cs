@@ -498,6 +498,140 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         }
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_EmptyKubeSecretName_DoesNotInferSingletonFromStorePath()
+    {
+        // Arrange: create a real issued CSR and intentionally set StorePath to a non-existent
+        // singleton name. With correct behavior, empty KubeSecretName still means cluster-wide mode.
+        var issuedCsr = $"test-cw-storepath-ignore-{Guid.NewGuid():N}";
+        await CreateTestCsr(issuedCsr, approve: true, injectCertificate: true);
+
+        // Calculate expected count directly from the cluster API: issued CSRs only.
+        var csrList = await _k8sClient.CertificatesV1.ListCertificateSigningRequestAsync();
+        var expectedIssuedCount = csrList.Items.Count(c =>
+            c.Status?.Certificate != null && c.Status.Certificate.Length > 0);
+
+        var fakeSingletonPath = $"does-not-exist-{Guid.NewGuid():N}";
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = fakeSingletonPath,
+                Properties = "{}" // Empty KubeSecretName => cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        var aliases = inventoryItems.Select(i => i.Alias).ToList();
+        Assert.Contains(issuedCsr, aliases);
+
+        // net8/net10 integration runs execute in parallel and can observe small timing differences
+        // in CSR creation/cleanup. Keep the assertion strict enough to catch singleton regression
+        // while tolerating cross-target skew.
+        var minimumExpected = expectedIssuedCount <= 2 ? 1 : expectedIssuedCount / 2;
+        Assert.True(inventoryItems.Count >= minimumExpected,
+            $"Expected at least {minimumExpected} cluster-wide inventory items " +
+            $"(observed issued CSR count={expectedIssuedCount}) but got {inventoryItems.Count}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_SingletonMode_InventoriesOnlySpecifiedCsr()
+    {
+        // Arrange: create two issued CSRs and inventory only one of them.
+        var targetCsr = $"test-singleton-target-{Guid.NewGuid():N}";
+        var otherCsr = $"test-singleton-other-{Guid.NewGuid():N}";
+        await CreateTestCsr(targetCsr, approve: true, injectCertificate: true);
+        await CreateTestCsr(otherCsr, approve: true, injectCertificate: true);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "ignored-for-k8scert",
+                Properties = $"{{\"KubeSecretName\":\"{targetCsr}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Single(inventoryItems);
+        Assert.Equal(targetCsr, inventoryItems[0].Alias);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_InventoriesAllIssuedCsrs_InCurrentCluster()
+    {
+        // Arrange: get baseline issued CSR count from the live cluster.
+        var csrList = await _k8sClient.CertificatesV1.ListCertificateSigningRequestAsync();
+        var expectedIssuedCount = csrList.Items.Count(c =>
+            c.Status?.Certificate != null && c.Status.Certificate.Length > 0);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster-wide",
+                Properties = "{}" // Empty KubeSecretName => cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.True(expectedIssuedCount >= 30,
+            $"Expected a populated lab cluster (>=30 issued CSRs) but observed {expectedIssuedCount}");
+        Assert.Equal(expectedIssuedCount, inventoryItems.Count);
+    }
+
     #endregion
 
     #region Discovery Tests
