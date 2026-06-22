@@ -263,4 +263,69 @@ public class HandlerNoNetworkTests
     }
 
     #endregion
+
+    #region SanitizeClusterName — B-035 regression guard
+
+    // When a store is configured with username/password auth (no kubeconfig), GetClusterName()
+    // falls back to GetHost(), which returns the raw API server URL such as "https://10.43.0.1/".
+    // Embedding that URL as the first segment of a location string (clusterName/namespace/secrets/name)
+    // produces paths like "https://10.43.0.1//cert-manager/secrets/lab-ca" that break parsing in
+    // ClusterSecretHandler.ProcessSecretEntry (parts[1] becomes "" instead of the namespace).
+    // SanitizeClusterName must strip the URL down to just the host component.
+
+    [Theory]
+    [InlineData("https://10.43.0.1/", "10.43.0.1")]
+    [InlineData("https://10.43.0.1:6443/", "10.43.0.1")]
+    [InlineData("https://k8s.example.com/", "k8s.example.com")]
+    [InlineData("http://127.0.0.1:8080", "127.0.0.1")]
+    public void SanitizeClusterName_AbsoluteUri_ReturnsHostOnly(string input, string expected)
+    {
+        var result = KubeCertificateManagerClient.SanitizeClusterName(input);
+        Assert.Equal(expected, result);
+    }
+
+    [Theory]
+    [InlineData("local")]
+    [InlineData("my-cluster")]
+    [InlineData("kf-integrations")]
+    public void SanitizeClusterName_PlainName_ReturnedUnchanged(string input)
+    {
+        var result = KubeCertificateManagerClient.SanitizeClusterName(input);
+        Assert.Equal(input, result);
+    }
+
+    [Fact]
+    public void SanitizeClusterName_Null_ReturnsNull()
+    {
+        var result = KubeCertificateManagerClient.SanitizeClusterName(null);
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public void SanitizeClusterName_EmptyString_ReturnsEmptyString()
+    {
+        var result = KubeCertificateManagerClient.SanitizeClusterName(string.Empty);
+        Assert.Equal(string.Empty, result);
+    }
+
+    [Fact]
+    public void SanitizeClusterName_UrlAsClusterName_ProducesValidLocationPath()
+    {
+        // Regression test: location strings built with a raw URL as clusterName produced
+        // paths that ClusterSecretHandler.ProcessSecretEntry could not parse.
+        // After sanitization, parts[1] (the namespace) must equal "cert-manager", not "".
+        var rawUrl = "https://10.43.0.1/";
+        var namespaceName = "cert-manager";
+        var secretName = "lab-root-ca-secret";
+
+        var sanitized = KubeCertificateManagerClient.SanitizeClusterName(rawUrl);
+        var location = $"{sanitized}/{namespaceName}/secrets/{secretName}";
+        var parts = location.Split('/');
+
+        Assert.True(parts.Length >= 4, "Location must have at least 4 segments for ProcessSecretEntry to parse");
+        Assert.Equal("cert-manager", parts[1]);
+        Assert.Equal("lab-root-ca-secret", parts[^1]);
+    }
+
+    #endregion
 }

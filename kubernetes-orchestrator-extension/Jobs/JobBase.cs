@@ -485,7 +485,7 @@ public abstract class JobBase
                 Logger.LogDebug("Kubernetes namespace resource type");
                 KubeSecretType = SecretTypes.Namespace;
                 Logger.MethodExit(MsLogLevel.Debug);
-                return $"{KubeClient.GetClusterName()}/namespace/{KubeNamespace}";
+                return $"{KubeCertificateManagerClient.SanitizeClusterName(KubeClient.GetClusterName())}/namespace/{KubeNamespace}";
             }
 
             if (SecretTypes.IsClusterType(secretType))
@@ -498,7 +498,7 @@ public abstract class JobBase
 
             secretType = NormalizeSecretTypeForPath(secretType);
 
-            var storePath = $"{KubeClient.GetClusterName()}/{KubeNamespace}/{secretType}/{KubeSecretName}";
+            var storePath = $"{KubeCertificateManagerClient.SanitizeClusterName(KubeClient.GetClusterName())}/{KubeNamespace}/{secretType}/{KubeSecretName}";
             Logger.LogDebug("Returning storePath: {StorePath}", storePath);
             Logger.MethodExit(MsLogLevel.Debug);
             return storePath;
