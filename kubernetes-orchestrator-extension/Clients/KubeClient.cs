@@ -100,6 +100,26 @@ public class KubeCertificateManagerClient
     private IKubernetes Client { get; set; }
 
     /// <summary>
+    /// Sanitizes a cluster name that may be a raw API server URL (e.g. "https://10.43.0.1/")
+    /// so that it is safe to embed as a path segment in discovery location strings.
+    /// When the value is an absolute URI (username/password auth — no kubeconfig), only the
+    /// <see cref="Uri.Host"/> component is kept (e.g. "https://10.43.0.1/" → "10.43.0.1").
+    /// Non-URI values (normal kubeconfig cluster names) are returned unchanged.
+    /// </summary>
+    /// <param name="clusterName">Raw value from <see cref="GetClusterName"/> or <see cref="GetHost"/>.</param>
+    /// <returns>A slash-free identifier suitable for use as the first segment of a location string.</returns>
+    public static string SanitizeClusterName(string clusterName)
+    {
+        if (string.IsNullOrEmpty(clusterName))
+            return clusterName;
+
+        if (Uri.TryCreate(clusterName, UriKind.Absolute, out var uri))
+            return uri.Host;
+
+        return clusterName;
+    }
+
+    /// <summary>
     /// Gets the name of the Kubernetes cluster from the configuration.
     /// Falls back to the host URL if the cluster name cannot be determined.
     /// </summary>
@@ -476,7 +496,7 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("csr.Items.Count: {Count}", csr.Items.Count);
 
         _logger.LogTrace("Entering foreach loop to add certificate locations to list.");
-        var clusterName = GetClusterName();
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         foreach (var cr in csr)
         {
             _logger.LogTrace("cr.Metadata.Name: {Name}", cr.Metadata.Name);
@@ -641,7 +661,7 @@ public class KubeCertificateManagerClient
         _logger.LogTrace("Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}",
             string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns);
         var locations = new List<string>();
-        var clusterName = GetClusterName() ?? GetHost();
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         _logger.LogTrace("ClusterName: {ClusterName}", clusterName);
 
         // Cluster-level discovery shortcut
