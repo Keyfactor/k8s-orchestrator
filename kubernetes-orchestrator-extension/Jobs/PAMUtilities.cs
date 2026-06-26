@@ -51,12 +51,19 @@ internal class PAMUtilities
                 logger.LogTrace("Calling resolver.Resolve() for field '{Name}'", name);
                 var resolved = resolver.Resolve(key);
                 logger.LogTrace("Resolver returned: {HasValue}", !string.IsNullOrEmpty(resolved));
+                var outcome = string.IsNullOrEmpty(resolved) ? "EMPTY_OR_FAILED" : "SUCCESS";
                 if (string.IsNullOrEmpty(resolved)) logger.LogWarning("Failed to resolve PAM field {Name}", name);
+                logger.LogInformation(
+                    "PAM credential resolution for field '{Name}': Outcome={Outcome}",
+                    name, outcome);
                 return resolved;
             }
             catch (Exception ex)
             {
                 logger.LogWarning(ex, "PAM resolution failed for field '{Name}': {Message}", name, ex.Message);
+                logger.LogInformation(
+                    "PAM credential resolution for field '{Name}': Outcome={Outcome}",
+                    name, "EMPTY_OR_FAILED");
             }
         }
 

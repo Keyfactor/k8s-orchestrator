@@ -40,16 +40,47 @@ The Kubernetes Orchestrator Extension supports certificates with the following k
 
 ### Kubernetes API Access
 
-This orchestrator extension makes use of the Kubernetes API by using a service account
-to communicate remotely with certificate stores. The service account must exist and have the appropriate permissions.
-The service account token can be provided to the extension in one of two ways:
-- As a raw JSON file that contains the service account credentials
-- As a base64 encoded string that contains the service account credentials
+This orchestrator extension communicates with the Kubernetes API using credentials supplied as a `kubeconfig` JSON
+object. Two authentication methods are supported — choose either based on your environment and security requirements.
 
-#### Service Account Setup
+The kubeconfig can be provided to the extension in one of two ways:
+- As a raw JSON file that contains the credentials
+- As a base64 encoded string that contains the credentials
 
-To set up a service account user on your Kubernetes cluster to be used by the Kubernetes Orchestrator Extension. For full 
-information on the required permissions, see the [service account setup guide](./scripts/kubernetes/README.md).
+In both cases set **Server Username** to `kubeconfig` and **Server Password** to the kubeconfig content.
+
+#### Option 1: Service Account Token
+
+A long-lived bearer token stored in a `kubernetes.io/service-account-token` Kubernetes Secret.
+Simple to set up; the token does not expire unless manually rotated.
+
+> **Note:** Since Kubernetes v1.22, service accounts no longer receive a token Secret automatically.
+> The setup script and YAML provided below create the Secret explicitly — do not skip this step.
+
+#### Option 2: Client Certificate
+
+An X.509 client certificate and private key signed by the cluster CA. The certificate CN is used as the
+Kubernetes user identity for RBAC — no ServiceAccount object is required. Certificates carry a defined
+expiry (typically 1 year, set by cluster CA policy) and can be renewed through Keyfactor.
+
+#### Option 3: In-Cluster / Pod Identity
+
+When the Universal Orchestrator runs as a pod inside the cluster it is managing, it can authenticate using
+the **projected service account token** that kubelet mounts automatically. The token is rotated every hour
+with no intervention required, and no credentials are stored in Keyfactor Command for that cluster.
+Leave **Server Password blank** (select "No value" in the Command UI) for stores in the UO's own cluster.
+
+> **Scope:** This option only covers the cluster the UO pod runs in. Additional clusters are still
+> configured via a kubeconfig (Options 1 or 2) in the Server Password field.
+
+#### Setup
+
+For full setup instructions, scripts, example kubeconfig files, and the UO deployment manifest for all
+three authentication methods, see the [service account setup guide](./scripts/kubernetes/README.md).
+
+## Terraform Modules
+
+Reusable Terraform modules are available for all store types using the [Keyfactor Terraform Provider](https://registry.terraform.io/providers/keyfactor-pub/keyfactor/latest). See the [terraform/](./terraform/) directory for modules, examples, and documentation.
 
 ## Discovery
 

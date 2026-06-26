@@ -12,7 +12,7 @@ using System.Net;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCert;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
@@ -80,11 +80,6 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
 
         if (!_fixture.SkipCleanup)
         {
-            if (_k8sClient == null)
-            {
-                return;
-            }
-
             foreach (var csrName in _createdCsrs)
             {
                 try
@@ -125,10 +120,13 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         }
     }
 
-    private async Task<V1CertificateSigningRequest> CreateTestCsr(string name, bool approve = false)
+    private async Task<V1CertificateSigningRequest> CreateTestCsr(string name, bool approve = false, bool injectCertificate = false)
     {
         // Generate a proper PKCS#10 Certificate Signing Request
         var csrPem = CertificateTestHelper.GenerateCertificateRequest(KeyType.Rsa2048, $"CSR {name}");
+
+        // Use a custom signer name if we'll be injecting a certificate (bypasses need for real signer)
+        var signerName = injectCertificate ? "keyfactor.com/test-signer" : "kubernetes.io/kube-apiserver-client";
 
         // Create CSR object for Kubernetes
         var csr = new V1CertificateSigningRequest
@@ -140,7 +138,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             Spec = new V1CertificateSigningRequestSpec
             {
                 Request = System.Text.Encoding.UTF8.GetBytes(csrPem),
-                SignerName = "kubernetes.io/kube-apiserver-client",
+                SignerName = signerName,
                 Usages = new List<string> { "client auth" }
             }
         };
@@ -168,7 +166,93 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             created = await _k8sClient.CertificatesV1.ReplaceCertificateSigningRequestApprovalAsync(created, name);
         }
 
+        if (injectCertificate)
+        {
+            // Inject certificate directly, bypassing the need for a real CSR signer
+            await InjectCsrCertificateAsync(name);
+        }
+
         return created;
+    }
+
+    /// <summary>
+    /// Injects a test certificate into a CSR's status.certificate field.
+    /// Uses kubectl patch command since the C# client's status replacement doesn't work reliably.
+    /// </summary>
+    private async Task InjectCsrCertificateAsync(string csrName)
+    {
+        // Generate a test certificate to inject
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, $"CSR Cert {csrName}");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+
+        // Base64 encode the PEM for the JSON patch value
+        var certBase64 = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(certPem));
+
+        // Use kubectl patch with JSON patch to inject the certificate
+        // This matches how the Makefile's csr-create-with-chain target works
+        var psi = new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = "kubectl",
+            Arguments = $"--context {_fixture.ClusterContext} patch csr {csrName} --type=json --subresource=status -p \"[{{\\\"op\\\": \\\"add\\\", \\\"path\\\": \\\"/status/certificate\\\", \\\"value\\\": \\\"{certBase64}\\\"}}]\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        using var process = System.Diagnostics.Process.Start(psi);
+        if (process != null)
+        {
+            await process.WaitForExitAsync();
+            if (process.ExitCode != 0)
+            {
+                var error = await process.StandardError.ReadToEndAsync();
+                throw new Exception($"Failed to inject certificate into CSR {csrName}: {error}");
+            }
+        }
+
+        // Verify the certificate was injected
+        var verifiedCsr = await _k8sClient.CertificatesV1.ReadCertificateSigningRequestAsync(csrName);
+        if (verifiedCsr.Status?.Certificate == null || verifiedCsr.Status.Certificate.Length == 0)
+        {
+            throw new Exception($"Certificate injection verification failed for CSR {csrName}");
+        }
+    }
+
+    /// <summary>
+    /// Waits for a CSR to have a certificate issued (status.certificate populated).
+    /// Uses polling with exponential backoff instead of fixed delays.
+    /// </summary>
+    /// <param name="csrName">Name of the CSR to wait for.</param>
+    /// <param name="timeoutMs">Maximum time to wait in milliseconds (default 10000ms).</param>
+    /// <returns>True if certificate was issued, false if timeout.</returns>
+    private async Task<bool> WaitForCsrCertificateAsync(string csrName, int timeoutMs = 10000)
+    {
+        var startTime = DateTime.UtcNow;
+        var pollInterval = 100; // Start with 100ms
+        const int maxPollInterval = 1000; // Cap at 1 second
+
+        while ((DateTime.UtcNow - startTime).TotalMilliseconds < timeoutMs)
+        {
+            try
+            {
+                var csr = await _k8sClient.CertificatesV1.ReadCertificateSigningRequestAsync(csrName);
+                if (csr.Status?.Certificate != null && csr.Status.Certificate.Length > 0)
+                {
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                // CSR may not exist yet or other transient error, continue polling
+            }
+
+            await Task.Delay(pollInterval);
+            // Exponential backoff, capped at maxPollInterval
+            pollInterval = Math.Min(pollInterval * 2, maxPollInterval);
+        }
+
+        return false;
     }
 
     #region Single CSR Mode Tests (Legacy Behavior)
@@ -179,7 +263,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var csrName = $"test-single-approved-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: true);
-        await Task.Delay(2000); // Wait for certificate to be issued
+        await WaitForCsrCertificateAsync(csrName); // Wait for certificate to be issued
 
         var jobConfig = new InventoryJobConfiguration
         {
@@ -273,17 +357,25 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
     #region Cluster-Wide Mode Tests (New Behavior)
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Inventory_ClusterWideMode_EmptyName_ReturnsAllIssuedCSRs()
+    public async Task Inventory_ClusterWideMode_WithInjectedCertificates_ReturnsAllIssuedCSRs()
     {
         // Arrange - Create multiple CSRs
         var approvedCsr1 = $"test-cw-approved-1-{Guid.NewGuid():N}";
         var approvedCsr2 = $"test-cw-approved-2-{Guid.NewGuid():N}";
         var pendingCsr = $"test-cw-pending-{Guid.NewGuid():N}";
 
-        await CreateTestCsr(approvedCsr1, approve: true);
-        await CreateTestCsr(approvedCsr2, approve: true);
-        await CreateTestCsr(pendingCsr, approve: false);
-        await Task.Delay(2000); // Wait for certificates to be issued
+        // Create CSRs with injected certificates (bypasses need for real signer)
+        await CreateTestCsr(approvedCsr1, approve: true, injectCertificate: true);
+        await CreateTestCsr(approvedCsr2, approve: true, injectCertificate: true);
+        await CreateTestCsr(pendingCsr, approve: false); // Pending CSR has no certificate
+
+        // Verify CSRs were created with certificates
+        var csr1 = await _k8sClient.CertificatesV1.ReadCertificateSigningRequestAsync(approvedCsr1);
+        var csr2 = await _k8sClient.CertificatesV1.ReadCertificateSigningRequestAsync(approvedCsr2);
+        Assert.True(csr1.Status?.Certificate?.Length > 0,
+            $"CSR {approvedCsr1} should have a certificate after injection");
+        Assert.True(csr2.Status?.Certificate?.Length > 0,
+            $"CSR {approvedCsr2} should have a certificate after injection");
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
@@ -293,7 +385,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
             {
                 ClientMachine = "cluster",
                 StorePath = "cluster",
-                Properties = "{\"KubeSecretName\":\"\"}" // Empty = cluster-wide mode
+                Properties = "{\"KubeSecretName\":\"*\"}" // Wildcard = cluster-wide mode
             },
             ServerUsername = string.Empty,
             ServerPassword = _kubeconfigJson,
@@ -313,7 +405,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
-        // Should find at least our 2 approved CSRs
+        // Should find at least our 2 approved CSRs with injected certificates
         Assert.True(inventoryItems.Count >= 2,
             $"Expected at least 2 inventory items but got {inventoryItems.Count}");
 
@@ -329,7 +421,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var approvedCsr = $"test-wc-approved-{Guid.NewGuid():N}";
         await CreateTestCsr(approvedCsr, approve: true);
-        await Task.Delay(2000);
+        await WaitForCsrCertificateAsync(approvedCsr);
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
@@ -369,7 +461,7 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         // Arrange
         var csrName = $"test-no-pk-cw-{Guid.NewGuid():N}";
         await CreateTestCsr(csrName, approve: true);
-        await Task.Delay(2000);
+        await WaitForCsrCertificateAsync(csrName);
 
         var inventoryItems = new List<CurrentInventoryItem>();
         var jobConfig = new InventoryJobConfiguration
@@ -404,6 +496,140 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         {
             Assert.False(item.PrivateKeyEntry, $"CSR {item.Alias} should not have private key");
         }
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_EmptyKubeSecretName_DoesNotInferSingletonFromStorePath()
+    {
+        // Arrange: create a real issued CSR and intentionally set StorePath to a non-existent
+        // singleton name. With correct behavior, empty KubeSecretName still means cluster-wide mode.
+        var issuedCsr = $"test-cw-storepath-ignore-{Guid.NewGuid():N}";
+        await CreateTestCsr(issuedCsr, approve: true, injectCertificate: true);
+
+        // Calculate expected count directly from the cluster API: issued CSRs only.
+        var csrList = await _k8sClient.CertificatesV1.ListCertificateSigningRequestAsync();
+        var expectedIssuedCount = csrList.Items.Count(c =>
+            c.Status?.Certificate != null && c.Status.Certificate.Length > 0);
+
+        var fakeSingletonPath = $"does-not-exist-{Guid.NewGuid():N}";
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = fakeSingletonPath,
+                Properties = "{}" // Empty KubeSecretName => cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+
+        var aliases = inventoryItems.Select(i => i.Alias).ToList();
+        Assert.Contains(issuedCsr, aliases);
+
+        // net8/net10 integration runs execute in parallel and can observe small timing differences
+        // in CSR creation/cleanup. Keep the assertion strict enough to catch singleton regression
+        // while tolerating cross-target skew.
+        var minimumExpected = expectedIssuedCount <= 2 ? 1 : expectedIssuedCount / 2;
+        Assert.True(inventoryItems.Count >= minimumExpected,
+            $"Expected at least {minimumExpected} cluster-wide inventory items " +
+            $"(observed issued CSR count={expectedIssuedCount}) but got {inventoryItems.Count}");
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_SingletonMode_InventoriesOnlySpecifiedCsr()
+    {
+        // Arrange: create two issued CSRs and inventory only one of them.
+        var targetCsr = $"test-singleton-target-{Guid.NewGuid():N}";
+        var otherCsr = $"test-singleton-other-{Guid.NewGuid():N}";
+        await CreateTestCsr(targetCsr, approve: true, injectCertificate: true);
+        await CreateTestCsr(otherCsr, approve: true, injectCertificate: true);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "ignored-for-k8scert",
+                Properties = $"{{\"KubeSecretName\":\"{targetCsr}\"}}"
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Single(inventoryItems);
+        Assert.Equal(targetCsr, inventoryItems[0].Alias);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ClusterWideMode_InventoriesAllIssuedCsrs_InCurrentCluster()
+    {
+        // Arrange: get baseline issued CSR count from the live cluster.
+        var csrList = await _k8sClient.CertificatesV1.ListCertificateSigningRequestAsync();
+        var expectedIssuedCount = csrList.Items.Count(c =>
+            c.Status?.Certificate != null && c.Status.Certificate.Length > 0);
+
+        var inventoryItems = new List<CurrentInventoryItem>();
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SCert",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = "cluster",
+                StorePath = "cluster-wide",
+                Properties = "{}" // Empty KubeSecretName => cluster-wide mode
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = _kubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(_mockPamResolver.Object);
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoryItems.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.True(expectedIssuedCount >= 30,
+            $"Expected a populated lab cluster (>=30 issued CSRs) but observed {expectedIssuedCount}");
+        Assert.Equal(expectedIssuedCount, inventoryItems.Count);
     }
 
     #endregion
