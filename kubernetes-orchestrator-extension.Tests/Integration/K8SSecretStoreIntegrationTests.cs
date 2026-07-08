@@ -11,12 +11,13 @@ using System.Text;
 using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SSecret;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Keyfactor.Orchestrators.K8S.Tests.Integration.Fixtures;
+using Keyfactor.PKI.Extensions;
 using Xunit;
 using static Keyfactor.Orchestrators.K8S.Tests.Helpers.CertificateTestHelper;
 using CertificateUtilities = Keyfactor.Extensions.Orchestrator.K8S.Utilities.CertificateUtilities;
@@ -90,7 +91,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -121,7 +122,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -152,7 +153,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -180,7 +181,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-new-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Management Test Add");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Management Test Add");
         var pfxPassword = "testpassword";
 
         var jobConfig = new ManagementJobConfiguration
@@ -250,7 +251,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             {
                 ClientMachine = TestNamespace,
                 StorePath = secretName,
-                Properties = "{\"KubeSecretType\":\"opaque\"}"
+                Properties = $"{{\"KubeSecretType\":\"opaque\",\"KubeNamespace\":\"{TestNamespace}\"}}"
             },
             ServerUsername = string.Empty,
             ServerPassword = KubeconfigJson,
@@ -274,7 +275,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-bundled-chain-{Guid.NewGuid():N}";
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -345,7 +346,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-add-separate-chain-{Guid.NewGuid():N}";
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -418,7 +419,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (leaf -> intermediate -> root)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -496,7 +497,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Generate a certificate chain (root -> intermediate -> leaf)
-        var chain = CertificateTestHelper.GenerateCertificateChain(KeyType.Rsa2048);
+        var chain = CachedCertificateProvider.GetOrCreateChain(KeyType.Rsa2048);
         var leafCert = chain[0].Certificate;
         var leafKey = chain[0].KeyPair.Private;
         var intermediateCert = chain[1].Certificate;
@@ -611,7 +612,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         TrackSecret(secretName);
 
         // Create existing secret with certificate
-        var existingCert = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Existing Cert");
+        var existingCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Existing Cert");
 
         var secret = new V1Secret
         {
@@ -1134,7 +1135,7 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         var secretName = $"test-update-certonly-{Guid.NewGuid():N}";
         TrackSecret(secretName);
 
-        var certInfo = CertificateTestHelper.GenerateCertificate(KeyType.Rsa2048, "Original Cert");
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Original Cert");
         var pfxPassword = "testpassword";
         var pkcs12Bytes = CertificateTestHelper.GeneratePkcs12(certInfo.Certificate, certInfo.KeyPair, pfxPassword);
 
@@ -1225,11 +1226,11 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
     private async Task AddAndInventoryCertificate(string secretName, KeyType keyType)
     {
         // Generate certificate with specified key type
-        var certInfo = CertificateTestHelper.GenerateCertificate(keyType, $"KeyType Test {keyType}");
+        var certInfo = CachedCertificateProvider.GetOrCreate(keyType, $"KeyType Test {keyType}");
         var pfxPassword = "testpassword";
 
         // Calculate expected thumbprint BEFORE deployment
-        var expectedThumbprint = CertificateUtilities.GetThumbprint(certInfo.Certificate);
+        var expectedThumbprint = BouncyCastleX509Extensions.Thumbprint(certInfo.Certificate);
         var expectedSubject = certInfo.Certificate.SubjectDN.ToString();
 
         // Add certificate
@@ -1270,11 +1271,12 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         // Verify the deployed certificate matches the input certificate
         Assert.True(secret.Data.ContainsKey("tls.crt"), "Secret should have tls.crt field");
         var deployedCertPem = Encoding.UTF8.GetString(secret.Data["tls.crt"]);
+        var parser = new Org.BouncyCastle.X509.X509CertificateParser();
         using var reader = new System.IO.StringReader(deployedCertPem);
         var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
         var deployedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
 
-        var deployedThumbprint = CertificateUtilities.GetThumbprint(deployedCert);
+        var deployedThumbprint = BouncyCastleX509Extensions.Thumbprint(deployedCert);
         var deployedSubject = deployedCert.SubjectDN.ToString();
 
         Assert.True(expectedThumbprint == deployedThumbprint,
@@ -1314,10 +1316,142 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         using var invReader = new System.IO.StringReader(inventoriedCertPem);
         var invPemReader = new Org.BouncyCastle.OpenSsl.PemReader(invReader);
         var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)invPemReader.ReadObject();
-        var inventoriedThumbprint = CertificateUtilities.GetThumbprint(inventoriedCert);
+        var inventoriedThumbprint = BouncyCastleX509Extensions.Thumbprint(inventoriedCert);
 
         Assert.True(expectedThumbprint == inventoriedThumbprint,
             $"Inventoried certificate thumbprint doesn't match. Expected: {expectedThumbprint}, Got: {inventoriedThumbprint}");
+    }
+
+    #endregion
+
+    #region Implicit Default Namespace Tests
+
+    /// <summary>
+    /// Tests that when KubeNamespace is not specified in Properties and StorePath is a single part (just secret name),
+    /// the orchestrator correctly uses the "default" namespace.
+    /// This validates the documented StorePath pattern: &lt;secret_name&gt; uses default namespace.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_ImplicitDefaultNamespace_FindsSecretInDefaultNamespace()
+    {
+        // Arrange - Create a secret directly in the "default" namespace
+        var secretName = $"test-default-ns-{Guid.NewGuid():N}";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Default Namespace Test Cert");
+        var certPem = CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate);
+        var keyPem = CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private);
+
+        var secret = new V1Secret
+        {
+            Metadata = new V1ObjectMeta { Name = secretName },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "tls.crt", Encoding.UTF8.GetBytes(certPem) },
+                { "tls.key", Encoding.UTF8.GetBytes(keyPem) }
+            }
+        };
+
+        try
+        {
+            // Create secret in "default" namespace
+            await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, "default");
+
+            // Configure job with single-part StorePath and NO KubeNamespace in Properties
+            // This should implicitly use "default" namespace
+            var jobConfig = new InventoryJobConfiguration
+            {
+                Capability = "K8SSecret",
+                CertificateStoreDetails = new CertificateStore
+                {
+                    ClientMachine = "default",
+                    StorePath = secretName,  // Single part - just the secret name
+                    Properties = "{\"KubeSecretType\":\"opaque\"}"  // No KubeNamespace specified
+                },
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true
+            };
+
+            var inventory = new Inventory(MockPamResolver.Object);
+            var inventoriedCerts = new List<CurrentInventoryItem>();
+
+            // Act
+            var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+            {
+                inventoriedCerts.AddRange(items);
+                return true;
+            }));
+
+            // Assert
+            Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+            Assert.NotEmpty(inventoriedCerts);
+            Assert.Single(inventoriedCerts);
+
+            // Verify the certificate matches what we created
+            var expectedThumbprint = BouncyCastleX509Extensions.Thumbprint(certInfo.Certificate);
+            var inventoriedCertPem = inventoriedCerts[0].Certificates.First();
+            using var reader = new System.IO.StringReader(inventoriedCertPem);
+            var pemReader = new Org.BouncyCastle.OpenSsl.PemReader(reader);
+            var inventoriedCert = (Org.BouncyCastle.X509.X509Certificate)pemReader.ReadObject();
+            var actualThumbprint = BouncyCastleX509Extensions.Thumbprint(inventoriedCert);
+
+            Assert.Equal(expectedThumbprint, actualThumbprint);
+        }
+        finally
+        {
+            // Cleanup - delete the secret from "default" namespace
+            try
+            {
+                await K8sClient.CoreV1.DeleteNamespacedSecretAsync(secretName, "default");
+            }
+            catch
+            {
+                // Ignore cleanup errors
+            }
+        }
+    }
+
+    /// <summary>
+    /// Tests that when KubeNamespace is not specified and StorePath is two parts (namespace/secret),
+    /// the namespace is correctly inferred from the StorePath.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Inventory_StorePathWithNamespace_InfersNamespaceFromPath()
+    {
+        // Arrange
+        var secretName = $"test-inferred-ns-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048, includePrivateKey: true);
+
+        // Use two-part StorePath: namespace/secretname - namespace should be inferred
+        var jobConfig = new InventoryJobConfiguration
+        {
+            Capability = "K8SSecret",
+            CertificateStoreDetails = new CertificateStore
+            {
+                ClientMachine = TestNamespace,
+                StorePath = $"{TestNamespace}/{secretName}",  // Two parts: namespace/secret
+                Properties = "{\"KubeSecretType\":\"opaque\"}"  // No KubeNamespace - should infer from path
+            },
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true
+        };
+
+        var inventory = new Inventory(MockPamResolver.Object);
+        var inventoriedCerts = new List<CurrentInventoryItem>();
+
+        // Act
+        var result = await Task.Run(() => inventory.ProcessJob(jobConfig, (items) =>
+        {
+            inventoriedCerts.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotEmpty(inventoriedCerts);
     }
 
     #endregion

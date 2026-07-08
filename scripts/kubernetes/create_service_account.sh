@@ -22,10 +22,8 @@ echo "CLUSTER_API_SERVER: $CLUSTER_API_SERVER"
 
 # Get the service account token
 
-SA_TOKEN=$(kubectl get secrets -n "$NAMESPACE" | grep -i "$SA_NAME" | awk '{print $1}')
+SA_TOKEN=$(kubectl get secret "$SA_NAME" -n "$NAMESPACE" -o jsonpath='{.data.token}' 2>/dev/null | base64 --decode)
 #echo "SA_TOKEN: $SA_TOKEN" #uncomment if you need to debug
-SA_TOKEN=$(kubectl get "secret/$SA_TOKEN" -n "$NAMESPACE" -o json | jq -r '.data.token' | base64 --decode)
-#echo "SA_TOKEN: $SA_TOKEN" 
 
 ### NOTE - If you have more than one cluster, you may need to change the index of the array ###
 CA_CERT=$(kubectl config view --raw -o json | jq -r '.clusters[0].cluster."certificate-authority-data"')

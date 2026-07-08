@@ -5,7 +5,7 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
-using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SCluster;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Moq;

@@ -699,7 +699,6 @@ public static class CertificateUtilities
     {
         Logger.LogTrace("LoadPkcs12Store called with {ByteCount} bytes", pkcs12Data?.Length ?? 0);
         Logger.LogTrace("Password: {Password}", LoggingUtilities.RedactPassword(password));
-        Logger.LogTrace("Password correlation: {CorrelationId}", LoggingUtilities.GetPasswordCorrelationId(password));
 
         if (pkcs12Data == null || pkcs12Data.Length == 0)
         {
