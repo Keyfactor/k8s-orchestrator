@@ -9,6 +9,11 @@ all: build
 # Required environemnt variables for the project
 ENV_VARS := AZURE_TENANT_ID AZURE_CLIENT_SECRET AZURE_CLIENT_ID AZURE_APP_GATEWAY_RESOURCE_ID
 
+# Kubernetes context used by integration tests and cluster cleanup targets.
+# Must match the context the tests run against — cleanup previously used the
+# current kubectl context, silently cleaning the wrong cluster.
+TEST_KUBE_CONTEXT ?= kf-integrations
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
@@ -303,8 +308,8 @@ test-cluster-setup: ## Display instructions for setting up test cluster
 	@echo "  - keyfactor-test-k8scert"
 
 .PHONY: test-cluster-cleanup
-test-cluster-cleanup: ## Clean up test namespaces and CSRs from cluster
-	@echo "=== Cleaning up test namespaces ==="
+test-cluster-cleanup: ## Clean up test namespaces and CSRs from cluster (context: TEST_KUBE_CONTEXT, default kf-integrations)
+	@echo "=== Cleaning up test namespaces (context: $(TEST_KUBE_CONTEXT)) ==="
 	@# Clean up framework-specific namespaces (net8, net10) and legacy namespaces
 	@for ns in keyfactor-k8sjks-integration-tests keyfactor-k8sjks-integration-tests-net8 keyfactor-k8sjks-integration-tests-net10 \
 		keyfactor-k8spkcs12-integration-tests keyfactor-k8spkcs12-integration-tests-net8 keyfactor-k8spkcs12-integration-tests-net10 \
@@ -315,18 +320,18 @@ test-cluster-cleanup: ## Clean up test namespaces and CSRs from cluster
 		keyfactor-k8sns-integration-tests keyfactor-k8sns-integration-tests-net8 keyfactor-k8sns-integration-tests-net10 \
 		keyfactor-k8scert-integration-tests keyfactor-k8scert-integration-tests-net8 keyfactor-k8scert-integration-tests-net10 \
 		keyfactor-manual-test; do \
-		if kubectl get namespace $$ns 2>/dev/null; then \
+		if kubectl --context $(TEST_KUBE_CONTEXT) get namespace $$ns 2>/dev/null; then \
 			echo "Deleting namespace $$ns..."; \
-			kubectl delete namespace $$ns; \
+			kubectl --context $(TEST_KUBE_CONTEXT) delete namespace $$ns; \
 		else \
 			echo "Namespace $$ns does not exist, skipping"; \
 		fi; \
 	done
 	@echo "=== Cleaning up test CSRs ==="
-	@kubectl get csr --no-headers 2>/dev/null | grep "test-" | awk '{print $$1}' | \
+	@kubectl --context $(TEST_KUBE_CONTEXT) get csr --no-headers 2>/dev/null | grep "test-" | awk '{print $$1}' | \
 		while read csr; do \
 			echo "Deleting CSR $$csr..."; \
-			kubectl delete csr $$csr 2>/dev/null || true; \
+			kubectl --context $(TEST_KUBE_CONTEXT) delete csr $$csr 2>/dev/null || true; \
 		done || echo "No test CSRs found"
 	@echo "Cleanup complete"
 
