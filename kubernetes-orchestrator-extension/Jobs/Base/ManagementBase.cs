@@ -145,7 +145,19 @@ public abstract class ManagementBase : K8SJobBase, IManagementJobExtension
 
         Logger.LogDebug("Adding certificate with alias: {Alias}, overwrite: {Overwrite}", alias, overwrite);
 
-        Handler.HandleAdd(K8SCertificate, alias, overwrite);
+        var addResult = Handler.HandleAdd(K8SCertificate, alias, overwrite);
+        if (addResult == null)
+        {
+            // A null result means the Kubernetes write never happened (the API call failed without
+            // throwing). Reporting Success here would silently no-op the deployment (GitHub issue #91).
+            var errMsg =
+                $"Add operation for secret '{KubeNamespace}/{KubeSecretName}' returned no result from the Kubernetes API; " +
+                "the secret was not created or updated. Check the orchestrator logs for the underlying API error " +
+                "(e.g. insufficient RBAC permissions to create or update secrets).";
+            Logger.LogError(errMsg);
+            return FailJob(errMsg, config.JobHistoryId);
+        }
+
         Logger.LogInformation("Successfully added certificate to {SecretName}", KubeSecretName);
         return SuccessJob(config.JobHistoryId);
     }
