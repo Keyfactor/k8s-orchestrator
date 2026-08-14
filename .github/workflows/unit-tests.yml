@@ -79,7 +79,7 @@ jobs:
           comment_title: Unit Test Results (.NET ${{ matrix.dotnet-version }})
 
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v7
         if: matrix.dotnet-version == '8.0.x'
         with:
           files: ./TestResults/**/coverage.opencover.xml
