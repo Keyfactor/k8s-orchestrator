@@ -137,10 +137,9 @@ public class KubeClientCreateOrUpdateSecretTests
             It.IsAny<CancellationToken>()));
         foreach (var item in resultsOrExceptions)
         {
-            if (item is HttpOperationException ex)
-                seq = seq.ThrowsAsync(ex);
-            else
-                seq = seq.Returns(Response((V1Secret)item));
+            seq = item is HttpOperationException ex
+                ? seq.ThrowsAsync(ex)
+                : seq.Returns(Response((V1Secret)item));
         }
     }
 
