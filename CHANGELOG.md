@@ -1,3 +1,9 @@
+# 2.0.1
+
+## Bug Fixes
+- fix(management): `K8SSecret`/`K8STLSSecr` Add jobs no longer report `Success` when the Kubernetes write silently fails ([#91](https://github.com/Keyfactor/k8s-orchestrator/issues/91)). `ManagementBase.HandleAdd` now checks the handler's returned `V1Secret` and fails the job with an actionable message when the write produced no result.
+- fix(client): `CreateOrUpdateCertificateStoreSecret` now uses a read-then-branch strategy (matching the JKS/PKCS12 path) instead of a blind create with a free-text `"Conflict"` exception-message match. Existence is checked via a typed 404; a typed `HttpStatusCode.Conflict` on a create race falls back to update; all other `HttpOperationException`s propagate and fail the job instead of being swallowed into a silent `null` return.
+
 # 2.0.0
 
 ## Breaking Changes

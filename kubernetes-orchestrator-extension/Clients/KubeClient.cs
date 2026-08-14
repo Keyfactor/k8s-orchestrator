@@ -257,37 +257,42 @@ public class KubeCertificateManagerClient
     {
         _logger.LogTrace("Entered CreateOrUpdateCertificateStoreSecret()");
 
-        _logger.LogDebug("Attempting to create new secret {SecretName} in namespace {Namespace}", secretName, namespaceName);
         var k8SSecretData = _secretOperations.BuildNewSecret(secretName, namespaceName, secretType, keyPem, certPem, chainPem, separateChain, includeChain);
 
-        _logger.LogTrace("Entering try/catch block to create secret...");
+        // Read-then-branch, matching SecretOperations.CreateOrUpdateSecret (used by the JKS/PKCS12 handlers).
+        // GetSecret returns null only on a typed 404 NotFound; any other API error (403, 422, 5xx, ...) throws
+        // and propagates to the job so it is reported as a Failure instead of a silent no-op (GitHub issue #91).
+        var existingSecret = _secretOperations.GetSecret(secretName, namespaceName);
+        if (existingSecret != null)
+        {
+            _logger.LogDebug("Secret {SecretName} already exists in namespace {Namespace}, attempting to update secret...",
+                secretName, namespaceName);
+            _logger.LogTrace("Calling UpdateSecretStore()");
+            return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append,
+                overwrite);
+        }
+
+        _logger.LogDebug("Attempting to create new secret {SecretName} in namespace {Namespace}", secretName, namespaceName);
         try
         {
             _logger.LogDebug("Calling CreateNamespacedSecret()");
             var secretResponse = Client.CoreV1.CreateNamespacedSecret(k8SSecretData, namespaceName);
             _logger.LogDebug("Finished calling CreateNamespacedSecret()");
-            if (secretResponse != null)
-            {
-                _logger.LogTrace(secretResponse.ToString());
-                _logger.LogTrace("Exiting CreateOrUpdateCertificateStoreSecret()");
-                return secretResponse;
-            }
+            _logger.LogTrace("Exiting CreateOrUpdateCertificateStoreSecret()");
+            return secretResponse;
         }
-        catch (HttpOperationException e)
+        catch (HttpOperationException e) when (e.Response?.StatusCode == HttpStatusCode.Conflict)
         {
-            _logger.LogWarning("Error while attempting to create secret: {Message}", e.Message);
-            if (e.Message.Contains("Conflict"))
-            {
-                _logger.LogDebug(
-                    $"Secret {secretName} already exists in namespace {namespaceName}, attempting to update secret...");
-                _logger.LogTrace("Calling UpdateSecretStore()");
-                return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append,
-                    overwrite);
-            }
+            // The secret was created between our read and the create call (write race) — fall back to update.
+            // Typed status check instead of the previous e.Message.Contains("Conflict") free-text match;
+            // any other HttpOperationException propagates and fails the job rather than being swallowed.
+            _logger.LogWarning(
+                "Secret {SecretName} was created concurrently in namespace {Namespace}, attempting to update secret...",
+                secretName, namespaceName);
+            _logger.LogTrace("Calling UpdateSecretStore()");
+            return UpdateSecretStore(secretName, namespaceName, secretType, certPem, keyPem, k8SSecretData, append,
+                overwrite);
         }
-
-        _logger.LogError("Unable to create secret for unknown reason.");
-        return null;
     }
 
 
