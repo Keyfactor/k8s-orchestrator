@@ -5,10 +5,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using k8s.Models;
+using Keyfactor.Extensions.Orchestrator.K8S.Handlers;
+using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
+using Moq;
 using Xunit;
 
 namespace Keyfactor.Orchestrators.K8S.Tests.Unit.Jobs;
@@ -105,6 +109,61 @@ public class ManagementBaseTests
 
         Assert.True(mgmt.RemoveCalled);
         Assert.False(mgmt.AddCalled);
+        Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
+    }
+
+    #endregion
+
+    #region Silent add failure regression (GitHub issue #91)
+
+    /// <summary>
+    /// Concrete subclass that uses the REAL base HandleAdd, backed by an injected handler mock.
+    /// Used to verify that a null handler result is reported as Failure, not Success.
+    /// </summary>
+    private class HandlerBackedManagement : ManagementBase
+    {
+        public HandlerBackedManagement(ISecretHandler handler) : base(null)
+        {
+            Logger = LogHandler.GetClassLogger<HandlerBackedManagement>();
+            Handler = handler;
+        }
+    }
+
+    private static ManagementJobConfiguration MakeAddConfig() =>
+        new()
+        {
+            OperationType = CertStoreOperationType.Add,
+            JobHistoryId = 42,
+            JobCertificate = null // JobCertificateParser returns an empty K8SJobCertificate for null input
+        };
+
+    [Fact]
+    public void HandleAdd_HandlerReturnsNull_ReturnsFailure()
+    {
+        // Regression for GH #91: Handler.HandleAdd's return value was discarded, so a silent
+        // write failure (null V1Secret, no exception) was reported to Command as Success.
+        var handler = new Mock<ISecretHandler>();
+        handler.Setup(h => h.HandleAdd(It.IsAny<K8SJobCertificate>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Returns((V1Secret)null);
+        var mgmt = new HandlerBackedManagement(handler.Object);
+
+        var result = mgmt.RouteOperation(MakeAddConfig());
+
+        Assert.Equal(OrchestratorJobStatusJobResult.Failure, result.Result);
+        Assert.Contains("not created or updated", result.FailureMessage);
+        Assert.Equal(42, result.JobHistoryId);
+    }
+
+    [Fact]
+    public void HandleAdd_HandlerReturnsSecret_ReturnsSuccess()
+    {
+        var handler = new Mock<ISecretHandler>();
+        handler.Setup(h => h.HandleAdd(It.IsAny<K8SJobCertificate>(), It.IsAny<string>(), It.IsAny<bool>()))
+            .Returns(new V1Secret());
+        var mgmt = new HandlerBackedManagement(handler.Object);
+
+        var result = mgmt.RouteOperation(MakeAddConfig());
+
         Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
     }
 
