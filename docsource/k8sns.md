@@ -11,6 +11,10 @@ namespaces. Namespace names are trimmed and `all` is case-insensitive. If left b
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
 
+Secrets of type `kubernetes.io/tls` that contain `tls.crt` and `tls.key` are discovered. `Opaque` secrets are only discovered
+if they contain at least one of the following data keys: `tls.crt`, `tls.key`, `ca.crt`, `certificate`, `cert`, `crt`,
+`cert.pem` (a key also matches by extension, e.g. `server.crt` matches `crt`; matching is case-insensitive).
+
 ## Certificate Store Configuration
 
 In order for certificates of type `Opaque` and/or `kubernetes.io/tls` to be inventoried in `K8SNS` store types, they must 

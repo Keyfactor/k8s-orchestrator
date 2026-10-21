@@ -767,6 +767,48 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
     }
 
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_IgnoredDirectoriesExcludesNamespace()
+    {
+        // Arrange (#100) - 'all' plus an ignored namespace must drop that namespace's secrets
+        var secretName = $"test-discover-tls-ignored-{Guid.NewGuid():N}";
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery Ignored TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
+
+        async Task<List<string>> RunDiscovery(string ignored)
+        {
+            var jobConfig = new DiscoveryJobConfiguration
+            {
+                Capability = "K8STLSSecr",
+                ClientMachine = TestNamespace,
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true,
+                JobProperties = new Dictionary<string, object>
+                {
+                    { "dirs", "all" },
+                    { "extensions", "" },
+                    { "ignoreddirs", ignored },
+                    { "patterns", "" }
+                }
+            };
+            var found = new List<string>();
+            var jobResult = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+            {
+                found.AddRange(items);
+                return true;
+            }));
+            Assert.True(jobResult.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {jobResult.Result}. FailureMessage: {jobResult.FailureMessage}");
+            return found;
+        }
+
+        // Act / Assert
+        Assert.Contains(await RunDiscovery(""), d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(await RunDiscovery($" {TestNamespace.ToUpperInvariant()} "),
+            d => d.Contains($"/{TestNamespace}/"));
+    }
+
     #endregion
 
     #region Error Handling Tests

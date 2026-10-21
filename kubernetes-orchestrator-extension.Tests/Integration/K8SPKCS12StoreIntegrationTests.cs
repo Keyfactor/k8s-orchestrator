@@ -594,6 +594,19 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
             await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
         }
 
+        // Negative control (#101): an Opaque secret with no allowed key must NOT be discovered
+        var noKeySecretName = $"test-discover-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
         // Create Discovery job config
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -626,6 +639,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         // Regression: discovery used to silently return 0 stores because 'dirs' was never read
         Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
         Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
     }
 
     #endregion

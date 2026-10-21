@@ -871,9 +871,18 @@ public class KubeCertificateManagerClient
                     break;
 
                 case "opaque":
-                    ParseOpaqueSecret(secretData, allowedKeys);
-                    _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
-                    locations.Add(secretLocation);
+                    if (ParseOpaqueSecret(secretData, allowedKeys))
+                    {
+                        _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
+                        locations.Add(secretLocation);
+                    }
+                    else
+                    {
+                        _logger.LogDebug(
+                            "Skipping opaque secret '{SecretName}' in namespace '{Namespace}': it has no data key matching the allowed keys [{AllowedKeys}]",
+                            secret.Metadata.Name, namespaceName, string.Join(", ", allowedKeys ?? Array.Empty<string>()));
+                    }
+
                     break;
 
                 default:
@@ -906,26 +915,75 @@ public class KubeCertificateManagerClient
     }
 #nullable restore
 
-    private void ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
+    /// <summary>
+    /// Determines whether an Opaque secret holds at least one data key that discovery is looking for.
+    /// </summary>
+    /// <param name="secretData">The secret (with data) to inspect.</param>
+    /// <param name="allowedKeys">Allowed data keys / extensions. When null or empty no filtering is applied.</param>
+    /// <returns>True if the secret should be reported as a discovered store.</returns>
+    private bool ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
     {
-        if (secretData.Data == null)
+        if (secretData.Data == null || secretData.Data.Count == 0)
         {
-            _logger.LogWarning("Secret data is null. Skipping this secret.");
-            return;
+            _logger.LogDebug("Secret data is null or empty. Skipping this secret.");
+            return false;
+        }
+
+        if (allowedKeys == null || allowedKeys.Length == 0)
+        {
+            _logger.LogDebug("No allowed keys supplied; not filtering opaque secret by data key.");
+            return true;
         }
 
         foreach (var dataKey in secretData.Data.Keys)
         {
-            var extension = Path.GetExtension(dataKey).TrimStart('.').ToLowerInvariant();
-            if (!allowedKeys.Contains(extension) && !allowedKeys.Contains(dataKey))
+            if (!IsAllowedDataKey(dataKey, allowedKeys))
             {
                 _logger.LogDebug("Skipping key {Key} as it is not in the list of allowed keys.", dataKey);
                 continue;
             }
 
-            _logger.LogDebug("Allowed key {Key} found in secret. Parsing secret as needed.", dataKey);
-            // Further processing logic here if required
+            _logger.LogDebug("Allowed key {Key} found in secret.", dataKey);
+            return true;
         }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if any of the given secret data keys matches one of the allowed keys.
+    /// See <see cref="IsAllowedDataKey"/> for the matching rules.
+    /// </summary>
+    /// <param name="dataKeys">Secret data field names.</param>
+    /// <param name="allowedKeys">Allowed keys / extensions.</param>
+    public static bool HasAllowedDataKey(IEnumerable<string> dataKeys, IEnumerable<string> allowedKeys)
+    {
+        if (dataKeys == null || allowedKeys == null) return false;
+        var allowed = allowedKeys.ToArray();
+        return dataKeys.Any(k => IsAllowedDataKey(k, allowed));
+    }
+
+    /// <summary>
+    /// A secret data key matches an allowed key when it equals it, or ends with <c>.&lt;allowed&gt;</c>
+    /// (so the default <c>jks</c> matches <c>keystore.jks</c>, <c>p12</c> matches <c>my.p12</c> and
+    /// <c>crt</c> matches <c>ca.crt</c>). Comparison is case-insensitive and ignores surrounding whitespace.
+    /// </summary>
+    private static bool IsAllowedDataKey(string dataKey, string[] allowedKeys)
+    {
+        if (string.IsNullOrWhiteSpace(dataKey)) return false;
+        var key = dataKey.Trim();
+
+        foreach (var allowedRaw in allowedKeys)
+        {
+            var allowed = allowedRaw?.Trim().TrimStart('.');
+            if (string.IsNullOrEmpty(allowed)) continue;
+
+            if (key.Equals(allowed, StringComparison.OrdinalIgnoreCase)
+                || key.EndsWith("." + allowed, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
