@@ -194,9 +194,10 @@ public class ClusterSecretHandler : SecretHandlerBase
                 "kubernetes.io/tls",
                 "all"));
 
-            // Discover Opaque secrets with cert data
+            // Discover Opaque secrets with cert data. Opaque discovery only reports secrets that contain at
+            // least one of these keys, so use the full handler key list (plus any job-supplied patterns).
             stores.AddRange(KubeClient.DiscoverSecrets(
-                new[] { "tls.crt", "certificate", "cert", "crt" },
+                allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys,
                 "Opaque",
                 "all"));
 

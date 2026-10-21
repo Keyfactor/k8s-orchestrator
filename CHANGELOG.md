@@ -1,3 +1,10 @@
+# 2.0.2
+
+## Bug Fixes
+- fix(discovery): Discovery jobs no longer return 0 stores when `Directories to search` is set (e.g. `all`). `DiscoveryBase` previously re-parsed `JobProperties.ToString()` as JSON (it is a plain dictionary, so this always failed with `Unexpected character encountered while parsing value: S`) and looked up the wrong keys (`Directories`/`Extensions` instead of the framework's `dirs`/`extensions`/`patterns`). Job properties are now read directly and case-insensitively; namespace entries are trimmed, `all` is case-insensitive, a blank value falls back to the `default` namespace with a warning, `patterns` (and `extensions` for JKS/PKCS12) are added to the default allowed keys as in 1.x, and a warning is logged when discovery finds 0 stores or no requested namespace exists.
+- fix(discovery): `Directories to ignore` (`ignoreddirs`) is now honoured. Discovered locations whose namespace is listed are removed from the results (case-insensitive, whitespace-tolerant), including when `Directories to search` is `all`. Fixes #100.
+- fix(discovery): **Behaviour change.** Discovery of `Opaque` secrets (`K8SSecret`, `K8SJKS`, `K8SPKCS12`, and the `Opaque` part of `K8SNS`/`K8SCluster`) now only returns secrets that contain at least one allowed data key (the store type's default keys plus `File name patterns to match`, and `File name extensions to match` for JKS/PKCS12). Previously every `Opaque` secret in the searched namespaces was returned and the allowed keys were only logged. A key matches when it equals an allowed key or ends with `.<allowed key>` (case-insensitive), so `keystore.jks`/`my.p12` still match the default `jks`/`p12`. Secrets whose keystore data key has no extension must be added via `File name patterns to match`. `K8SNS`/`K8SCluster` discovery now uses the handler's full default key list (including `cert.pem`) for `Opaque` secrets. `kubernetes.io/tls` discovery is unchanged. Fixes #101.
+
 # 2.0.1
 
 ## Bug Fixes

@@ -700,20 +700,113 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
             UseSSL = true,
             JobProperties = new Dictionary<string, object>
             {
-                { "dirs", TestNamespace },
+                // Whitespace around entries and a non-existent namespace must be tolerated
+                { "dirs", $" {TestNamespace} , does-not-exist-ns " },
+                { "extensions", "" },
                 { "ignoreddirs", "" },
                 { "patterns", "" }
             }
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        // Regression: discovery used to silently return 0 stores because 'dirs' was never read
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsTlsSecrets()
+    {
+        // Arrange
+        var secretName = $"test-discover-tls-all-{Guid.NewGuid():N}";
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery All TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                // 'all' must be matched case-insensitively
+                { "dirs", "All" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_IgnoredDirectoriesExcludesNamespace()
+    {
+        // Arrange (#100) - 'all' plus an ignored namespace must drop that namespace's secrets
+        var secretName = $"test-discover-tls-ignored-{Guid.NewGuid():N}";
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery Ignored TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
+
+        async Task<List<string>> RunDiscovery(string ignored)
+        {
+            var jobConfig = new DiscoveryJobConfiguration
+            {
+                Capability = "K8STLSSecr",
+                ClientMachine = TestNamespace,
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true,
+                JobProperties = new Dictionary<string, object>
+                {
+                    { "dirs", "all" },
+                    { "extensions", "" },
+                    { "ignoreddirs", ignored },
+                    { "patterns", "" }
+                }
+            };
+            var found = new List<string>();
+            var jobResult = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+            {
+                found.AddRange(items);
+                return true;
+            }));
+            Assert.True(jobResult.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {jobResult.Result}. FailureMessage: {jobResult.FailureMessage}");
+            return found;
+        }
+
+        // Act / Assert
+        Assert.Contains(await RunDiscovery(""), d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(await RunDiscovery($" {TestNamespace.ToUpperInvariant()} "),
+            d => d.Contains($"/{TestNamespace}/"));
     }
 
     #endregion
