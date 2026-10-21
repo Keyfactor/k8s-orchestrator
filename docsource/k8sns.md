@@ -7,7 +7,7 @@ Keyfactor Command certificate store. This store type manages all secrets within 
 
 For discovery of `K8SNS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
-namespaces. *This cannot be left blank.*
+namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
 
 ## Certificate Store Configuration
 

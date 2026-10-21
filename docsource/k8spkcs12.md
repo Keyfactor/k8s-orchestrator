@@ -23,9 +23,12 @@ The K8SPKCS12 store type supports certificates with the following key algorithms
 
 For discovery of `K8SPKCS12` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all
-  namespaces. *This cannot be left blank.*
+  namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
 - `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 data. Will use
   the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.p12`,`p12`.
+- `File name extensions to match` - comma separated list of additional secret key names/extensions to look for. Treated
+  the same as `File name patterns to match` and added to the default keys.
+- `Directories to ignore` - not currently supported; any value is ignored (a warning is logged).
 
 ## Certificate Store Configuration
 

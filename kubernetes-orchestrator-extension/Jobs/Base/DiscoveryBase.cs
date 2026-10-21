@@ -7,6 +7,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using Keyfactor.Logging;
 using Keyfactor.Orchestrators.Common.Enums;
@@ -14,6 +15,7 @@ using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.Extensions.Interfaces;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.Base;
 
@@ -77,13 +79,27 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
             // Get namespaces to search from job properties
             var namespacesCsv = GetNamespacesToSearch(config);
 
-            // Get custom allowed keys from job properties
-            var customKeys = GetCustomAllowedKeys(config);
+            // Get custom allowed keys from job properties (additive to the handler defaults)
+            var customKeys = MergeWithDefaultKeys(GetCustomAllowedKeys(config));
+            Logger.LogDebug("Discovery namespaces: '{Namespaces}', custom allowed keys: [{Keys}]",
+                namespacesCsv, string.Join(", ", customKeys ?? Array.Empty<string>()));
+
+            var ignoredDirs = SplitList(TryGetJobProperty(config.JobProperties, IgnoredDirsKeys), ',');
+            if (ignoredDirs.Length > 0)
+                Logger.LogWarning(
+                    "'Directories to ignore' (ignoreddirs) was supplied ({IgnoredDirs}) but is not supported by this extension and will be ignored",
+                    string.Join(",", ignoredDirs));
 
             // Discover stores via handler
             var discoveredStores = Handler.DiscoverStores(customKeys, namespacesCsv);
 
             Logger.LogInformation("Discovered {Count} stores", discoveredStores.Count);
+            if (discoveredStores.Count == 0)
+                Logger.LogWarning(
+                    "Discovery found 0 stores. Namespaces searched: '{Namespaces}'. Verify the 'Directories to search' value " +
+                    "(use 'all' or a comma-separated list of existing namespaces) and that the service account can list " +
+                    "namespaces and secrets",
+                    namespacesCsv);
 
             // Submit discovered stores
             submitDiscovery.Invoke(discoveredStores);
@@ -110,61 +126,132 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
         }
     }
 
+    // Keys delivered by Keyfactor Command for a discovery job. The framework supplies
+    // DiscoveryJobConfiguration.JobProperties as a plain dictionary keyed by the lower-case names
+    // dirs, extensions, ignoreddirs and patterns. The "friendly" names are accepted as aliases.
+    // Lookup is case-insensitive.
+    private static readonly string[] DirectoriesKeys = { "dirs", "Directories" };
+    private static readonly string[] ExtensionsKeys = { "extensions", "Extensions" };
+    private static readonly string[] PatternsKeys = { "patterns", "Patterns" };
+    private static readonly string[] IgnoredDirsKeys = { "ignoreddirs", "IgnoredDirectories", "IgnoredDirs" };
+
+    private const string AllNamespaces = "all";
+    private const string FallbackNamespace = "default";
+
     /// <summary>
-    /// Gets the namespaces to search from the job configuration.
+    /// When true, the discovery <c>extensions</c> job property is also treated as a list of secret field
+    /// names/extensions to look for (in addition to <c>patterns</c>). Mirrors the 1.x behaviour, where only the
+    /// keystore store types (JKS, PKCS12) honoured <c>extensions</c>.
+    /// </summary>
+    protected virtual bool UseExtensionsAsAllowedKeys => false;
+
+    /// <summary>
+    /// Gets the namespaces to search from the job configuration (<c>dirs</c> job property).
     /// </summary>
     /// <param name="config">The discovery job configuration.</param>
-    /// <returns>Comma-separated list of namespaces, or empty for all.</returns>
+    /// <returns>
+    /// Comma-separated list of trimmed namespace names, or <c>all</c> if any entry is <c>all</c> (case-insensitive).
+    /// Falls back to <c>default</c> (with a warning) if no directories were supplied.
+    /// </returns>
     protected virtual string GetNamespacesToSearch(DiscoveryJobConfiguration config)
     {
-        if (config.JobProperties == null)
-            return "";
+        var raw = TryGetJobProperty(config?.JobProperties, DirectoriesKeys);
+        Logger?.LogDebug("Discovery 'Directories to search' (dirs) raw value: '{Value}'", raw ?? "(not provided)");
 
-        try
+        var namespaces = SplitList(raw, ',');
+        if (namespaces.Any(n => n.Equals(AllNamespaces, StringComparison.OrdinalIgnoreCase)))
         {
-            var props = JsonConvert.DeserializeObject<Dictionary<string, object>>(config.JobProperties.ToString());
-            if (props != null && props.TryGetValue("Directories", out var dirs))
-            {
-                return dirs?.ToString() ?? "";
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Failed to parse discovery directories: {Message}", ex.Message);
+            Logger?.LogDebug("Discovery will search all namespaces");
+            return AllNamespaces;
         }
 
-        return "";
+        if (namespaces.Length == 0)
+        {
+            Logger?.LogWarning(
+                "No 'Directories to search' (dirs) value was provided for discovery job; falling back to the '{Fallback}' namespace. " +
+                "Set 'Directories to search' to a comma-separated list of namespaces or 'all' to search every namespace",
+                FallbackNamespace);
+            return FallbackNamespace;
+        }
+
+        var csv = string.Join(",", namespaces.Distinct(StringComparer.Ordinal));
+        Logger?.LogDebug("Discovery will search namespaces: {Namespaces}", csv);
+        return csv;
     }
 
     /// <summary>
-    /// Gets custom allowed keys from the job configuration.
+    /// Gets custom allowed keys from the job configuration (<c>patterns</c> job property, plus
+    /// <c>extensions</c> when <see cref="UseExtensionsAsAllowedKeys"/> is true).
     /// </summary>
     /// <param name="config">The discovery job configuration.</param>
     /// <returns>Array of custom allowed keys, or null to use defaults.</returns>
     protected virtual string[] GetCustomAllowedKeys(DiscoveryJobConfiguration config)
     {
-        if (config.JobProperties == null)
-            return null;
+        var props = config?.JobProperties;
+        var keys = SplitList(TryGetJobProperty(props, PatternsKeys), ',', ';').AsEnumerable();
 
-        try
-        {
-            var props = JsonConvert.DeserializeObject<Dictionary<string, object>>(config.JobProperties.ToString());
-            if (props != null && props.TryGetValue("Extensions", out var extensions))
-            {
-                var extString = extensions?.ToString();
-                if (!string.IsNullOrEmpty(extString))
-                {
-                    return extString.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Select(s => s.Trim())
-                        .ToArray();
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogWarning("Failed to parse discovery extensions: {Message}", ex.Message);
-        }
+        if (UseExtensionsAsAllowedKeys)
+            keys = keys.Concat(SplitList(TryGetJobProperty(props, ExtensionsKeys), ',', ';'));
+
+        var result = keys.Distinct(StringComparer.Ordinal).ToArray();
+        return result.Length == 0 ? null : result;
+    }
+
+    /// <summary>
+    /// Merges job-supplied keys with the handler's default keys (job-supplied keys are additive, as documented).
+    /// </summary>
+    private string[] MergeWithDefaultKeys(string[] customKeys)
+    {
+        if (customKeys == null || customKeys.Length == 0) return null;
+        return customKeys.Concat(Handler?.AllowedKeys ?? Array.Empty<string>())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string[] SplitList(string value, params char[] separators)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return Array.Empty<string>();
+        return value.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+            .Select(s => s.Trim())
+            .Where(s => s.Length > 0)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Case-insensitive lookup of a job property, tolerating the value shapes the framework may produce
+    /// (string, JValue/JToken, JArray, other enumerables). Returns null when absent or null.
+    /// </summary>
+    private static string TryGetJobProperty(IDictionary<string, object> props, string[] keys)
+    {
+        if (props == null) return null;
+
+        foreach (var key in keys)
+        foreach (var kvp in props)
+            if (string.Equals(kvp.Key, key, StringComparison.OrdinalIgnoreCase))
+                return JobPropertyValueToString(kvp.Value);
 
         return null;
+    }
+
+    private static string JobPropertyValueToString(object value)
+    {
+        switch (value)
+        {
+            case null:
+                return null;
+            case string s:
+                return s;
+            case JValue jv:
+                return jv.Type == JTokenType.Null ? null : jv.ToString(CultureInfo.InvariantCulture);
+            case JArray ja:
+                return string.Join(",", ja.Select(JobPropertyValueToString).Where(v => !string.IsNullOrWhiteSpace(v)));
+            case JToken jt:
+                return jt.ToString(Formatting.None);
+            case IEnumerable<object> items:
+                return string.Join(",",
+                    items.Select(JobPropertyValueToString).Where(v => !string.IsNullOrWhiteSpace(v)));
+            default:
+                return Convert.ToString(value, CultureInfo.InvariantCulture);
+        }
     }
 }

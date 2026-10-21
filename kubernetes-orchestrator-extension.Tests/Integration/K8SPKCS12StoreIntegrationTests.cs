@@ -611,14 +611,21 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
-        // Note: Discovery returns store paths in the result
+        // Regression: discovery used to silently return 0 stores because 'dirs' was never read
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
     }
 
     #endregion

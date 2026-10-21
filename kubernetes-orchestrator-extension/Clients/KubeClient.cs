@@ -678,10 +678,19 @@ public class KubeCertificateManagerClient
         }
 
         // Fetch namespaces and selected namespaces based on the ns parameter
-        var namespaces = FetchNamespaces(clusterName);
-        var nsList = ns.Contains(',') ? ns.Split(',') : new[] { ns };
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        var nsList = (ns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _logger.LogDebug("Requested namespaces: [{Requested}]; cluster has {Count} namespaces",
+            string.Join(", ", nsList), namespaces.Count);
 
-        foreach (var nsObj in FilterNamespaces(namespaces, nsList))
+        var matched = FilterNamespaces(namespaces, nsList).ToList();
+        if (matched.Count == 0)
+            _logger.LogWarning(
+                "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
+                "Use 'all' to search every namespace",
+                string.Join(", ", nsList), namespaces.Count);
+
+        foreach (var nsObj in matched)
         {
             if (secType == "namespace")
             {
@@ -723,8 +732,9 @@ public class KubeCertificateManagerClient
     /// <returns>Filtered enumerable of namespaces.</returns>
     private IEnumerable<V1Namespace> FilterNamespaces(IEnumerable<V1Namespace> namespaces, string[] nsList)
     {
+        var searchAll = nsList.Any(n => string.Equals(n?.Trim(), "all", StringComparison.OrdinalIgnoreCase));
         foreach (var nsObj in namespaces)
-            if (nsList.Contains("all") || nsList.Contains(nsObj.Metadata.Name))
+            if (searchAll || nsList.Any(n => string.Equals(n?.Trim(), nsObj.Metadata.Name, StringComparison.Ordinal)))
             {
                 _logger.LogDebug("Processing namespace: {Namespace}", nsObj.Metadata.Name);
                 yield return nsObj;
