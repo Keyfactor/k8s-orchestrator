@@ -1,7 +1,8 @@
 # 2.0.2
 
 ## Bug Fixes
-- fix(discovery): Discovery jobs no longer return 0 stores when `Directories to search` is set (e.g. `all`). `DiscoveryBase` previously re-parsed `JobProperties.ToString()` as JSON (it is a plain dictionary, so this always failed with `Unexpected character encountered while parsing value: S`) and looked up the wrong keys (`Directories`/`Extensions` instead of the framework's `dirs`/`extensions`/`patterns`). Job properties are now read directly and case-insensitively; namespace entries are trimmed, `all` is case-insensitive, a blank value falls back to the `default` namespace with a warning, `patterns` (and `extensions` for JKS/PKCS12) are added to the default allowed keys as in 1.x, and a warning is logged when discovery finds 0 stores or no requested namespace exists. `Directories to ignore` (`ignoreddirs`) is not implemented and now logs a warning when supplied.
+- fix(discovery): Discovery jobs no longer return 0 stores when `Directories to search` is set (e.g. `all`). `DiscoveryBase` previously re-parsed `JobProperties.ToString()` as JSON (it is a plain dictionary, so this always failed with `Unexpected character encountered while parsing value: S`) and looked up the wrong keys (`Directories`/`Extensions` instead of the framework's `dirs`/`extensions`/`patterns`). Job properties are now read directly and case-insensitively; namespace entries are trimmed, `all` is case-insensitive, a blank value falls back to the `default` namespace with a warning, `patterns` (and `extensions` for JKS/PKCS12) are added to the default allowed keys as in 1.x, and a warning is logged when discovery finds 0 stores or no requested namespace exists.
+- fix(discovery): `Directories to ignore` (`ignoreddirs`) is now honoured. Discovered locations whose namespace is listed are removed from the results (case-insensitive, whitespace-tolerant), including when `Directories to search` is `all`. Fixes #100.
 
 # 2.0.1
 

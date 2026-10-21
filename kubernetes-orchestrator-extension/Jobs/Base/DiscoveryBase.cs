@@ -84,22 +84,27 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
             Logger.LogDebug("Discovery namespaces: '{Namespaces}', custom allowed keys: [{Keys}]",
                 namespacesCsv, string.Join(", ", customKeys ?? Array.Empty<string>()));
 
-            var ignoredDirs = SplitList(TryGetJobProperty(config.JobProperties, IgnoredDirsKeys), ',');
-            if (ignoredDirs.Length > 0)
-                Logger.LogWarning(
-                    "'Directories to ignore' (ignoreddirs) was supplied ({IgnoredDirs}) but is not supported by this extension and will be ignored",
-                    string.Join(",", ignoredDirs));
+            var ignoredDirs = GetIgnoredNamespaces(config);
 
             // Discover stores via handler
             var discoveredStores = Handler.DiscoverStores(customKeys, namespacesCsv);
 
+            // Post-filter by namespace so 'Directories to ignore' applies to every handler without
+            // changing the ISecretHandler contract (also applies when 'Directories to search' is 'all').
+            discoveredStores = FilterIgnoredNamespaces(discoveredStores, ignoredDirs, out var droppedStores);
+            if (droppedStores.Count > 0)
+                Logger.LogDebug(
+                    "Dropped {Count} discovered location(s) in ignored namespaces [{IgnoredDirs}]: {Dropped}",
+                    droppedStores.Count, string.Join(", ", ignoredDirs), string.Join(", ", droppedStores));
+
             Logger.LogInformation("Discovered {Count} stores", discoveredStores.Count);
             if (discoveredStores.Count == 0)
                 Logger.LogWarning(
-                    "Discovery found 0 stores. Namespaces searched: '{Namespaces}'. Verify the 'Directories to search' value " +
+                    "Discovery found 0 stores. Namespaces searched: '{Namespaces}'; namespaces ignored: [{IgnoredDirs}] " +
+                    "({DroppedCount} location(s) dropped by 'Directories to ignore'). Verify the 'Directories to search' value " +
                     "(use 'all' or a comma-separated list of existing namespaces) and that the service account can list " +
                     "namespaces and secrets",
-                    namespacesCsv);
+                    namespacesCsv, string.Join(", ", ignoredDirs), droppedStores.Count);
 
             // Submit discovered stores
             submitDiscovery.Invoke(discoveredStores);
@@ -206,6 +211,78 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
         return customKeys.Concat(Handler?.AllowedKeys ?? Array.Empty<string>())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    /// <summary>
+    /// Gets the namespaces to exclude from discovery results (<c>ignoreddirs</c> job property).
+    /// </summary>
+    /// <param name="config">The discovery job configuration.</param>
+    /// <returns>Trimmed, de-duplicated namespace names (empty when none were supplied).</returns>
+    protected virtual string[] GetIgnoredNamespaces(DiscoveryJobConfiguration config)
+    {
+        var raw = TryGetJobProperty(config?.JobProperties, IgnoredDirsKeys);
+        var ignored = SplitList(raw, ',', ';').Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        Logger?.LogDebug("Discovery 'Directories to ignore' (ignoreddirs): [{IgnoredDirs}]",
+            string.Join(", ", ignored));
+        return ignored;
+    }
+
+    /// <summary>
+    /// Removes discovered locations whose namespace is in <paramref name="ignoredNamespaces"/>
+    /// (case-insensitive, whitespace-tolerant). Locations from which no namespace can be extracted
+    /// (e.g. a bare cluster name) are always kept.
+    /// </summary>
+    /// <param name="locations">Locations returned by the handler.</param>
+    /// <param name="ignoredNamespaces">Namespaces to exclude.</param>
+    /// <param name="dropped">The locations that were removed.</param>
+    /// <returns>The remaining locations, in their original order.</returns>
+    protected static List<string> FilterIgnoredNamespaces(
+        IEnumerable<string> locations, IEnumerable<string> ignoredNamespaces, out List<string> dropped)
+    {
+        dropped = new List<string>();
+        var kept = new List<string>();
+        var ignored = new HashSet<string>(
+            (ignoredNamespaces ?? Array.Empty<string>()).Select(n => n?.Trim()).Where(n => !string.IsNullOrEmpty(n)),
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var location in locations ?? Enumerable.Empty<string>())
+        {
+            var ns = ignored.Count == 0 ? null : ExtractNamespace(location);
+            if (ns != null && ignored.Contains(ns))
+                dropped.Add(location);
+            else
+                kept.Add(location);
+        }
+
+        return kept;
+    }
+
+    /// <summary>
+    /// Extracts the namespace from a discovered location. Formats produced by
+    /// <c>KubeCertificateManagerClient.DiscoverSecrets</c>:
+    /// <list type="bullet">
+    /// <item><c>{cluster}/{namespace}/secrets/{secretName}</c> (per-secret path)</item>
+    /// <item><c>{cluster}/namespace/{namespace}</c> (namespace-level path)</item>
+    /// <item><c>{cluster}</c> (cluster-level; no namespace)</item>
+    /// </list>
+    /// The cluster name may itself contain <c>/</c> (e.g. an EKS ARN), so segments are read from the end.
+    /// </summary>
+    /// <param name="location">The discovered location.</param>
+    /// <returns>The trimmed namespace, or null if the location carries no namespace.</returns>
+    protected static string ExtractNamespace(string location)
+    {
+        if (string.IsNullOrWhiteSpace(location)) return null;
+
+        var parts = location.Trim().Split('/');
+        string ns = null;
+
+        if (parts.Length >= 4 && parts[^2].Equals("secrets", StringComparison.Ordinal))
+            ns = parts[^3];
+        else if (parts.Length >= 3 && parts[^2].Equals("namespace", StringComparison.Ordinal))
+            ns = parts[^1];
+
+        ns = ns?.Trim();
+        return string.IsNullOrEmpty(ns) ? null : ns;
     }
 
     private static string[] SplitList(string value, params char[] separators)

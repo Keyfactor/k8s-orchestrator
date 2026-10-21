@@ -39,6 +39,16 @@ public class DiscoveryBaseTests
 
         public string[] TestGetCustomAllowedKeys(DiscoveryJobConfiguration config)
             => GetCustomAllowedKeys(config);
+
+        public string[] TestGetIgnoredNamespaces(DiscoveryJobConfiguration config)
+            => GetIgnoredNamespaces(config);
+
+        public static string TestExtractNamespace(string location)
+            => ExtractNamespace(location);
+
+        public static List<string> TestFilter(IEnumerable<string> locations, IEnumerable<string> ignored,
+            out List<string> dropped)
+            => FilterIgnoredNamespaces(locations, ignored, out dropped);
     }
 
     private class TestableJksDiscovery : JksDiscovery
@@ -284,6 +294,133 @@ public class DiscoveryBaseTests
     {
         var jks = new TestableJksDiscovery();
         Assert.Equal(new[] { "jks" }, jks.TestGetCustomAllowedKeys(ConfigWith(("extensions", "jks"))));
+    }
+
+    #endregion
+
+    #region Ignored Directories Tests
+
+    [Fact]
+    public void GetIgnoredNamespaces_PlainDictionary_ReturnsTrimmedDistinctValues()
+    {
+        var result = _discovery.TestGetIgnoredNamespaces(ConfigWith(("ignoreddirs", " kube-system , KUBE-SYSTEM,cert-manager ")));
+        Assert.Equal(new[] { "kube-system", "cert-manager" }, result);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(" , ,")]
+    public void GetIgnoredNamespaces_BlankValue_ReturnsEmpty(string value)
+    {
+        Assert.Empty(_discovery.TestGetIgnoredNamespaces(ConfigWith(("ignoreddirs", value))));
+    }
+
+    [Fact]
+    public void GetIgnoredNamespaces_NullJobProperties_ReturnsEmpty()
+    {
+        Assert.Empty(_discovery.TestGetIgnoredNamespaces(new DiscoveryJobConfiguration { JobProperties = null }));
+    }
+
+    [Fact]
+    public void GetIgnoredNamespaces_JArrayValue_ReturnsJoined()
+    {
+        var result = _discovery.TestGetIgnoredNamespaces(ConfigWith(("ignoreddirs", new JArray("a", "b"))));
+        Assert.Equal(new[] { "a", "b" }, result);
+    }
+
+    [Theory]
+    [InlineData("my-cluster/prod/secrets/web-tls", "prod")]
+    [InlineData("10.0.0.1/kube-system/secrets/x", "kube-system")]
+    [InlineData("my-cluster/namespace/prod", "prod")]
+    [InlineData("my-cluster/namespace/secrets", "secrets")]              // namespace form, namespace literally called "secrets"
+    [InlineData("my-cluster/namespace/secrets/x", "namespace")]          // secret form, namespace literally called "namespace"
+    [InlineData("arn:aws:eks:us-east-1:123456789012:cluster/foo/prod/secrets/web-tls", "prod")] // cluster name contains '/'
+    [InlineData("arn:aws:eks:us-east-1:123456789012:cluster/foo/namespace/prod", "prod")]
+    [InlineData("  my-cluster/ prod /secrets/web-tls", "prod")]
+    public void ExtractNamespace_KnownLocationFormats_ReturnsNamespace(string location, string expected)
+    {
+        Assert.Equal(expected, TestableDiscovery.TestExtractNamespace(location));
+    }
+
+    [Theory]
+    [InlineData("my-cluster")]
+    [InlineData("10.0.0.1")]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null)]
+    [InlineData("some/other/shape")]
+    public void ExtractNamespace_NoNamespaceInLocation_ReturnsNull(string location)
+    {
+        Assert.Null(TestableDiscovery.TestExtractNamespace(location));
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_DropsMatchingNamespaces_AllFormats()
+    {
+        var locations = new List<string>
+        {
+            "c/kube-system/secrets/a",
+            "c/prod/secrets/b",
+            "c/namespace/kube-system",
+            "c/namespace/dev",
+            "c"
+        };
+
+        var kept = TestableDiscovery.TestFilter(locations, new[] { "kube-system" }, out var dropped);
+
+        Assert.Equal(new[] { "c/prod/secrets/b", "c/namespace/dev", "c" }, kept);
+        Assert.Equal(new[] { "c/kube-system/secrets/a", "c/namespace/kube-system" }, dropped);
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_IsCaseAndWhitespaceTolerant()
+    {
+        var kept = TestableDiscovery.TestFilter(
+            new[] { "c/kube-system/secrets/a", "c/prod/secrets/b" },
+            new[] { "  KUBE-System " }, out var dropped);
+
+        Assert.Equal(new[] { "c/prod/secrets/b" }, kept);
+        Assert.Single(dropped);
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_DoesNotMatchPartialNamespaceNames()
+    {
+        var kept = TestableDiscovery.TestFilter(
+            new[] { "c/kube-system-extra/secrets/a", "c/my-kube-system/secrets/b" },
+            new[] { "kube-system" }, out var dropped);
+
+        Assert.Equal(2, kept.Count);
+        Assert.Empty(dropped);
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_NoIgnoredNamespaces_ReturnsAll()
+    {
+        var locations = new[] { "c/a/secrets/x", "c" };
+        var kept = TestableDiscovery.TestFilter(locations, System.Array.Empty<string>(), out var dropped);
+
+        Assert.Equal(locations, kept);
+        Assert.Empty(dropped);
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_NullInputs_AreTolerated()
+    {
+        var kept = TestableDiscovery.TestFilter(null, null, out var dropped);
+
+        Assert.Empty(kept);
+        Assert.Empty(dropped);
+    }
+
+    [Fact]
+    public void FilterIgnoredNamespaces_EverythingIgnored_ReturnsEmpty()
+    {
+        var kept = TestableDiscovery.TestFilter(new[] { "c/a/secrets/x", "c/a/secrets/y" }, new[] { "a" }, out var dropped);
+
+        Assert.Empty(kept);
+        Assert.Equal(2, dropped.Count);
     }
 
     #endregion

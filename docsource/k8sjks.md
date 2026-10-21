@@ -28,7 +28,8 @@ namespaces. Namespace names are trimmed and `all` is case-insensitive. If left b
 the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`jks`.
 - `File name extensions to match` - comma separated list of additional secret key names/extensions to look for. Treated
 the same as `File name patterns to match` and added to the default keys.
-- `Directories to ignore` - not currently supported; any value is ignored (a warning is logged).
+- `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
+  namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
 
 ## Certificate Store Configuration
 
