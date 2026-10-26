@@ -764,6 +764,56 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
             d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
     }
 
+    /// <summary>
+    /// Discovery relies on the secrets list response carrying each secret's Data (no per-secret GET). This verifies
+    /// that assumption against a real API server, and that discovery then finds the secrets using that data alone.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_ListResponseCarriesSecretData_AndDiscoveryUsesIt()
+    {
+        // Arrange
+        var tlsName = $"test-list-data-tls-{Guid.NewGuid():N}";
+        var opaqueName = $"test-list-data-opaque-{Guid.NewGuid():N}";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Test List Data");
+        var certBytes = Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate));
+        var keyBytes = Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private));
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(tlsName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]> { { "tls.crt", certBytes }, { "tls.key", keyBytes } }
+        }, TestNamespace);
+        TrackSecret(tlsName);
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(opaqueName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "cert.pem", certBytes } }
+        }, TestNamespace);
+        TrackSecret(opaqueName);
+
+        // Act - the raw list call that discovery uses (no GET of individual secrets)
+        var list = await K8sClient.CoreV1.ListNamespacedSecretAsync(TestNamespace);
+
+        // Assert - list items carry Data
+        var listedTls = Assert.Single(list.Items, s => s.Metadata.Name == tlsName);
+        var listedOpaque = Assert.Single(list.Items, s => s.Metadata.Name == opaqueName);
+        Assert.NotNull(listedTls.Data);
+        Assert.Equal(certBytes, listedTls.Data["tls.crt"]);
+        Assert.Equal(keyBytes, listedTls.Data["tls.key"]);
+        Assert.NotNull(listedOpaque.Data);
+        Assert.Equal(certBytes, listedOpaque.Data["cert.pem"]);
+
+        // And discovery (which uses only the list response) finds both
+        var client = new Keyfactor.Extensions.Orchestrator.K8S.Clients.KubeCertificateManagerClient(KubeconfigJson);
+        var tls = client.DiscoverSecrets(new[] { "tls.crt" }, "kubernetes.io/tls", TestNamespace);
+        var opaque = client.DiscoverSecrets(new[] { "cert.pem" }, "Opaque", TestNamespace);
+        Assert.Contains(tls, l => l.EndsWith($"/{TestNamespace}/secrets/{tlsName}"));
+        Assert.Contains(opaque, l => l.EndsWith($"/{TestNamespace}/secrets/{opaqueName}"));
+    }
+
     #endregion
 
     #region Error Handling Tests

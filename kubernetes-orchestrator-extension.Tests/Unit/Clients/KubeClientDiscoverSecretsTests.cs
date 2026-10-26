@@ -7,15 +7,9 @@
 
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
-using k8s;
-using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
-using Moq;
-using Newtonsoft.Json;
+using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Xunit;
 
 namespace Keyfactor.Orchestrators.K8S.Tests.Unit.Clients;
@@ -39,38 +33,6 @@ public class KubeClientDiscoverSecretsTests
 
     #region Helpers
 
-    private static string BuildKubeconfig() => JsonConvert.SerializeObject(new Dictionary<string, object>
-    {
-        ["apiVersion"] = "v1",
-        ["kind"] = "Config",
-        ["current-context"] = "test-ctx",
-        ["clusters"] = new[]
-        {
-            new Dictionary<string, object>
-            {
-                ["name"] = "test-cluster",
-                ["cluster"] = new Dictionary<string, object> { ["server"] = "https://127.0.0.1:6443" }
-            }
-        },
-        ["users"] = new[]
-        {
-            new Dictionary<string, object>
-            {
-                ["name"] = "test-user",
-                ["user"] = new Dictionary<string, object> { ["token"] = "test-token" }
-            }
-        },
-        ["contexts"] = new[]
-        {
-            new Dictionary<string, object>
-            {
-                ["name"] = "test-ctx",
-                ["context"] = new Dictionary<string, object>
-                    { ["cluster"] = "test-cluster", ["user"] = "test-user", ["namespace"] = "default" }
-            }
-        }
-    });
-
     private static V1Secret Secret(string name, string type, params string[] dataKeys) => new()
     {
         Metadata = new V1ObjectMeta { Name = name, NamespaceProperty = Ns },
@@ -87,56 +49,10 @@ public class KubeClientDiscoverSecretsTests
 
     /// <summary>
     /// Builds a client whose API calls are served from <paramref name="secrets"/> (all in namespace <see cref="Ns"/>).
+    /// Single-secret reads are forbidden: discovery must rely on the list response (which carries each secret's Data).
     /// </summary>
-    private static KubeCertificateManagerClient CreateClient(params V1Secret[] secrets)
-    {
-        var client = new KubeCertificateManagerClient(BuildKubeconfig());
-
-        var core = new Mock<ICoreV1Operations>();
-        core.Setup(c => c.ListNamespaceWithHttpMessagesAsync(
-                It.IsAny<bool?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int?>(),
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<int?>(), It.IsAny<bool?>(),
-                It.IsAny<bool?>(), It.IsAny<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.FromResult(new HttpOperationResponse<V1NamespaceList>
-            {
-                Body = new V1NamespaceList
-                {
-                    Items = new List<V1Namespace> { new() { Metadata = new V1ObjectMeta { Name = Ns } } }
-                }
-            }));
-
-        core.Setup(c => c.ListNamespacedSecretWithHttpMessagesAsync(
-                Ns, It.IsAny<bool?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool?>(), It.IsAny<int?>(),
-                It.IsAny<bool?>(), It.IsAny<bool?>(), It.IsAny<IReadOnlyDictionary<string, IReadOnlyList<string>>>(),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.FromResult(new HttpOperationResponse<V1SecretList>
-            {
-                Body = new V1SecretList { Items = secrets.ToList() }
-            }));
-
-        foreach (var secret in secrets)
-        {
-            var s = secret;
-            core.Setup(c => c.ReadNamespacedSecretWithHttpMessagesAsync(
-                    s.Metadata.Name, Ns, It.IsAny<bool?>(),
-                    It.IsAny<IReadOnlyDictionary<string, IReadOnlyList<string>>>(), It.IsAny<CancellationToken>()))
-                .Returns(Task.FromResult(new HttpOperationResponse<V1Secret> { Body = s }));
-        }
-
-        var k8s = new Mock<IKubernetes>();
-        k8s.Setup(c => c.CoreV1).Returns(core.Object);
-
-        typeof(KubeCertificateManagerClient)
-            .GetProperty("Client", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(client, k8s.Object);
-        typeof(KubeCertificateManagerClient)
-            .GetField("_secretOperations", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(client, new SecretOperations(k8s.Object, null));
-
-        return client;
-    }
+    private static KubeCertificateManagerClient CreateClient(params V1Secret[] secrets) =>
+        MockedKubeClientFactory.Create(secrets, new[] { Ns }, allowSecretReads: false).Client;
 
     private static List<string> Names(IEnumerable<string> locations) =>
         locations.Select(l => l.Split('/').Last()).OrderBy(n => n).ToList();
@@ -296,6 +212,56 @@ public class KubeClientDiscoverSecretsTests
         var locations = client.DiscoverSecrets(new[] { "jks" }, "kubernetes.io/tls", Ns);
 
         Assert.Equal(new[] { "good-tls" }, Names(locations));
+    }
+
+    #endregion
+
+    #region No per-secret reads (list response is used directly)
+
+    [Fact]
+    public void DiscoverSecrets_UsesListResponse_AndNeverReadsIndividualSecrets()
+    {
+        var kube = MockedKubeClientFactory.Create(new[]
+        {
+            Secret("good-tls", "kubernetes.io/tls", "tls.crt", "tls.key"),
+            Secret("tls-no-key", "kubernetes.io/tls", "tls.crt"),
+            NoData("tls-null-data", "kubernetes.io/tls"),
+            Secret("opaque-cert", "Opaque", "cert.pem"),
+            Secret("opaque-other", "Opaque", "username"),
+            NoData("opaque-null-data", "Opaque"),
+            Secret("opaque-empty-data", "Opaque"),
+            Secret("sa-token", "kubernetes.io/service-account-token", "token")
+        }, new[] { Ns }, allowSecretReads: false);
+
+        var tls = kube.Client.DiscoverSecrets(PemKeys, "kubernetes.io/tls", Ns);
+        var opaque = kube.Client.DiscoverSecrets(PemKeys, "Opaque", Ns);
+
+        // Same results as when each secret was re-read after listing
+        Assert.Equal(new[] { "good-tls" }, Names(tls));
+        Assert.Equal(new[] { "opaque-cert" }, Names(opaque));
+        Assert.All(tls.Concat(opaque), l => Assert.Contains($"/{Ns}/secrets/", l));
+
+        // One list per call, and no GET /secrets/{name} at all
+        Assert.Equal(0, kube.ReadSecretCallCount);
+        Assert.Equal(2, kube.ListSecretsCallCount);
+    }
+
+    [Fact]
+    public void DiscoverSecrets_AllNamespaces_MakesOneListCallPerNamespace_AndNoReads()
+    {
+        var kube = MockedKubeClientFactory.Create(new[]
+        {
+            MockedKubeClientFactory.Secret("ns-a", "a1", "Opaque", new Dictionary<string, byte[]> { ["tls.crt"] = new byte[] { 1 } }),
+            MockedKubeClientFactory.Secret("ns-a", "a2", "Opaque", new Dictionary<string, byte[]> { ["tls.crt"] = new byte[] { 1 } }),
+            MockedKubeClientFactory.Secret("ns-b", "b1", "Opaque", new Dictionary<string, byte[]> { ["tls.crt"] = new byte[] { 1 } }),
+            MockedKubeClientFactory.Secret("ns-c", "c1", "Opaque", new Dictionary<string, byte[]> { ["unrelated"] = new byte[] { 1 } })
+        }, allowSecretReads: false);
+
+        var locations = kube.Client.DiscoverSecrets(PemKeys, "Opaque", "all");
+
+        Assert.Equal(new[] { "a1", "a2", "b1" }, Names(locations));
+        Assert.Equal(3, kube.ListSecretsCallCount); // 3 namespaces, not 3 + 4 secrets
+        Assert.Equal(0, kube.ReadSecretCallCount);
     }
 
     #endregion

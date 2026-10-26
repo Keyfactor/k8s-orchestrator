@@ -94,7 +94,12 @@ public static class MockedKubeClientFactory
     /// namespace that a secret lives in. Secrets are listed per namespace (items include <c>Data</c>, as the real API
     /// does) and can be read individually by name.
     /// </summary>
-    public static MockedKubeClient Create(IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null)
+    /// <param name="allowSecretReads">
+    /// When false, any single-secret read (GET /secrets/{name}) throws, so a test fails if the code under test
+    /// makes one (e.g. discovery must rely on the list response only).
+    /// </param>
+    public static MockedKubeClient Create(
+        IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null, bool allowSecretReads = true)
     {
         var all = secrets.ToList();
         var nsNames = (namespaces ?? Enumerable.Empty<string>())
@@ -139,6 +144,10 @@ public static class MockedKubeClientFactory
             .Returns((string name, string ns, bool? _, IReadOnlyDictionary<string, IReadOnlyList<string>> _,
                 CancellationToken _) =>
             {
+                if (!allowSecretReads)
+                    throw new System.InvalidOperationException(
+                        $"Unexpected ReadNamespacedSecret({name}, {ns}): this test forbids per-secret reads.");
+
                 var found = all.FirstOrDefault(s => s.Metadata.Name == name && s.Metadata.NamespaceProperty == ns);
                 if (found == null)
                     throw new HttpOperationException("not found")

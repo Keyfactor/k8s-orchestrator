@@ -791,20 +791,9 @@ public class KubeCertificateManagerClient
             return;
         }
 
-        try
-        {
-            var secretData = RetryPolicy(() =>
-                Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, namespaceName));
-
-            ProcessSecret(secret, secretData, allowedKeys, clusterName, namespaceName, locations);
-        }
-        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            // Secret was deleted between listing and reading - this can happen in dynamic environments
-            _logger.LogDebug(
-                "Secret '{SecretName}' in namespace '{Namespace}' was deleted before it could be read, skipping.",
-                secret.Metadata.Name, namespaceName);
-        }
+        // A listed secret already includes its Data, so it is processed directly (no per-secret GET). A secret
+        // deleted after the list simply is not re-fetched, so there is no NotFound race to handle here.
+        ProcessSecret(secret, allowedKeys, clusterName, namespaceName, locations);
     }
 
     private T RetryPolicy<T>(Func<T> action)
@@ -849,7 +838,7 @@ public class KubeCertificateManagerClient
         };
     }
 
-    private void ProcessSecret(V1Secret secret, V1Secret secretData, string[] allowedKeys,
+    private void ProcessSecret(V1Secret secret, string[] allowedKeys,
         string clusterName, string namespaceName, List<string> locations)
     {
         var secretLocation = $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}";
@@ -861,7 +850,7 @@ public class KubeCertificateManagerClient
             switch (secret.Type.ToLower())
             {
                 case "kubernetes.io/tls":
-                    var cert = ParseTlsSecret(secretData, secret.Metadata.Name);
+                    var cert = ParseTlsSecret(secret, secret.Metadata.Name);
                     if (cert != null)
                     {
                         _logger.LogDebug("Discovered TLS certificate at: {Location}", secretLocation);
@@ -871,7 +860,7 @@ public class KubeCertificateManagerClient
                     break;
 
                 case "opaque":
-                    if (ParseOpaqueSecret(secretData, allowedKeys))
+                    if (ParseOpaqueSecret(secret, allowedKeys))
                     {
                         _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
                         locations.Add(secretLocation);
