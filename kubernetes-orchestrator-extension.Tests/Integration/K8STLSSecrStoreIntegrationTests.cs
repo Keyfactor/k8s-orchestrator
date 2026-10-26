@@ -767,6 +767,58 @@ public class K8STLSSecrStoreIntegrationTests : IntegrationTestBase
         Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
     }
 
+    /// <summary>
+    /// REGRESSION (customer report): a K8STLSSecr Discovery job with "Directories to search" = <c>all</c> completed
+    /// successfully but found 0 stores. Command delivers <c>JobProperties</c> as a plain
+    /// <c>Dictionary&lt;string, object&gt;</c> (keys <c>dirs</c>/<c>extensions</c>/<c>ignoreddirs</c>/<c>patterns</c>,
+    /// optional values blank). The old code re-parsed <c>JobProperties.ToString()</c> (the CLR type name) as JSON, swallowed
+    /// the parse error, looked for a <c>Directories</c> key, ended up with an empty namespace list and filtered out every
+    /// namespace. This reproduces the customer's exact input and puts the secret in a namespace that is NOT
+    /// <c>default</c>.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Regression_Discovery_DirectoriesAll_CustomerConfig_ReturnsTlsSecretOutsideDefaultNamespace()
+    {
+        // Arrange - the test namespace is generated per test class and is never 'default'
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-tls-customer-{Guid.NewGuid():N}";
+        var cachedCert = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery Customer Regression TLS Test");
+        await CreateTestTlsSecretFromCertInfo(secretName, cachedCert, KeyType.Rsa2048);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8STLSSecr",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            // Exactly what Command sends: plain Dictionary, 'all' in lower case (as documented), blank optional values
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert - Success AND the secret in the non-default namespace must be among the submitted stores
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.NotEmpty(discovered);
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+    }
+
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Discovery_DirectoriesAll_IgnoredDirectoriesExcludesNamespace()
     {

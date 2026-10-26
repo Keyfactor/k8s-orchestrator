@@ -100,6 +100,16 @@ public static class MockedKubeClientFactory
     /// </param>
     public static MockedKubeClient Create(
         IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null, bool allowSecretReads = true)
+        => Attach(new KubeCertificateManagerClient(BuildKubeconfig()), secrets, namespaces, allowSecretReads);
+
+    /// <summary>
+    /// Same as <see cref="Create"/> but rewires an EXISTING client instance in place (its Kubernetes API and secret
+    /// operations are replaced by the fake). Use this when the client is constructed by the code under test (e.g. a job's
+    /// <c>ProcessJob</c>) and a handler already holds a reference to it.
+    /// </summary>
+    public static MockedKubeClient Attach(
+        KubeCertificateManagerClient client, IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null,
+        bool allowSecretReads = true)
     {
         var all = secrets.ToList();
         var nsNames = (namespaces ?? Enumerable.Empty<string>())
@@ -107,7 +117,6 @@ public static class MockedKubeClientFactory
             .Distinct()
             .ToList();
 
-        var client = new KubeCertificateManagerClient(BuildKubeconfig());
         var core = new Mock<ICoreV1Operations>();
 
         core.Setup(c => c.ListNamespaceWithHttpMessagesAsync(
