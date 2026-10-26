@@ -919,20 +919,23 @@ public class KubeCertificateManagerClient
     /// Determines whether an Opaque secret holds at least one data key that discovery is looking for.
     /// </summary>
     /// <param name="secretData">The secret (with data) to inspect.</param>
-    /// <param name="allowedKeys">Allowed data keys / extensions. When null or empty no filtering is applied.</param>
+    /// <param name="allowedKeys">
+    /// Allowed data keys / extensions. When null or empty no filtering is applied at all and every Opaque secret is
+    /// returned (this is what K8SCluster/K8SNS inventory relies on: it enumerates every Opaque secret).
+    /// </param>
     /// <returns>True if the secret should be reported as a discovered store.</returns>
     private bool ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
     {
-        if (secretData.Data == null || secretData.Data.Count == 0)
-        {
-            _logger.LogDebug("Secret data is null or empty. Skipping this secret.");
-            return false;
-        }
-
         if (allowedKeys == null || allowedKeys.Length == 0)
         {
             _logger.LogDebug("No allowed keys supplied; not filtering opaque secret by data key.");
             return true;
+        }
+
+        if (secretData.Data == null || secretData.Data.Count == 0)
+        {
+            _logger.LogDebug("Secret data is null or empty. Skipping this secret.");
+            return false;
         }
 
         foreach (var dataKey in secretData.Data.Keys)
