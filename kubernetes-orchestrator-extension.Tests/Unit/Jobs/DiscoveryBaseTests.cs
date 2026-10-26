@@ -385,6 +385,23 @@ public class DiscoveryBaseTests
     }
 
     [Fact]
+    public void FilterIgnoredNamespaces_AppliesToRealK8SNSDiscoveryOutput()
+    {
+        // K8SNS discovery (#102) emits "<cluster>/namespace/<ns>"; 'Directories to ignore' must drop those.
+        var kube = Helpers.MockedKubeClientFactory.Create(
+            System.Array.Empty<k8s.Models.V1Secret>(), new[] { "kube-system", "prod", "dev" });
+        var handler = new Keyfactor.Extensions.Orchestrator.K8S.Handlers.NamespaceSecretHandler(
+            kube.Client, new Moq.Mock<Microsoft.Extensions.Logging.ILogger>().Object,
+            new Moq.Mock<Keyfactor.Extensions.Orchestrator.K8S.Handlers.ISecretOperationContext>().Object);
+
+        var discovered = handler.DiscoverStores(null, "all");
+        var kept = TestableDiscovery.TestFilter(discovered, new[] { "KUBE-SYSTEM", "dev" }, out var dropped);
+
+        Assert.Equal(new[] { "test-cluster/namespace/prod" }, kept);
+        Assert.Equal(2, dropped.Count);
+    }
+
+    [Fact]
     public void FilterIgnoredNamespaces_DoesNotMatchPartialNamespaceNames()
     {
         var kept = TestableDiscovery.TestFilter(

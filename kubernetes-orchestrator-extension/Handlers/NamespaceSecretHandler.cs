@@ -192,22 +192,17 @@ public class NamespaceSecretHandler : SecretHandlerBase
                 ? Context.KubeNamespace
                 : namespacesCsv;
 
-            var stores = new List<string>();
-
-            // Discover TLS secrets
-            stores.AddRange(KubeClient.DiscoverSecrets(
-                new[] { "tls.crt" },
-                "kubernetes.io/tls",
-                targetNamespace));
-
-            // Discover Opaque secrets with cert data. Opaque discovery only reports secrets that contain at
-            // least one of these keys, so use the full handler key list (plus any job-supplied patterns).
-            stores.AddRange(KubeClient.DiscoverSecrets(
-                allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys,
-                "Opaque",
-                targetNamespace));
-
-            return stores.Distinct().ToList();
+            // A K8SNS store IS a namespace (it manages every secret in it), so discovery returns one
+            // "<cluster>/namespace/<ns>" location per namespace matched by 'Directories to search'
+            // (a CSV of names, or "all") - the same shape 1.x returned and that StorePathResolver resolves for
+            // K8SNS. Secrets inside the namespaces are deliberately not enumerated here, and allowedKeys
+            // (job patterns) do not apply: every matched namespace is reported, as in 1.x.
+            return KubeClient.DiscoverSecrets(
+                    allowedKeys,
+                    "namespace",
+                    targetNamespace)
+                .Distinct()
+                .ToList();
         }
         finally
         {

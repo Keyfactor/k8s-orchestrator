@@ -62,8 +62,20 @@ The extension supports 7 certificate store types:
 | **K8STLSSecr** | Secret (kubernetes.io/tls) | PEM | Inventory, Management, Discovery |
 | **K8SJKS** | Secret (Opaque) | JKS (Java Keystore) | Inventory, Management, Discovery |
 | **K8SPKCS12** | Secret (Opaque) | PKCS12/PFX | Inventory, Management, Discovery |
-| **K8SCluster** | Multiple Secrets | PEM | Inventory, Management, Discovery |
+| **K8SCluster** | Multiple Secrets | PEM | Inventory, Management |
 | **K8SNS** | Multiple Secrets | PEM | Inventory, Management, Discovery |
+
+`K8SCluster` has no Discovery capability in Command (`integration-manifest.json` sets `Discovery: false`): a cluster store
+is, by definition, all secrets in all namespaces, so there is nothing to discover. `manifest.json` still maps
+`CertStores.K8SCluster.Discovery` to a class, but Command cannot schedule it.
+
+Discovery returns different location shapes depending on the store type:
+
+| Store Type | Location returned by Discovery | Resolves via `StorePathResolver` as |
+|------------|--------------------------------|-------------------------------------|
+| **K8SSecret**, **K8STLSSecr**, **K8SJKS**, **K8SPKCS12** | `<cluster>/<namespace>/secrets/<secret-name>` (one per matching secret) | namespace + secret name |
+| **K8SNS** | `<cluster>/namespace/<namespace>` (one per namespace matched by `Directories to search`) | namespace |
+| **K8SCert** | CSR names | n/a (path is ignored) |
 
 ## Layer Architecture
 
