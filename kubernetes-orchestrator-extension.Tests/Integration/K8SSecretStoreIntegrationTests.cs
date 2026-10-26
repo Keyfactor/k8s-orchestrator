@@ -765,6 +765,109 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
     }
 
     /// <summary>
+    /// 'Directories to search' = <c>all</c> (lower case, as documented and as Command sends it) must search every
+    /// namespace, not only the one named by the job. Includes the #101 negative control.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsOpaqueSecrets()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-all-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048);
+
+        var noKeySecretName = $"test-discover-all-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "username", Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8SSecret",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
+    /// <summary>
+    /// Blank or missing 'Directories to search' falls back to the <c>default</c> namespace only (see DiscoveryBase), so
+    /// nothing from the test namespace may be returned. Does not depend on 'default' containing any certificates.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_BlankOrMissingDirectories_FallsBackToDefaultNamespace()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-blank-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048);
+
+        async Task<List<string>> RunDiscovery(Dictionary<string, object> jobProperties)
+        {
+            var jobConfig = new DiscoveryJobConfiguration
+            {
+                Capability = "K8SSecret",
+                ClientMachine = TestNamespace,
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true,
+                JobProperties = jobProperties
+            };
+            var found = new List<string>();
+            var jobResult = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+            {
+                found.AddRange(items);
+                return true;
+            }));
+            Assert.True(jobResult.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {jobResult.Result}. FailureMessage: {jobResult.FailureMessage}");
+            return found;
+        }
+
+        // Act
+        var blank = await RunDiscovery(new Dictionary<string, object>
+            { { "dirs", "" }, { "extensions", "" }, { "ignoreddirs", "" }, { "patterns", "" } });
+        var missing = await RunDiscovery(new Dictionary<string, object>
+            { { "extensions", "" }, { "ignoreddirs", "" }, { "patterns", "" } });
+
+        // Assert - only the 'default' namespace was searched
+        Assert.DoesNotContain(blank, d => d.Contains($"/{TestNamespace}/"));
+        Assert.DoesNotContain(missing, d => d.Contains($"/{TestNamespace}/"));
+        Assert.All(blank, d => Assert.Contains("/default/secrets/", d));
+        Assert.All(missing, d => Assert.Contains("/default/secrets/", d));
+    }
+
+    /// <summary>
     /// Discovery relies on the secrets list response carrying each secret's Data (no per-secret GET). This verifies
     /// that assumption against a real API server, and that discovery then finds the secrets using that data alone.
     /// </summary>

@@ -289,6 +289,24 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         await CreateTestSecret(secret1Name, TestNamespace1);
         await CreateTestSecret(secret2Name, TestNamespace2);
 
+        // Negative control (#101): an Opaque secret with no allowed key must NOT be discovered
+        var noKeySecretName = $"test-cluster-nokey-{Guid.NewGuid():N}";
+        await _k8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = new V1ObjectMeta
+            {
+                Name = noKeySecretName,
+                NamespaceProperty = TestNamespace1,
+                Labels = GetTestSecretLabels()
+            },
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "username", Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace1);
+        _createdSecrets.Add((noKeySecretName, TestNamespace1));
+
         var jobConfig = new DiscoveryJobConfiguration
         {
             Capability = "K8SCluster",
@@ -305,13 +323,22 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         };
 
         var discovery = new Discovery(_mockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
-        // Assert
+        // Assert - K8SCluster discovery returns one "<cluster>/<ns>/secrets/<name>" entry per cert-bearing secret
+        // across ALL namespaces (the 'dirs' value is not used to restrict the cluster handler)
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace1}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace2}/secrets/{secret2Name}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace1}/secrets/{noKeySecretName}"));
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
@@ -339,13 +366,20 @@ public class K8SClusterStoreIntegrationTests : IAsyncLifetime
         };
 
         var discovery = new Discovery(_mockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
-        // Assert
+        // Assert - both the Opaque and the kubernetes.io/tls secret are reported
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace1}/secrets/{opaqueSecret}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace2}/secrets/{tlsSecret}"));
     }
 
     #endregion

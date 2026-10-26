@@ -645,11 +645,14 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task Discovery_FindsMultipleCSRs_ReturnsSuccess()
     {
-        // Arrange - Create multiple CSRs
-        var csr1Name = $"test-discover-1-{Guid.NewGuid():N}";
-        var csr2Name = $"test-discover-2-{Guid.NewGuid():N}";
-        await CreateTestCsr(csr1Name, approve: true);
-        await CreateTestCsr(csr2Name, approve: false);
+        // Arrange - K8SCert discovery only reports CSRs that have an issued certificate (status.certificate);
+        // pending/unsigned CSRs must not be reported.
+        var issued1Name = $"test-discover-issued-1-{Guid.NewGuid():N}";
+        var issued2Name = $"test-discover-issued-2-{Guid.NewGuid():N}";
+        var pendingName = $"test-discover-pending-{Guid.NewGuid():N}";
+        await CreateTestCsr(issued1Name, approve: true, injectCertificate: true);
+        await CreateTestCsr(issued2Name, approve: true, injectCertificate: true);
+        await CreateTestCsr(pendingName, approve: false);
 
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -667,13 +670,21 @@ public class K8SCertStoreIntegrationTests : IAsyncLifetime
         };
 
         var discovery = new Discovery(_mockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(issued1Name, discovered);
+        Assert.Contains(issued2Name, discovered);
+        Assert.DoesNotContain(pendingName, discovered);
     }
 
     #endregion

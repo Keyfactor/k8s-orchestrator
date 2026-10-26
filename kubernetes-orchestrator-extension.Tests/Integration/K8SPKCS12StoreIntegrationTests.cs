@@ -642,6 +642,70 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
     }
 
+    /// <summary>
+    /// 'Directories to search' = <c>all</c> (lower case, as Command sends it) must search every namespace.
+    /// Includes the #101 negative control.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsPkcs12Secrets()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-all-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var pfxBytes = CachedCertificateProvider.GetOrCreatePkcs12(KeyType.Rsa2048, "testpassword", "discovery-test");
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "keystore.pfx", pfxBytes } }
+        }, TestNamespace);
+
+        var noKeySecretName = $"test-discover-all-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8SPKCS12",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
     #endregion
 
     #region Error Handling Tests
