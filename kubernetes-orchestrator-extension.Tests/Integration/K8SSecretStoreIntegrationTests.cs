@@ -678,6 +678,19 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         await CreateTestOpaqueSecret(secret1Name, KeyType.Rsa2048);
         await CreateTestOpaqueSecret(secret2Name, KeyType.EcP256);
 
+        // Negative control (#101): an Opaque secret with no allowed key must NOT be discovered
+        var noKeySecretName = $"test-discover-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "username", Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
         var jobConfig = new DiscoveryJobConfiguration
         {
             Capability = "K8SSecret",
@@ -694,13 +707,214 @@ public class K8SSecretStoreIntegrationTests : IntegrationTestBase
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_IgnoredDirectories_ExcludesIgnoredNamespace()
+    {
+        // Arrange (#100)
+        var secretName = $"test-discover-ignored-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.EcP256);
+
+        async Task<List<string>> RunDiscovery(string ignored)
+        {
+            var jobConfig = new DiscoveryJobConfiguration
+            {
+                Capability = "K8SSecret",
+                ClientMachine = TestNamespace,
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true,
+                JobProperties = new Dictionary<string, object>
+                {
+                    { "dirs", TestNamespace },
+                    { "ignoreddirs", ignored },
+                    { "patterns", "" }
+                }
+            };
+            var found = new List<string>();
+            var jobResult = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+            {
+                found.AddRange(items);
+                return true;
+            }));
+            Assert.True(jobResult.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {jobResult.Result}. FailureMessage: {jobResult.FailureMessage}");
+            return found;
+        }
+
+        // Act / Assert - positive control, then the same search with the namespace ignored (case/whitespace tolerant)
+        Assert.Contains(await RunDiscovery(""), d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(await RunDiscovery($"  {TestNamespace.ToUpperInvariant()} , other-ns "),
+            d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+    }
+
+    /// <summary>
+    /// 'Directories to search' = <c>all</c> (lower case, as documented and as Command sends it) must search every
+    /// namespace, not only the one named by the job. Includes the #101 negative control.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsOpaqueSecrets()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-all-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048);
+
+        var noKeySecretName = $"test-discover-all-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "username", Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8SSecret",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
+    /// <summary>
+    /// Blank or missing 'Directories to search' falls back to the <c>default</c> namespace only (see DiscoveryBase), so
+    /// nothing from the test namespace may be returned. Does not depend on 'default' containing any certificates.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_BlankOrMissingDirectories_FallsBackToDefaultNamespace()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-blank-{Guid.NewGuid():N}";
+        await CreateTestOpaqueSecret(secretName, KeyType.Rsa2048);
+
+        async Task<List<string>> RunDiscovery(Dictionary<string, object> jobProperties)
+        {
+            var jobConfig = new DiscoveryJobConfiguration
+            {
+                Capability = "K8SSecret",
+                ClientMachine = TestNamespace,
+                ServerUsername = string.Empty,
+                ServerPassword = KubeconfigJson,
+                UseSSL = true,
+                JobProperties = jobProperties
+            };
+            var found = new List<string>();
+            var jobResult = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+            {
+                found.AddRange(items);
+                return true;
+            }));
+            Assert.True(jobResult.Result == OrchestratorJobStatusJobResult.Success,
+                $"Expected Success but got {jobResult.Result}. FailureMessage: {jobResult.FailureMessage}");
+            return found;
+        }
+
+        // Act
+        var blank = await RunDiscovery(new Dictionary<string, object>
+            { { "dirs", "" }, { "extensions", "" }, { "ignoreddirs", "" }, { "patterns", "" } });
+        var missing = await RunDiscovery(new Dictionary<string, object>
+            { { "extensions", "" }, { "ignoreddirs", "" }, { "patterns", "" } });
+
+        // Assert - only the 'default' namespace was searched
+        Assert.DoesNotContain(blank, d => d.Contains($"/{TestNamespace}/"));
+        Assert.DoesNotContain(missing, d => d.Contains($"/{TestNamespace}/"));
+        Assert.All(blank, d => Assert.Contains("/default/secrets/", d));
+        Assert.All(missing, d => Assert.Contains("/default/secrets/", d));
+    }
+
+    /// <summary>
+    /// Discovery relies on the secrets list response carrying each secret's Data (no per-secret GET). This verifies
+    /// that assumption against a real API server, and that discovery then finds the secrets using that data alone.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_ListResponseCarriesSecretData_AndDiscoveryUsesIt()
+    {
+        // Arrange
+        var tlsName = $"test-list-data-tls-{Guid.NewGuid():N}";
+        var opaqueName = $"test-list-data-opaque-{Guid.NewGuid():N}";
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.EcP256, "Test List Data");
+        var certBytes = Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertCertificateToPem(certInfo.Certificate));
+        var keyBytes = Encoding.UTF8.GetBytes(CertificateTestHelper.ConvertPrivateKeyToPem(certInfo.KeyPair.Private));
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(tlsName),
+            Type = "kubernetes.io/tls",
+            Data = new Dictionary<string, byte[]> { { "tls.crt", certBytes }, { "tls.key", keyBytes } }
+        }, TestNamespace);
+        TrackSecret(tlsName);
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(opaqueName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "cert.pem", certBytes } }
+        }, TestNamespace);
+        TrackSecret(opaqueName);
+
+        // Act - the raw list call that discovery uses (no GET of individual secrets)
+        var list = await K8sClient.CoreV1.ListNamespacedSecretAsync(TestNamespace);
+
+        // Assert - list items carry Data
+        var listedTls = Assert.Single(list.Items, s => s.Metadata.Name == tlsName);
+        var listedOpaque = Assert.Single(list.Items, s => s.Metadata.Name == opaqueName);
+        Assert.NotNull(listedTls.Data);
+        Assert.Equal(certBytes, listedTls.Data["tls.crt"]);
+        Assert.Equal(keyBytes, listedTls.Data["tls.key"]);
+        Assert.NotNull(listedOpaque.Data);
+        Assert.Equal(certBytes, listedOpaque.Data["cert.pem"]);
+
+        // And discovery (which uses only the list response) finds both
+        var client = new Keyfactor.Extensions.Orchestrator.K8S.Clients.KubeCertificateManagerClient(KubeconfigJson);
+        var tls = client.DiscoverSecrets(new[] { "tls.crt" }, "kubernetes.io/tls", TestNamespace);
+        var opaque = client.DiscoverSecrets(new[] { "cert.pem" }, "Opaque", TestNamespace);
+        Assert.Contains(tls, l => l.EndsWith($"/{TestNamespace}/secrets/{tlsName}"));
+        Assert.Contains(opaque, l => l.EndsWith($"/{TestNamespace}/secrets/{opaqueName}"));
     }
 
     #endregion

@@ -89,11 +89,13 @@ public class ClusterSecretHandler : SecretHandlerBase
                 ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
             }
 
-            // Discover Opaque secrets
+            // Discover Opaque secrets. Inventory enumerates EVERY Opaque secret, so say so explicitly with
+            // OpaqueKeyMatch.AllSecrets (a null/empty key list never means "everything"; GitHub issue #101).
             var opaqueSecrets = KubeClient.DiscoverSecrets(
-                new[] { "tls.crt", "certificate", "cert", "crt" },
+                null,
                 "Opaque",
-                "all");
+                "all",
+                opaqueKeyMatch: OpaqueKeyMatch.AllSecrets);
 
             foreach (var secretPath in opaqueSecrets)
             {
@@ -194,9 +196,10 @@ public class ClusterSecretHandler : SecretHandlerBase
                 "kubernetes.io/tls",
                 "all"));
 
-            // Discover Opaque secrets with cert data
+            // Discover Opaque secrets with cert data. Opaque discovery only reports secrets that contain at
+            // least one of these keys, so use the full handler key list (plus any job-supplied patterns).
             stores.AddRange(KubeClient.DiscoverSecrets(
-                new[] { "tls.crt", "certificate", "cert", "crt" },
+                allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys,
                 "Opaque",
                 "all"));
 

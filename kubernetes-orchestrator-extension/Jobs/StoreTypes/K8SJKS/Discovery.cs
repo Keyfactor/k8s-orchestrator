@@ -17,4 +17,7 @@ namespace Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SJKS;
 public class Discovery : DiscoveryBase
 {
     public Discovery(IPAMSecretResolver resolver) : base(resolver) { }
+
+    /// <inheritdoc />
+    protected override bool UseExtensionsAsAllowedKeys => true;
 }
