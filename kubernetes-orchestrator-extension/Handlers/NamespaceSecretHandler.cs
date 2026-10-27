@@ -90,12 +90,14 @@ public class NamespaceSecretHandler : SecretHandlerBase
                 ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
             }
 
-            // Discover Opaque secrets in the namespace. Inventory enumerates EVERY Opaque secret, so pass no
-            // allowed keys: a null/empty list disables the discovery-only allowed-key filter (GitHub issue #101).
+            // Discover Opaque secrets in the namespace. Inventory enumerates EVERY Opaque secret, so say so
+            // explicitly with OpaqueKeyMatch.AllSecrets (a null/empty key list never means "everything";
+            // GitHub issue #101).
             var opaqueSecrets = KubeClient.DiscoverSecrets(
                 null,
                 "Opaque",
-                targetNamespace);
+                targetNamespace,
+                opaqueKeyMatch: OpaqueKeyMatch.AllSecrets);
 
             foreach (var secretPath in opaqueSecrets)
             {

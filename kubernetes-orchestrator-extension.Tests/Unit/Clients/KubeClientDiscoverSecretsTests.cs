@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Orchestrators.K8S.Tests.Helpers;
 using Xunit;
 
@@ -91,20 +92,44 @@ public class KubeClientDiscoverSecretsTests
         Assert.Empty(client.DiscoverSecrets(PemKeys, "Opaque", Ns));
     }
 
-    [Fact]
-    public void DiscoverSecrets_Opaque_NullAllowedKeys_DoesNotFilter()
+    [Theory]
+    [InlineData(OpaqueKeyMatch.Suffix)]
+    [InlineData(OpaqueKeyMatch.Exact)]
+    public void DiscoverSecrets_Opaque_NullOrEmptyAllowedKeys_MatchNothing(OpaqueKeyMatch match)
     {
-        var client = CreateClient(Secret("anything", "Opaque", "foo"));
+        var client = CreateClient(Secret("anything", "Opaque", "foo"), Secret("cert", "Opaque", "tls.crt"));
 
-        Assert.Single(client.DiscoverSecrets(null, "Opaque", Ns));
+        // A missing filter must never mean "every Opaque secret" (GitHub issue #101).
+        Assert.Empty(client.DiscoverSecrets(null, "Opaque", Ns, opaqueKeyMatch: match));
+        Assert.Empty(client.DiscoverSecrets(new string[0], "Opaque", Ns, opaqueKeyMatch: match));
+        Assert.Empty(client.DiscoverSecrets(null, "Opaque", Ns));
     }
 
     [Fact]
-    public void DiscoverSecrets_Opaque_EmptyAllowedKeys_DoesNotFilter()
+    public void DiscoverSecrets_Opaque_AllSecrets_IsAnExplicitRequestAndIgnoresKeys()
     {
-        var client = CreateClient(Secret("anything", "Opaque", "foo"));
+        var client = CreateClient(Secret("anything", "Opaque", "foo"), Secret("no-data", "Opaque"),
+            Secret("tls-secret", "kubernetes.io/tls", "tls.crt", "tls.key"));
 
-        Assert.Single(client.DiscoverSecrets(new string[0], "Opaque", Ns));
+        Assert.Equal(new[] { "anything", "no-data" },
+            Names(client.DiscoverSecrets(null, "Opaque", Ns, opaqueKeyMatch: OpaqueKeyMatch.AllSecrets)));
+        Assert.Equal(new[] { "anything", "no-data" },
+            Names(client.DiscoverSecrets(new[] { "jks" }, "Opaque", Ns, opaqueKeyMatch: OpaqueKeyMatch.AllSecrets)));
+    }
+
+    [Fact]
+    public void DiscoverSecrets_Opaque_ExactMatch_DoesNotApplySuffixOrCaseRules()
+    {
+        var client = CreateClient(
+            Secret("exact", "Opaque", "tls.crt"),
+            Secret("suffixed", "Opaque", "server.crt"),
+            Secret("wrong-case", "Opaque", "TLS.CRT"));
+
+        var locations = client.DiscoverSecrets(new[] { "tls.crt", "crt" }, "Opaque", Ns,
+            opaqueKeyMatch: OpaqueKeyMatch.Exact);
+
+        // "crt" is an allowed key, but "server.crt" is not "crt": exact matching only.
+        Assert.Equal(new[] { "exact" }, Names(locations));
     }
 
     [Fact]
@@ -284,6 +309,17 @@ public class KubeClientDiscoverSecretsTests
     public void HasAllowedDataKey_MatchesEqualOrDotSuffix_CaseInsensitive(string key, string allowed, bool expected)
     {
         Assert.Equal(expected, KubeCertificateManagerClient.HasAllowedDataKey(new[] { key }, new[] { allowed }));
+    }
+
+    [Theory]
+    [InlineData("tls.crt", "tls.crt", true)]
+    [InlineData("server.crt", "crt", false)]
+    [InlineData("TLS.CRT", "tls.crt", false)]
+    [InlineData("tls.crt", " .tls.crt ", true)]
+    public void HasAllowedDataKey_Exact_RequiresIdenticalKey(string key, string allowed, bool expected)
+    {
+        Assert.Equal(expected,
+            KubeCertificateManagerClient.HasAllowedDataKey(new[] { key }, new[] { allowed }, OpaqueKeyMatch.Exact));
     }
 
     [Fact]

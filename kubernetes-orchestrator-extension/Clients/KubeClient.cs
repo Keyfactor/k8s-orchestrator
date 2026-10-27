@@ -657,14 +657,21 @@ public class KubeCertificateManagerClient
     /// <param name="ns">Namespace to search, or "default".</param>
     /// <param name="namespaceIsStore">When true, treats entire namespace as a single store.</param>
     /// <param name="clusterIsStore">When true, treats entire cluster as a single store.</param>
+    /// <param name="opaqueKeyMatch">
+    /// How Opaque secrets are matched against <paramref name="allowedKeys"/>. Enumerating every Opaque secret
+    /// requires <see cref="OpaqueKeyMatch.AllSecrets"/> explicitly; a null/empty <paramref name="allowedKeys"/> never
+    /// means "everything".
+    /// </param>
     /// <returns>List of discovered secret locations.</returns>
     public List<string> DiscoverSecrets(
         string[] allowedKeys, string secType, string ns = "default",
-        bool namespaceIsStore = false, bool clusterIsStore = false)
+        bool namespaceIsStore = false, bool clusterIsStore = false,
+        OpaqueKeyMatch opaqueKeyMatch = OpaqueKeyMatch.Suffix)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        _logger.LogTrace("Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}",
-            string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns);
+        _logger.LogTrace(
+            "Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}, OpaqueKeyMatch: {Match}",
+            string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns, opaqueKeyMatch);
         var locations = new List<string>();
         var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         _logger.LogTrace("ClusterName: {ClusterName}", clusterName);
@@ -699,7 +706,7 @@ public class KubeCertificateManagerClient
             }
 
             DiscoverSecretsInNamespace(
-                nsObj.Metadata.Name, allowedKeys, secType, locations, clusterName);
+                nsObj.Metadata.Name, allowedKeys, secType, locations, clusterName, opaqueKeyMatch);
         }
 
         _logger.LogDebug("Discovered {Count} locations", locations.Count);
@@ -766,8 +773,10 @@ public class KubeCertificateManagerClient
     /// <param name="secType">Secret type filter.</param>
     /// <param name="locations">List to add discovered locations to.</param>
     /// <param name="clusterName">Name of the cluster.</param>
+    /// <param name="opaqueKeyMatch">How Opaque secrets are matched against the allowed keys.</param>
     private void DiscoverSecretsInNamespace(
-        string namespaceName, string[] allowedKeys, string secType, List<string> locations, string clusterName)
+        string namespaceName, string[] allowedKeys, string secType, List<string> locations, string clusterName,
+        OpaqueKeyMatch opaqueKeyMatch)
     {
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogDebug("Discovering secrets in namespace: {Namespace}", namespaceName);
@@ -776,12 +785,13 @@ public class KubeCertificateManagerClient
             _secretOperations.ListSecrets(namespaceName).Items);
 
         foreach (var secret in secrets)
-            ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations);
+            ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations,
+                opaqueKeyMatch);
     }
 
     private void ProcessSecretIfSupported(
         V1Secret secret, string secType, string[] allowedKeys, string clusterName, string namespaceName,
-        List<string> locations)
+        List<string> locations, OpaqueKeyMatch opaqueKeyMatch)
     {
         if (!IsSupportedSecretType(secret.Type, secType))
         {
@@ -793,7 +803,7 @@ public class KubeCertificateManagerClient
 
         // A listed secret already includes its Data, so it is processed directly (no per-secret GET). A secret
         // deleted after the list simply is not re-fetched, so there is no NotFound race to handle here.
-        ProcessSecret(secret, allowedKeys, clusterName, namespaceName, locations);
+        ProcessSecret(secret, allowedKeys, clusterName, namespaceName, locations, opaqueKeyMatch);
     }
 
     private T RetryPolicy<T>(Func<T> action)
@@ -839,7 +849,7 @@ public class KubeCertificateManagerClient
     }
 
     private void ProcessSecret(V1Secret secret, string[] allowedKeys,
-        string clusterName, string namespaceName, List<string> locations)
+        string clusterName, string namespaceName, List<string> locations, OpaqueKeyMatch opaqueKeyMatch)
     {
         var secretLocation = $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}";
         _logger.LogTrace("Processing secret: {SecretName}. Secret location: {SecretLocation}",
@@ -860,7 +870,7 @@ public class KubeCertificateManagerClient
                     break;
 
                 case "opaque":
-                    if (ParseOpaqueSecret(secret, allowedKeys))
+                    if (ParseOpaqueSecret(secret, allowedKeys, opaqueKeyMatch))
                     {
                         _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
                         locations.Add(secretLocation);
@@ -868,8 +878,9 @@ public class KubeCertificateManagerClient
                     else
                     {
                         _logger.LogDebug(
-                            "Skipping opaque secret '{SecretName}' in namespace '{Namespace}': it has no data key matching the allowed keys [{AllowedKeys}]",
-                            secret.Metadata.Name, namespaceName, string.Join(", ", allowedKeys ?? Array.Empty<string>()));
+                            "Skipping opaque secret '{SecretName}' in namespace '{Namespace}': it has no data key matching the allowed keys [{AllowedKeys}] ({Match} match)",
+                            secret.Metadata.Name, namespaceName, string.Join(", ", allowedKeys ?? Array.Empty<string>()),
+                            opaqueKeyMatch);
                     }
 
                     break;
@@ -909,16 +920,25 @@ public class KubeCertificateManagerClient
     /// </summary>
     /// <param name="secretData">The secret (with data) to inspect.</param>
     /// <param name="allowedKeys">
-    /// Allowed data keys / extensions. When null or empty no filtering is applied at all and every Opaque secret is
-    /// returned (this is what K8SCluster/K8SNS inventory relies on: it enumerates every Opaque secret).
+    /// Allowed data keys / extensions. A null or empty list matches nothing (unless <paramref name="match"/> is
+    /// <see cref="OpaqueKeyMatch.AllSecrets"/>): a missing filter is never treated as "everything".
     /// </param>
+    /// <param name="match">How data keys are matched, or <see cref="OpaqueKeyMatch.AllSecrets"/> to skip filtering.</param>
     /// <returns>True if the secret should be reported as a discovered store.</returns>
-    private bool ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
+    private bool ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys, OpaqueKeyMatch match)
     {
+        if (match == OpaqueKeyMatch.AllSecrets)
+        {
+            _logger.LogDebug("All Opaque secrets requested explicitly; not filtering opaque secret by data key.");
+            return true;
+        }
+
         if (allowedKeys == null || allowedKeys.Length == 0)
         {
-            _logger.LogDebug("No allowed keys supplied; not filtering opaque secret by data key.");
-            return true;
+            _logger.LogWarning(
+                "No allowed keys supplied for Opaque discovery ({Match} match); no secret can match. " +
+                "Request OpaqueKeyMatch.AllSecrets to enumerate every Opaque secret.", match);
+            return false;
         }
 
         if (secretData.Data == null || secretData.Data.Count == 0)
@@ -929,7 +949,7 @@ public class KubeCertificateManagerClient
 
         foreach (var dataKey in secretData.Data.Keys)
         {
-            if (!IsAllowedDataKey(dataKey, allowedKeys))
+            if (!IsAllowedDataKey(dataKey, allowedKeys, match))
             {
                 _logger.LogDebug("Skipping key {Key} as it is not in the list of allowed keys.", dataKey);
                 continue;
@@ -948,27 +968,40 @@ public class KubeCertificateManagerClient
     /// </summary>
     /// <param name="dataKeys">Secret data field names.</param>
     /// <param name="allowedKeys">Allowed keys / extensions.</param>
-    public static bool HasAllowedDataKey(IEnumerable<string> dataKeys, IEnumerable<string> allowedKeys)
+    /// <param name="match">
+    /// <see cref="OpaqueKeyMatch.Suffix"/> (default) or <see cref="OpaqueKeyMatch.Exact"/>.
+    /// </param>
+    public static bool HasAllowedDataKey(IEnumerable<string> dataKeys, IEnumerable<string> allowedKeys,
+        OpaqueKeyMatch match = OpaqueKeyMatch.Suffix)
     {
         if (dataKeys == null || allowedKeys == null) return false;
         var allowed = allowedKeys.ToArray();
-        return dataKeys.Any(k => IsAllowedDataKey(k, allowed));
+        return dataKeys.Any(k => IsAllowedDataKey(k, allowed, match));
     }
 
     /// <summary>
-    /// A secret data key matches an allowed key when it equals it, or ends with <c>.&lt;allowed&gt;</c>
-    /// (so the default <c>jks</c> matches <c>keystore.jks</c>, <c>p12</c> matches <c>my.p12</c> and
-    /// <c>crt</c> matches <c>ca.crt</c>). Comparison is case-insensitive and ignores surrounding whitespace.
+    /// <see cref="OpaqueKeyMatch.Suffix"/>: a secret data key matches an allowed key when it equals it, or ends with
+    /// <c>.&lt;allowed&gt;</c> (so the default <c>jks</c> matches <c>keystore.jks</c>, <c>p12</c> matches
+    /// <c>my.p12</c>), ignoring case and surrounding whitespace.
+    /// <see cref="OpaqueKeyMatch.Exact"/>: the data key must equal an allowed key exactly (case-sensitive, like the
+    /// dictionary lookup K8SSecret inventory performs). Leading dots and whitespace on the allowed key are ignored.
     /// </summary>
-    private static bool IsAllowedDataKey(string dataKey, string[] allowedKeys)
+    private static bool IsAllowedDataKey(string dataKey, string[] allowedKeys, OpaqueKeyMatch match)
     {
         if (string.IsNullOrWhiteSpace(dataKey)) return false;
         var key = dataKey.Trim();
+        var exact = match == OpaqueKeyMatch.Exact;
 
         foreach (var allowedRaw in allowedKeys)
         {
             var allowed = allowedRaw?.Trim().TrimStart('.');
             if (string.IsNullOrEmpty(allowed)) continue;
+
+            if (exact)
+            {
+                if (key.Equals(allowed, StringComparison.Ordinal)) return true;
+                continue;
+            }
 
             if (key.Equals(allowed, StringComparison.OrdinalIgnoreCase)
                 || key.EndsWith("." + allowed, StringComparison.OrdinalIgnoreCase))

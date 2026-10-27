@@ -89,12 +89,13 @@ public class ClusterSecretHandler : SecretHandlerBase
                 ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
             }
 
-            // Discover Opaque secrets. Inventory enumerates EVERY Opaque secret, so pass no allowed keys: a
-            // null/empty list disables the discovery-only allowed-key filter (GitHub issue #101).
+            // Discover Opaque secrets. Inventory enumerates EVERY Opaque secret, so say so explicitly with
+            // OpaqueKeyMatch.AllSecrets (a null/empty key list never means "everything"; GitHub issue #101).
             var opaqueSecrets = KubeClient.DiscoverSecrets(
                 null,
                 "Opaque",
-                "all");
+                "all",
+                opaqueKeyMatch: OpaqueKeyMatch.AllSecrets);
 
             foreach (var secretPath in opaqueSecrets)
             {
