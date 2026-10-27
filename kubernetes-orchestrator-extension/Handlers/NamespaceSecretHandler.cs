@@ -190,21 +190,17 @@ public class NamespaceSecretHandler : SecretHandlerBase
 
         try
         {
-            var targetNamespace = string.IsNullOrEmpty(namespacesCsv)
-                ? Context.KubeNamespace
-                : namespacesCsv;
-
             // A K8SNS store IS a namespace (it manages every secret in it), so discovery returns one
             // "<cluster>/namespace/<ns>" location per namespace matched by 'Directories to search'
             // (a CSV of names, or "all") - the same shape 1.x returned and that StorePathResolver resolves for
-            // K8SNS. Secrets inside the namespaces are deliberately not enumerated here, and allowedKeys
-            // (job patterns) do not apply: every matched namespace is reported, as in 1.x.
+            // K8SNS. namespacesCsv is never empty here (DiscoveryBase.GetNamespacesToSearch falls back to
+            // "default"). Secrets inside the namespaces are deliberately not enumerated, so allowedKeys
+            // (job patterns) do not apply and are not passed: every matched namespace is reported, as in 1.x.
+            // DiscoverSecrets emits one entry per namespace, so no de-duplication is needed.
             return KubeClient.DiscoverSecrets(
-                    allowedKeys,
-                    "namespace",
-                    targetNamespace)
-                .Distinct()
-                .ToList();
+                null,
+                "namespace",
+                namespacesCsv);
         }
         finally
         {

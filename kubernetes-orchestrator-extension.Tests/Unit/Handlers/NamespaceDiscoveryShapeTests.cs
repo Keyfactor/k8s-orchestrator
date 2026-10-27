@@ -113,11 +113,11 @@ public class NamespaceDiscoveryShapeTests
     }
 
     [Fact]
-    public void DiscoverStores_BlankDirectories_FallsBackToContextNamespace()
+    public void DiscoverStores_BlankDirectories_ReturnsEmpty_CallerOwnsTheDefault()
     {
-        var locations = CreateHandler("team-a").DiscoverStores(null, "");
-
-        Assert.Equal(new[] { $"{Cluster}/namespace/team-a" }, locations.ToArray());
+        // The "default" fallback lives in DiscoveryBase.GetNamespacesToSearch, so the handler never sees a blank CSV
+        // from a job; called directly with one it matches nothing rather than guessing a namespace.
+        Assert.Empty(CreateHandler("team-a").DiscoverStores(null, ""));
     }
 
     [Fact]
