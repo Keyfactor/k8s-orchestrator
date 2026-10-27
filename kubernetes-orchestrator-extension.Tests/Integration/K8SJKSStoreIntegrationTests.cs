@@ -598,6 +598,19 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
             await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
         }
 
+        // Negative control (#101): an Opaque secret with no allowed key must NOT be discovered
+        var noKeySecretName = $"test-discover-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
         // Create Discovery job config
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -615,14 +628,86 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
-        // Note: Discovery returns store paths in the result
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
+    /// <summary>
+    /// 'Directories to search' = <c>all</c> (lower case, as Command sends it) must search every namespace.
+    /// Includes the #101 negative control.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsJksSecrets()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-all-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery Test");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "testpassword");
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "keystore.jks", jksBytes } }
+        }, TestNamespace);
+
+        var noKeySecretName = $"test-discover-all-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
     }
 
     #endregion
