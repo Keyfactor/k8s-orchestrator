@@ -13,16 +13,15 @@ This directory contains CI/CD workflows for the Keyfactor Kubernetes Universal O
 
 **What it does:**
 - Runs all 134 unit tests
-- Tests on .NET 8.0 and 10.0 (matrix)
+- Builds every target framework, but runs tests on .NET 10.0 only
 - Collects code coverage
 - Uploads coverage to Codecov (if configured)
 - Generates HTML coverage report
 - Publishes test results to PR
 
 **Artifacts:**
-- `unit-test-results-8.0.x` - Test results for .NET 8.0
 - `unit-test-results-10.0.x` - Test results for .NET 10.0
-- `coverage-report-net8` - HTML coverage report (.NET 8.0 only)
+- `coverage-report-net10` - HTML coverage report (.NET 10.0)
 
 **Required secrets:**
 - `CODECOV_TOKEN` (optional) - For uploading coverage to Codecov
@@ -41,6 +40,7 @@ gh workflow run unit-tests.yml
 
 **What it does:**
 - Creates kind (Kubernetes in Docker) cluster with K8s v1.29
+- Runs on .NET 10.0
 - Runs all 55 integration tests
 - Tests all 7 store types against live cluster
 - Collects diagnostic info on failure
@@ -72,7 +72,7 @@ gh workflow run integration-tests.yml -f kubernetes-version=v1.28.0
 
 **What it does:**
 - Builds solution (Release configuration)
-- Runs quick unit tests (excludes integration tests)
+- Runs quick unit tests on .NET 10.0 (excludes integration tests)
 - Checks PR size (warns if >1000 lines changed)
 - Validates PR title (conventional commits)
 - Checks for breaking changes in commits
@@ -149,8 +149,7 @@ gh workflow run integration-tests.yml -f kubernetes-version=v1.28.0
               │     └──► Build + Quick Tests (~3 min)
               │
               ├──► unit-tests.yml (comprehensive)
-              │     ├──► .NET 8.0 Tests + Coverage (~5 min)
-              │     └──► .NET 10.0 Tests (~5 min)
+              │     └──► .NET 10.0 Tests + Coverage (~5 min)
               │
               ├──► integration-tests.yml (e2e)
               │     └──► K8s v1.29 Tests (~10 min)
@@ -169,13 +168,11 @@ gh workflow run integration-tests.yml -f kubernetes-version=v1.28.0
 
 | .NET Version | Tests Run | Coverage | Artifacts |
 |--------------|-----------|----------|-----------|
-| 8.0.x | 134 unit tests | ✅ Yes | Results + Coverage |
-| 10.0.x | 134 unit tests | ❌ No | Results only |
+| 10.0.x | All unit tests | ✅ Yes | Results + Coverage |
 
-**Why matrix?**
-- Ensures compatibility with both target frameworks
-- Catches framework-specific issues early
-- Coverage collected once (.NET 8.0) to avoid duplication
+**Why a one-entry matrix?**
+- Tests run on .NET 10.0 and newer only; the build step still compiles `net8.0`, so compile errors there are caught
+- Add a row here when a newer target framework is added
 
 ### Integration Tests Setup
 
