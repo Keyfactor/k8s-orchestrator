@@ -741,7 +741,7 @@ public class KubeCertificateManagerClient
     {
         var searchAll = nsList.Any(n => string.Equals(n?.Trim(), "all", StringComparison.OrdinalIgnoreCase));
         foreach (var nsObj in namespaces)
-            if (searchAll || nsList.Any(n => string.Equals(n?.Trim(), nsObj.Metadata.Name, StringComparison.Ordinal)))
+            if (searchAll || nsList.Any(n => string.Equals(n?.Trim(), nsObj.Metadata.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 _logger.LogDebug("Processing namespace: {Namespace}", nsObj.Metadata.Name);
                 yield return nsObj;
@@ -1050,7 +1050,7 @@ public class KubeCertificateManagerClient
                     _logger.LogTrace("secretFieldName: {Name}", secretFieldName);
                     var sField = secretFieldName;
                     if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
-                    var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+                    var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey, StringComparison.OrdinalIgnoreCase));
 
                     if (!isJksField) continue;
 
@@ -1133,7 +1133,7 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("secretFieldName: {FieldName}", secretFieldName);
                 var sField = secretFieldName;
                 if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
-                var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+                var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey, StringComparison.OrdinalIgnoreCase));
 
                 if (!isPkcs12Field) continue;
 
