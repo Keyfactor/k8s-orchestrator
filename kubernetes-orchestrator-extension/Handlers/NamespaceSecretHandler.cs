@@ -90,9 +90,10 @@ public class NamespaceSecretHandler : SecretHandlerBase
                 ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
             }
 
-            // Discover Opaque secrets in the namespace
+            // Discover Opaque secrets in the namespace. Inventory enumerates EVERY Opaque secret, so pass no
+            // allowed keys: a null/empty list disables the discovery-only allowed-key filter (GitHub issue #101).
             var opaqueSecrets = KubeClient.DiscoverSecrets(
-                new[] { "tls.crt", "certificate", "cert", "crt" },
+                null,
                 "Opaque",
                 targetNamespace);
 
@@ -191,21 +192,17 @@ public class NamespaceSecretHandler : SecretHandlerBase
                 ? Context.KubeNamespace
                 : namespacesCsv;
 
-            var stores = new List<string>();
-
-            // Discover TLS secrets
-            stores.AddRange(KubeClient.DiscoverSecrets(
-                new[] { "tls.crt" },
-                "kubernetes.io/tls",
-                targetNamespace));
-
-            // Discover Opaque secrets with cert data
-            stores.AddRange(KubeClient.DiscoverSecrets(
-                new[] { "tls.crt", "certificate", "cert", "crt" },
-                "Opaque",
-                targetNamespace));
-
-            return stores.Distinct().ToList();
+            // A K8SNS store IS a namespace (it manages every secret in it), so discovery returns one
+            // "<cluster>/namespace/<ns>" location per namespace matched by 'Directories to search'
+            // (a CSV of names, or "all") - the same shape 1.x returned and that StorePathResolver resolves for
+            // K8SNS. Secrets inside the namespaces are deliberately not enumerated here, and allowedKeys
+            // (job patterns) do not apply: every matched namespace is reported, as in 1.x.
+            return KubeClient.DiscoverSecrets(
+                    allowedKeys,
+                    "namespace",
+                    targetNamespace)
+                .Distinct()
+                .ToList();
         }
         finally
         {
