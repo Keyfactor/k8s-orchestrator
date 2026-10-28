@@ -14,6 +14,25 @@ ENV_VARS := AZURE_TENANT_ID AZURE_CLIENT_SECRET AZURE_CLIENT_ID AZURE_APP_GATEWA
 # current kubectl context, silently cleaning the wrong cluster.
 TEST_KUBE_CONTEXT ?= kf-integrations
 
+# Target framework for test runs. Defaults to net10.0 only; the project still builds
+# for net8.0. Override with TEST_FRAMEWORK=net8.0, or TEST_FRAMEWORK= to run every
+# target framework. test-integration-fast/-full/-smoke-net10 keep their fixed frameworks.
+TEST_FRAMEWORK ?= net10.0
+TEST_FRAMEWORK_FLAG = $(if $(TEST_FRAMEWORK),-f $(TEST_FRAMEWORK),)
+
+# Optional extra test filter, ANDed with the filter each test target already applies (unit targets exclude
+# integration tests, integration targets select them, per-store targets select their store). Empty (default) leaves
+# every target exactly as it was. A bare name is shorthand for FullyQualifiedName~<name>; a value containing any of
+# ~ = ! & | is passed to `dotnet test --filter` as a full filter expression. Examples:
+#   make test-unit TEST_FILTER=DiscoveryRegressionTests
+#   make test-unit TEST_FILTER='FullyQualifiedName~Namespace&FullyQualifiedName!~Opaque'
+#   make test-integration TEST_FILTER='Category=Integration'
+TEST_FILTER ?=
+test_filter_is_expr = $(or $(findstring ~,$(TEST_FILTER)),$(findstring =,$(TEST_FILTER)),$(findstring !,$(TEST_FILTER)),$(findstring &,$(TEST_FILTER)),$(findstring |,$(TEST_FILTER)))
+test_filter_user = $(if $(strip $(TEST_FILTER)),$(if $(test_filter_is_expr),$(strip $(TEST_FILTER)),FullyQualifiedName~$(strip $(TEST_FILTER))))
+# $(call test_filter_arg,<built-in filter or empty>) -> the --filter argument for dotnet test (or nothing).
+test_filter_arg = $(if $(test_filter_user),$(if $(1),--filter "($(1))&($(test_filter_user))",--filter "$(test_filter_user)"),$(if $(1),--filter "$(1)"))
+
 ##@ General
 
 # The help target prints out all targets with their descriptions organized
@@ -29,7 +48,12 @@ TEST_KUBE_CONTEXT ?= kf-integrations
 
 .PHONY: help
 help: ## Display this help.
-	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } /^##V / { s = substr($$0, 5); i = index(s, " | "); printf "  \033[33m%-18s\033[0m %s\n", substr(s, 1, i - 1), substr(s, i + 3) } ' $(MAKEFILE_LIST)
+
+##@ Variables (VAR=value, e.g. make test-unit TEST_FILTER=MyTests)
+##V TEST_FILTER | Limit test targets to matching tests: a class/test name (FullyQualifiedName~<name>) or a full dotnet filter expression; ANDed with each target's own filter
+##V TEST_FRAMEWORK | Target framework for test runs (default net10.0; empty = all frameworks)
+##V TEST_KUBE_CONTEXT | kubectl context for integration tests and cluster cleanup (default kf-integrations)
 
 ##@ Development
 
@@ -100,26 +124,26 @@ installpackage: ## Install a package to the project
 testall: ## Run all tests (unit + integration if RUN_INTEGRATION_TESTS=true)
 	@source .env; \
 	source .test.env; \
-	dotnet test
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,)
 
 .PHONY: test
 test: ## Run a single test (interactive selection with fzf)
 	@source .env; \
 	source .test.env; \
-	dotnet test --no-restore --list-tests | \
+	dotnet test $(TEST_FRAMEWORK_FLAG) --no-restore --list-tests | \
 	grep -A 1000 "The following Tests are available:" | \
 	awk 'NR>1' | \
 	cut -d ' ' -f 5- | \
 	sed 's/(.*//i' | \
 	sort | uniq | \
 	fzf | \
-	xargs -I {} dotnet test --filter {} --logger "console;verbosity=detailed"
+	xargs -I {} dotnet test $(TEST_FRAMEWORK_FLAG) --filter {} --logger "console;verbosity=detailed"
 
 .PHONY: test-unit
 test-unit: ## Run unit tests only (excludes integration tests)
 	@source .env; \
 	source .test.env; \
-	dotnet test --filter "FullyQualifiedName!~Integration"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName!~Integration)
 
 .PHONY: test-integration
 test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=true)
@@ -129,7 +153,7 @@ test-integration: ## Run integration tests only (requires RUN_INTEGRATION_TESTS=
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test --filter "FullyQualifiedName~Integration"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~Integration)
 
 .PHONY: test-integration-fast
 test-integration-fast: ## Run integration tests on single framework (net8.0 only, ~50% faster)
@@ -139,7 +163,7 @@ test-integration-fast: ## Run integration tests on single framework (net8.0 only
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test -f net8.0 --filter "FullyQualifiedName~Integration"
+	dotnet test -f net8.0 $(call test_filter_arg,FullyQualifiedName~Integration)
 
 .PHONY: test-integration-full
 test-integration-full: ## Run integration tests on all frameworks (net8.0 + net10.0)
@@ -149,7 +173,7 @@ test-integration-full: ## Run integration tests on all frameworks (net8.0 + net1
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test --filter "FullyQualifiedName~Integration"
+	dotnet test $(call test_filter_arg,FullyQualifiedName~Integration)
 
 .PHONY: test-integration-smoke-net10
 test-integration-smoke-net10: ## Run smoke tests on net10.0 only (Inventory tests)
@@ -159,7 +183,7 @@ test-integration-smoke-net10: ## Run smoke tests on net10.0 only (Inventory test
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test -f net10.0 --filter "FullyQualifiedName~Integration&FullyQualifiedName~Inventory_"
+	dotnet test -f net10.0 $(call test_filter_arg,FullyQualifiedName~Integration&FullyQualifiedName~Inventory_)
 
 .PHONY: test-ci
 test-ci: ## Run CI-optimized tests (fast on PRs, full on main branch)
@@ -178,7 +202,7 @@ test-coverage: ## Run all tests with code coverage and generate HTML report
 	source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test \
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
@@ -191,8 +215,8 @@ test-coverage: ## Run all tests with code coverage and generate HTML report
 .PHONY: test-coverage-unit
 test-coverage-unit: ## Run unit tests only with code coverage
 	@echo "Running unit tests with coverage..."; \
-	dotnet test \
-		--filter "Category!=Integration" \
+	dotnet test $(TEST_FRAMEWORK_FLAG) \
+		$(call test_filter_arg,Category!=Integration) \
 		--collect:"XPlat Code Coverage" \
 		--results-directory ./coverage/unit \
 		-- DataCollectionRunSettings.DataCollectors.DataCollector.Configuration.Format=cobertura; \
@@ -229,56 +253,56 @@ test-coverage-clean: ## Remove coverage reports
 test-watch: ## Run tests in watch mode (auto-rerun on file changes)
 	@source .env; \
 	source .test.env; \
-	dotnet watch test
+	dotnet watch test $(TEST_FRAMEWORK_FLAG)
 
 .PHONY: test-store-jks
 test-store-jks: ## Run K8SJKS store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SJKSStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SJKSStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-pkcs12
 test-store-pkcs12: ## Run K8SPKCS12 store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SPKCS12StoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SPKCS12StoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-secret
 test-store-secret: ## Run K8SSecret store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SSecretStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SSecretStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-tls
 test-store-tls: ## Run K8STLSSecr store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8STLSSecrStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8STLSSecrStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-cluster
 test-store-cluster: ## Run K8SCluster store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SClusterStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SClusterStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-ns
 test-store-ns: ## Run K8SNS store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SNSStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SNSStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-store-cert
 test-store-cert: ## Run K8SCert store type integration tests
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test --filter "FullyQualifiedName~K8SCertStoreIntegrationTests" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~K8SCertStoreIntegrationTests) --logger "console;verbosity=minimal"
 
 .PHONY: test-cluster-setup
 test-cluster-setup: ## Display instructions for setting up test cluster
@@ -356,8 +380,8 @@ test-store-type: ## Run integration tests for a single store type with cleanup (
 	@source .env; \
 	source .test.env; \
 	export RUN_INTEGRATION_TESTS=true; \
-	dotnet test \
-		--filter "FullyQualifiedName~$(STORE)StoreIntegrationTests" \
+	dotnet test $(TEST_FRAMEWORK_FLAG) \
+		$(call test_filter_arg,FullyQualifiedName~$(STORE)StoreIntegrationTests) \
 		--logger "console;verbosity=normal"
 
 .PHONY: test-integration-no-cleanup
@@ -369,7 +393,7 @@ test-integration-no-cleanup: ## Run integration tests without cleanup (leaves se
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test --filter "FullyQualifiedName~Integration"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~Integration)
 
 .PHONY: test-all-with-cleanup
 test-all-with-cleanup: ## Run all tests (unit + integration) with cleanup before and after
@@ -379,7 +403,7 @@ test-all-with-cleanup: ## Run all tests (unit + integration) with cleanup before
 	@echo "=== Running unit tests ==="
 	@source .env 2>/dev/null || true; \
 	source .test.env 2>/dev/null || true; \
-	dotnet test --filter "FullyQualifiedName!~Integration" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName!~Integration) --logger "console;verbosity=minimal"
 	@echo ""
 	@echo "=== Running integration tests ==="
 	@source .env 2>/dev/null || true; \
@@ -388,7 +412,7 @@ test-all-with-cleanup: ## Run all tests (unit + integration) with cleanup before
 	if [ -n "$$INTEGRATION_TEST_KUBECONFIG" ]; then \
 		export INTEGRATION_TEST_KUBECONFIG; \
 	fi; \
-	dotnet test --filter "FullyQualifiedName~Integration" --logger "console;verbosity=minimal"
+	dotnet test $(TEST_FRAMEWORK_FLAG) $(call test_filter_arg,FullyQualifiedName~Integration) --logger "console;verbosity=minimal"
 	@echo ""
 	@echo "=== Post-test cleanup ==="
 	@$(MAKE) test-cluster-cleanup

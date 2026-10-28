@@ -50,6 +50,7 @@ The project includes convenient Makefile targets for all common test operations:
 ```bash
 # Testing
 make test-unit              # Run unit tests only
+make test-unit TEST_FILTER=SomeTestClass   # Run one class/test (bare name = FullyQualifiedName~name, or a dotnet filter expression)
 make test-integration       # Run integration tests only
 make test-store-jks         # Test specific store type
 

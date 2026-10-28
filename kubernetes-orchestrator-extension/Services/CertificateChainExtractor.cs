@@ -5,11 +5,14 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
+using Org.BouncyCastle.Security.Certificates;
+using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Services;
 
@@ -66,7 +69,23 @@ public class CertificateChainExtractor
 
         // Fallback: try to parse as a single DER certificate
         _logger.LogDebug("Failed to parse {Source} as PEM chain, trying DER format", sourceDescription);
-        var certObj = _kubeClient.ReadDerCertificate(certData);
+        X509Certificate certObj = null;
+        try
+        {
+            certObj = ReadDerCertificate(certData);
+        }
+        catch (Exception ex) when (ex is FormatException or CertificateException)
+        {
+            // Only the two outcomes that mean "this data is not a DER certificate" are absorbed:
+            //  - FormatException: not Base-64 (e.g. a PEM private key, a password or other text stored under a
+            //    certificate key);
+            //  - CertificateException (BouncyCastle): Base-64 that is not a well-formed X.509 certificate
+            //    (truncated or foreign ASN.1).
+            // Anything else (a faulty client, an I/O or programming error) is a real fault and propagates.
+            _logger.LogDebug("{Source} is not a DER certificate ({ExceptionType}: {Reason})", sourceDescription,
+                ex.GetType().Name, ex.Message);
+        }
+
         if (certObj != null)
         {
             var certPem = _kubeClient.ConvertToPem(certObj);
@@ -75,11 +94,24 @@ public class CertificateChainExtractor
         }
         else
         {
-            _logger.LogWarning("Failed to parse certificate from {Source} as PEM or DER format", sourceDescription);
+            // Debug, not Warning: K8SCluster/K8SNS inventory visits every Opaque secret in scope, and a value under an
+            // inventory key that is not a certificate (a private key under 'key' or 'tls.key', a password, a CA bundle
+            // field holding other data) is normal. A key-only or certificate-less secret is a valid inventory result
+            // (no certificates), reported by the caller; it is not an operator-actionable condition here.
+            _logger.LogDebug(
+                "No certificate found in {Source}: data is neither a PEM certificate nor a DER certificate; skipping",
+                sourceDescription);
         }
 
         return result;
     }
+
+    /// <summary>
+    /// Reads base64 DER certificate data. Virtual so tests can inject faults other than "this is not a certificate".
+    /// </summary>
+    /// <param name="certData">Base64-encoded DER certificate.</param>
+    /// <returns>The certificate, or null if the data decodes but holds no certificate.</returns>
+    protected virtual X509Certificate ReadDerCertificate(string certData) => _kubeClient.ReadDerCertificate(certData);
 
     /// <summary>
     /// Extracts certificates from byte array data (converts to UTF-8 string first).
@@ -165,7 +197,11 @@ public class CertificateChainExtractor
 
         if (secretData == null)
         {
-            _logger.LogWarning("Secret data is null for {SecretName} in {Namespace}", secretName, namespaceName);
+            // Debug, not Warning: K8SCluster/K8SNS inventory visits every Opaque secret in scope, and a secret with no
+            // data is ordinary there. For a single configured store the job result already reports it ("No
+            // certificates found in store '<path>'").
+            _logger.LogDebug("Secret data is null for {SecretName} in {Namespace}; no certificates to extract",
+                secretName, namespaceName);
             return certsList;
         }
 

@@ -101,8 +101,13 @@ public interface ISecretHandler
     /// </summary>
     /// <param name="allowedKeys">Data keys to look for in secrets.</param>
     /// <param name="namespacesCsv">Comma-separated namespaces to search, or "all" for cluster-wide.</param>
+    /// <param name="ignoredNamespaces">
+    /// Namespaces to exclude (case-insensitive, whitespace-tolerant). They are removed before any API call lists their
+    /// secrets, so a service account that cannot list secrets in an ignored namespace does not fail the job.
+    /// </param>
     /// <returns>List of store paths in format "namespace/secretname".</returns>
-    List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv);
+    List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null);
 
     #endregion
 

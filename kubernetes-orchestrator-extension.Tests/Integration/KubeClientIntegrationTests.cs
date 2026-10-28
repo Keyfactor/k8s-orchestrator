@@ -613,6 +613,39 @@ public class KubeClientIntegrationTests : IntegrationTestBase
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task DiscoverSecrets_OpaqueType_SkipsSecretsWithoutAnAllowedKey()
+    {
+        // Arrange - one secret with an allowed key, one without (#101)
+        var withKeyName = $"test-discover-haskey-{TestRunId}";
+        var withoutKeyName = $"test-discover-nokey-{TestRunId}";
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(withKeyName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "keystore.jks", Encoding.UTF8.GetBytes("placeholder") } }
+        }, TestNamespace);
+        TrackSecret(withKeyName);
+
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(withoutKeyName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "username", Encoding.UTF8.GetBytes("admin") } }
+        }, TestNamespace);
+        TrackSecret(withoutKeyName);
+
+        var client = CreateClient();
+
+        // Act
+        var locations = client.DiscoverSecrets(new[] { "jks", "keystore.jks", "truststore.jks" }, "opaque", TestNamespace);
+
+        // Assert
+        Assert.Contains(locations, l => l.EndsWith($"/{TestNamespace}/secrets/{withKeyName}"));
+        Assert.DoesNotContain(locations, l => l.EndsWith($"/{TestNamespace}/secrets/{withoutKeyName}"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
     public async Task DiscoverSecrets_TlsType_FindsTlsSecrets()
     {
         // Arrange

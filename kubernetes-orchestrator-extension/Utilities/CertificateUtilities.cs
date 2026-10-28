@@ -148,7 +148,9 @@ public static class CertificateUtilities
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error parsing certificate from DER: {Message}", ex.Message);
+            // Debug, not Error: the exception is rethrown and the caller decides how serious it is. Callers such as
+            // CertificateChainExtractor probe arbitrary secret data as DER, where "not a certificate" is expected.
+            Logger.LogDebug(ex, "Error parsing certificate from DER: {Message}", ex.Message);
             throw;
         }
     }
@@ -546,14 +548,32 @@ public static class CertificateUtilities
         {
             var pemReader = new PemReader(new StringReader(pemData));
             var certificates = new List<X509Certificate>();
+            var blockIndex = 0;
 
             PemObject pemObject;
             while ((pemObject = pemReader.ReadPemObject()) != null)
             {
                 if (pemObject.Type == "CERTIFICATE")
                 {
+                    // Upstream BouncyCastle behaviour (BouncyCastle.Cryptography 2.6.2), deliberately not worked around
+                    // here: PemReader accepts any well-formed Base-64 body inside a CERTIFICATE block and
+                    // X509CertificateParser.ReadCertificate returns null (it does not throw) when those bytes are not an
+                    // X.509 certificate. So a placeholder such as
+                    // "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----" (or an empty body) is not rejected, and
+                    // ReadCertificate returns null for it. We skip that block (logged at Debug) rather than add the null, so
+                    // every entry in the returned list is a real certificate and callers need not null-check. Only a body
+                    // that is not valid Base-64 throws (FormatException), which is left to propagate.
+                    blockIndex++;
                     var certificateParser = new X509CertificateParser();
                     var certificate = certificateParser.ReadCertificate(pemObject.Content);
+                    if (certificate == null)
+                    {
+                        Logger.LogDebug(
+                            "CERTIFICATE block {BlockIndex} in PEM data ({ByteCount} decoded bytes) did not contain an X.509 certificate; skipping it",
+                            blockIndex, pemObject.Content?.Length ?? 0);
+                        continue;
+                    }
+
                     certificates.Add(certificate);
                     Logger.LogTrace("Loaded certificate {Index}: {Summary}",
                         certificates.Count, LoggingUtilities.GetCertificateSummary(certificate));
