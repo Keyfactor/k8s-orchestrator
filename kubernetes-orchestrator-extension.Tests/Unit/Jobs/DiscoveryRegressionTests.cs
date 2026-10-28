@@ -82,7 +82,7 @@ public class DiscoveryRegressionTests
         ns, name, "kubernetes.io/tls",
         new Dictionary<string, byte[]> { ["tls.crt"] = new byte[] { 1, 2, 3 }, ["tls.key"] = new byte[] { 4, 5, 6 } });
 
-    private static DiscoveryJobConfiguration CustomerConfig(string dirs = "all") => new()
+    private static DiscoveryJobConfiguration CustomerConfig(string dirs = "all", string ignoredDirs = "") => new()
     {
         Capability = "K8STLSSecr",
         ClientMachine = "customer-cluster",
@@ -95,7 +95,7 @@ public class DiscoveryRegressionTests
         {
             { "dirs", dirs },
             { "extensions", "" },
-            { "ignoreddirs", "" },
+            { "ignoreddirs", ignoredDirs },
             { "patterns", "" }
         }
     };
@@ -183,5 +183,108 @@ public class DiscoveryRegressionTests
         Assert.Equal("default", discovery.NamespacesPassedToHandler);
         Assert.Single(discovered);
         Assert.EndsWith("/default/secrets/in-default", discovered[0]);
+    }
+
+    [Fact]
+    public void Discovery_BlankDirs_LogsFallbackWarning()
+    {
+        var secrets = new[] { TlsSecret("default", "in-default") };
+        var discovery = new FakeClusterTlsDiscovery(secrets, new[] { "default" });
+
+        var result = discovery.ProcessJob(CustomerConfig(""), _ => true);
+
+        Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
+        // The fallback must be visible to the operator, not silent.
+        Assert.Contains(discovery.CapturedLog.Entries, e =>
+            e.Level == LogLevel.Warning &&
+            e.Message.Contains("No 'Directories to search'") &&
+            e.Message.Contains("falling back to the 'default' namespace"));
+    }
+
+    [Fact]
+    public void Discovery_ExplicitDirs_DoesNotLogFallbackWarning()
+    {
+        var secrets = new[] { TlsSecret("default", "in-default") };
+        var discovery = new FakeClusterTlsDiscovery(secrets, new[] { "default" });
+
+        discovery.ProcessJob(CustomerConfig("default"), _ => true);
+
+        Assert.DoesNotContain(discovery.CapturedLog.Entries,
+            e => e.Message.Contains("falling back to the 'default' namespace"));
+    }
+
+    [Theory]
+    [InlineData("team-b")]
+    [InlineData("TEAM-B")]
+    [InlineData("  Team-B  ")]
+    [InlineData("team-b;")]
+    public void Discovery_DirsAll_IgnoredDirs_ExcludesIgnoredNamespaceFromSubmission(string ignoredDirs)
+    {
+        var secrets = new[]
+        {
+            TlsSecret("team-a", "web-tls"),
+            TlsSecret("team-b", "ingress-tls"),
+            TlsSecret("team-b", "api-tls"),
+            TlsSecret("kube-system", "webhook-tls")
+        };
+        var discovery = new FakeClusterTlsDiscovery(secrets, new[] { "default", "team-a", "team-b", "kube-system" });
+        var discovered = new List<string>();
+
+        var result = discovery.ProcessJob(CustomerConfig("all", ignoredDirs), items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        });
+
+        Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
+        // 'all' is still handed to the handler; the ignore list is applied after discovery.
+        Assert.Equal("all", discovery.NamespacesPassedToHandler);
+        Assert.Equal(2, discovered.Count);
+        Assert.Contains(discovered, d => d.EndsWith("/team-a/secrets/web-tls"));
+        Assert.Contains(discovered, d => d.EndsWith("/kube-system/secrets/webhook-tls"));
+        Assert.DoesNotContain(discovered, d => d.Contains("/team-b/"));
+    }
+
+    [Fact]
+    public void Discovery_DirsAll_IgnoredDirs_MultipleMixedCaseAndWhitespace_ExcludesEveryIgnoredNamespace()
+    {
+        var secrets = new[]
+        {
+            TlsSecret("team-a", "web-tls"),
+            TlsSecret("team-b", "ingress-tls"),
+            TlsSecret("kube-system", "webhook-tls"),
+            TlsSecret("keep-me", "kept-tls")
+        };
+        var discovery = new FakeClusterTlsDiscovery(secrets, new[] { "default", "team-a", "team-b", "kube-system", "keep-me" });
+        var discovered = new List<string>();
+
+        var result = discovery.ProcessJob(CustomerConfig("all", " Team-A , KUBE-System ; team-b "), items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        });
+
+        Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
+        var kept = Assert.Single(discovered);
+        Assert.EndsWith("/keep-me/secrets/kept-tls", kept);
+    }
+
+    [Fact]
+    public void Discovery_DirsAll_IgnoredDirs_AllNamespacesIgnored_SubmitsNothingAndWarns()
+    {
+        var secrets = new[] { TlsSecret("team-a", "web-tls") };
+        var discovery = new FakeClusterTlsDiscovery(secrets, new[] { "default", "team-a" });
+        var discovered = new List<string>();
+
+        var result = discovery.ProcessJob(CustomerConfig("all", "team-a"), items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        });
+
+        Assert.Equal(OrchestratorJobStatusJobResult.Success, result.Result);
+        Assert.Empty(discovered);
+        Assert.Contains(discovery.CapturedLog.Entries,
+            e => e.Level == LogLevel.Warning && e.Message.Contains("Discovery found 0 stores"));
     }
 }

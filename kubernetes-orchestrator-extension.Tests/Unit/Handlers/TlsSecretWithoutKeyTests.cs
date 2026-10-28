@@ -81,4 +81,47 @@ public class TlsSecretWithoutKeyTests
         Assert.Single(handler.GetCertificates(1));
         Assert.False(handler.HasPrivateKey());
     }
+
+    private static ISecretOperationContext ScopeContext(string ns)
+    {
+        var mock = new Mock<ISecretOperationContext>();
+        mock.Setup(c => c.KubeNamespace).Returns(ns);
+        mock.Setup(c => c.KubeSecretName).Returns(string.Empty);
+        mock.Setup(c => c.StorePath).Returns(ns);
+        mock.Setup(c => c.StorePassword).Returns(string.Empty);
+        mock.Setup(c => c.PasswordSecretPath).Returns(string.Empty);
+        mock.Setup(c => c.PasswordFieldName).Returns(string.Empty);
+        mock.Setup(c => c.SeparateChain).Returns(false);
+        mock.Setup(c => c.IncludeCertChain).Returns(true);
+        mock.Setup(c => c.CertificateDataFieldName).Returns(string.Empty);
+        return mock.Object;
+    }
+
+    [Fact]
+    public void ClusterInventory_CertOnlyTlsSecret_ReturnsCertWithoutKey_AndSkipsMissingOrEmptyCrt()
+    {
+        var kube = Client();
+        var handler = new ClusterSecretHandler(kube.Client, new Mock<ILogger>().Object, ScopeContext(Ns));
+
+        var entries = handler.GetInventoryEntries(1);
+
+        var entry = Assert.Single(entries);
+        Assert.Equal($"{Ns}/secrets/tls/cert-only", entry.Alias);
+        Assert.Single(entry.Certificates);
+        Assert.False(entry.HasPrivateKey);
+    }
+
+    [Fact]
+    public void NamespaceInventory_CertOnlyTlsSecret_ReturnsCertWithoutKey_AndSkipsMissingOrEmptyCrt()
+    {
+        var kube = Client();
+        var handler = new NamespaceSecretHandler(kube.Client, new Mock<ILogger>().Object, ScopeContext(Ns));
+
+        var entries = handler.GetInventoryEntries(1);
+
+        var entry = Assert.Single(entries);
+        Assert.Equal("tls/cert-only", entry.Alias);
+        Assert.Single(entry.Certificates);
+        Assert.False(entry.HasPrivateKey);
+    }
 }
