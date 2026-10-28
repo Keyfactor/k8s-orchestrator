@@ -696,7 +696,8 @@ public class KubeCertificateManagerClient
         _logger.LogDebug("Requested namespaces: [{Requested}]; cluster has {Count} namespaces",
             string.Join(", ", nsList), namespaces.Count);
 
-        var matched = FilterNamespaces(namespaces, nsList).ToList();
+        // Discovery jobs: "all" in the namespace list is the documented wildcard keyword.
+        var matched = FilterNamespaces(namespaces, nsList, allKeywordIsWildcard: true).ToList();
         if (matched.Count == 0)
             _logger.LogWarning(
                 "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
@@ -734,30 +735,56 @@ public class KubeCertificateManagerClient
     public sealed record DiscoveredSecret(string Namespace, string Name, string Kind, V1Secret Secret, string Location);
 
     /// <summary>
-    /// Single-pass variant of the two <see cref="DiscoverSecrets"/> calls K8SCluster / K8SNS inventory used to make
+    /// Single-pass variant of the two <see cref="DiscoverSecrets"/> calls K8SCluster inventory used to make
     /// (kubernetes.io/tls with key "tls.crt", then every Opaque secret via <see cref="OpaqueKeyMatch.AllSecrets"/>):
-    /// namespaces are listed once and each matched namespace's secrets are listed once. The same predicates apply, and
+    /// namespaces are listed once and each namespace's secrets are listed once. The same predicates apply, and
     /// the result keeps the same order (all TLS secrets, then all Opaque secrets), but the secret objects are returned
     /// so inventory does not have to GET each one again.
+    /// Covers EVERY namespace in the cluster; this is an explicit "whole cluster" request, not a name match, so a
+    /// namespace that happens to be called "all" is simply one of the namespaces.
     /// </summary>
-    /// <param name="ns">Namespace filter: a CSV of names, or "all".</param>
     /// <returns>Discovered TLS secrets followed by discovered Opaque secrets.</returns>
-    public List<DiscoveredSecret> DiscoverInventorySecrets(string ns)
+    public List<DiscoveredSecret> DiscoverClusterInventorySecrets()
     {
         _logger.MethodEntry(LogLevel.Debug);
         var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         var namespaces = FetchNamespaces(clusterName).ToList();
-        var nsList = (ns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        _logger.LogDebug("Requested namespaces: [{Requested}]; cluster has {Count} namespaces",
-            string.Join(", ", nsList), namespaces.Count);
+        _logger.LogDebug("Inventorying all {Count} namespaces in the cluster", namespaces.Count);
 
-        var matched = FilterNamespaces(namespaces, nsList).ToList();
+        var result = DiscoverInventorySecretsIn(namespaces, clusterName);
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
+    }
+
+    /// <summary>
+    /// Same single-pass listing as <see cref="DiscoverClusterInventorySecrets"/>, restricted to ONE namespace
+    /// (K8SNS inventory). <paramref name="namespaceName"/> is matched literally against namespace names
+    /// (case-insensitive, surrounding whitespace ignored): it is never a list and the discovery keyword "all" has no
+    /// special meaning, so a namespace that is really named "all" only returns its own secrets.
+    /// </summary>
+    /// <param name="namespaceName">Exact namespace name.</param>
+    /// <returns>Discovered TLS secrets followed by discovered Opaque secrets.</returns>
+    public List<DiscoveredSecret> DiscoverNamespaceInventorySecrets(string namespaceName)
+    {
+        _logger.MethodEntry(LogLevel.Debug);
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        _logger.LogDebug("Requested namespace (literal match): '{Requested}'; cluster has {Count} namespaces",
+            namespaceName, namespaces.Count);
+
+        var matched = FilterNamespaces(namespaces, new[] { namespaceName }, allKeywordIsWildcard: false).ToList();
         if (matched.Count == 0)
             _logger.LogWarning(
-                "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
-                "Use 'all' to search every namespace",
-                string.Join(", ", nsList), namespaces.Count);
+                "Namespace '{Requested}' does not exist among the {Count} namespaces in the cluster",
+                namespaceName, namespaces.Count);
 
+        var result = DiscoverInventorySecretsIn(matched, clusterName);
+        _logger.MethodExit(LogLevel.Debug);
+        return result;
+    }
+
+    private List<DiscoveredSecret> DiscoverInventorySecretsIn(IEnumerable<V1Namespace> matched, string clusterName)
+    {
         var tls = new List<DiscoveredSecret>();
         var opaque = new List<DiscoveredSecret>();
         var tlsKeys = new[] { "tls.crt" };
@@ -788,7 +815,6 @@ public class KubeCertificateManagerClient
         }
 
         _logger.LogDebug("Discovered {Tls} TLS and {Opaque} Opaque secrets", tls.Count, opaque.Count);
-        _logger.MethodExit(LogLevel.Debug);
         return tls.Concat(opaque).ToList();
     }
 
@@ -813,11 +839,17 @@ public class KubeCertificateManagerClient
     /// Filters namespaces based on the provided list.
     /// </summary>
     /// <param name="namespaces">All available namespaces.</param>
-    /// <param name="nsList">List of namespace names to include, or "all" for all namespaces.</param>
+    /// <param name="nsList">List of namespace names to include.</param>
+    /// <param name="allKeywordIsWildcard">
+    /// True only for discovery-job input, where the entry "all" (case-insensitive) means "every namespace". False
+    /// matches every entry as a literal namespace name, so a namespace actually called "all" is just a namespace.
+    /// </param>
     /// <returns>Filtered enumerable of namespaces.</returns>
-    private IEnumerable<V1Namespace> FilterNamespaces(IEnumerable<V1Namespace> namespaces, string[] nsList)
+    private IEnumerable<V1Namespace> FilterNamespaces(
+        IEnumerable<V1Namespace> namespaces, string[] nsList, bool allKeywordIsWildcard)
     {
-        var searchAll = nsList.Any(n => string.Equals(n?.Trim(), "all", StringComparison.OrdinalIgnoreCase));
+        var searchAll = allKeywordIsWildcard &&
+                        nsList.Any(n => string.Equals(n?.Trim(), "all", StringComparison.OrdinalIgnoreCase));
         foreach (var nsObj in namespaces)
             if (searchAll || nsList.Any(n => string.Equals(n?.Trim(), nsObj.Metadata.Name, StringComparison.OrdinalIgnoreCase)))
             {

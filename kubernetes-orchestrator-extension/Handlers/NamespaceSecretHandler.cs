@@ -82,7 +82,7 @@ public class NamespaceSecretHandler : SecretHandlerBase
             // One namespace list and one secret list for the namespace; the listed secrets (with data) are handed
             // to the inner handlers so no secret is read again (GitHub issue #104). TLS secrets come first, then
             // every Opaque secret (#101), exactly as the two separate discovery passes used to order them.
-            foreach (var found in KubeClient.DiscoverInventorySecrets(targetNamespace))
+            foreach (var found in KubeClient.DiscoverNamespaceInventorySecrets(targetNamespace))
             {
                 ProcessSecretEntry(found, entries, errors, jobId);
             }

@@ -34,6 +34,11 @@ have specific keys in the Kubernetes secret.
 - `<cluster_name>/<namespace_name>`
 - `<cluster_name>/namespace/<namespace_name>` (the form returned by discovery)
 
+The namespace in the store path is always matched literally (case-insensitive), with no wildcard meaning. In particular, a
+namespace that is really named `all` is inventoried like any other namespace and returns only its own secrets. The word
+`all` is a keyword only in the discovery `Directories to search` field, where it selects every namespace, so such a
+namespace cannot be selected by name there; add its store manually using the store path above.
+
 ### Alias Patterns
 
 Inventory reports one entry per secret, keyed by the alias `<tls|opaque>/<secret_name>`
