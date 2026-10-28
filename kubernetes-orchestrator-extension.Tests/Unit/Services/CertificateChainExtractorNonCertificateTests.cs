@@ -113,6 +113,21 @@ public class CertificateChainExtractorNonCertificateTests
         Assert.Empty(logger.WarningsOrWorse);
     }
 
+    // K8SCluster/K8SNS inventory visits every Opaque secret, and a secret with no data is ordinary there.
+    [Fact]
+    public void ExtractFromSecretData_NullSecretData_ReturnsEmpty_WithoutWarningOrWorse()
+    {
+        var logger = new RecordingLogger();
+
+        var result = new CertificateChainExtractor(Client(), logger)
+            .ExtractFromSecretData(null, new[] { "tls.crt" }, "empty", "team-a");
+
+        Assert.Empty(result);
+        Assert.Empty(logger.WarningsOrWorse);
+        // Still recorded at Debug, naming the secret.
+        Assert.Contains(logger.Entries, e => e.Level == LogLevel.Debug && e.Message.Contains("empty"));
+    }
+
     [Fact]
     public void ExtractCertificates_NotBase64_DebugEntryCarriesTheReason_NotJustTheExceptionType()
     {

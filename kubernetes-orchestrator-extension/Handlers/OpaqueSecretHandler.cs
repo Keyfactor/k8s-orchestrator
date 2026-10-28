@@ -292,7 +292,10 @@ public class OpaqueSecretHandler : SecretHandlerBase
     {
         if (secret.Data == null)
         {
-            Logger.LogWarning("Secret '{Name}' has no data", Context.KubeSecretName);
+            // Debug, not Warning: K8SCluster/K8SNS inventory visits every Opaque secret in scope, and a secret with no
+            // data is ordinary there. For a single K8SSecret store the job result already reports it ("No
+            // certificates found in store '<path>'").
+            Logger.LogDebug("Secret '{Name}' has no data", Context.KubeSecretName);
             return new List<string>();
         }
 

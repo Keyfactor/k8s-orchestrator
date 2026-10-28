@@ -209,4 +209,74 @@ public class KeyOnlyOpaqueInventoryTests
         Assert.Contains(entries, e => e.Alias == $"{Ns}/secrets/opaque/good" && e.Certificates.Count == 1);
         Assert.Contains(entries, e => e.Alias == $"{Ns}/secrets/opaque/key-only" && e.Certificates.Count == 0);
     }
+
+    // A secret with no data at all (kubectl create secret generic x, or every field removed) is listed with Data == null.
+    // K8SCluster/K8SNS inventory visits every Opaque secret, so this is ordinary there and must not be a Warning.
+    public static IEnumerable<object[]> NoDataValues()
+    {
+        yield return new object[] { null };
+        yield return new object[] { new Dictionary<string, byte[]>() };
+    }
+
+    private static MockedKubeClient NoDataClient(Dictionary<string, byte[]> data) => MockedKubeClientFactory.Create(new[]
+    {
+        Opaque("empty", data),
+        Opaque("good", new Dictionary<string, byte[]> { ["tls.crt"] = CertPem(), ["tls.key"] = KeyPem() })
+    });
+
+    [Theory]
+    [MemberData(nameof(NoDataValues))]
+    public void Namespace_Inventory_SecretWithNoData_LogsNoWarning_AndOtherSecretsStillInventoried(
+        Dictionary<string, byte[]> data)
+    {
+        var log = new CapturingLogger();
+        var handler = new NamespaceSecretHandler(NoDataClient(data).Client, log, Context());
+
+        var entries = handler.GetInventoryEntries(1);
+
+        Assert.Empty(log.Warnings);
+        Assert.Contains(entries, e => e.Alias == "opaque/empty" && e.Certificates.Count == 0);
+        Assert.Contains(entries, e => e.Alias == "opaque/good" && e.Certificates.Count == 1);
+    }
+
+    [Theory]
+    [MemberData(nameof(NoDataValues))]
+    public void Cluster_Inventory_SecretWithNoData_LogsNoWarning_AndOtherSecretsStillInventoried(
+        Dictionary<string, byte[]> data)
+    {
+        var log = new CapturingLogger();
+        var handler = new ClusterSecretHandler(NoDataClient(data).Client, log, Context());
+
+        var entries = handler.GetInventoryEntries(1);
+
+        Assert.Empty(log.Warnings);
+        Assert.Contains(entries, e => e.Alias == $"{Ns}/secrets/opaque/empty" && e.Certificates.Count == 0);
+        Assert.Contains(entries, e => e.Alias == $"{Ns}/secrets/opaque/good" && e.Certificates.Count == 1);
+    }
+
+    /// <summary>
+    /// The operator-facing signal for a single configured store is the job result, not a log Warning: an empty K8SSecret
+    /// store still reports "No certificates found in store '&lt;path&gt;'" (as Success), so lowering the log level of
+    /// "Secret has no data" does not hide anything from the operator.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(NoDataValues))]
+    public void K8SSecret_Inventory_SecretWithNoData_ReturnsSuccessWithNoCertificatesMessage(
+        Dictionary<string, byte[]> data)
+    {
+        var job = new FakeSecretInventory(new[] { Opaque("empty", data) });
+        var submitted = new List<CurrentInventoryItem>();
+
+        var result = job.ProcessJob(Config("empty"), items =>
+        {
+            submitted.AddRange(items);
+            return true;
+        });
+
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}: {result.FailureMessage}");
+        Assert.Contains($"No certificates found in store '{Ns}/empty'", result.FailureMessage ?? "",
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(submitted);
+    }
 }

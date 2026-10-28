@@ -197,7 +197,11 @@ public class CertificateChainExtractor
 
         if (secretData == null)
         {
-            _logger.LogWarning("Secret data is null for {SecretName} in {Namespace}", secretName, namespaceName);
+            // Debug, not Warning: K8SCluster/K8SNS inventory visits every Opaque secret in scope, and a secret with no
+            // data is ordinary there. For a single configured store the job result already reports it ("No
+            // certificates found in store '<path>'").
+            _logger.LogDebug("Secret data is null for {SecretName} in {Namespace}; no certificates to extract",
+                secretName, namespaceName);
             return certsList;
         }
 
