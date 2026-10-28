@@ -1,0 +1,375 @@
+# End-to-End Lab Test Plan
+
+This plan describes the end-to-end cases that drive the Kubernetes Orchestrator Extension through **Keyfactor Command**
+and a real **Universal Orchestrator** (UO) against a real Kubernetes cluster. It complements the unit and integration
+tests (which exercise the extension code directly) by covering the full path: Command schedules a job, the UO loads the
+extension and runs it, and Command stores the result.
+
+The cases were first run by hand against build `8df0e8d3` for [PR #103](https://github.com/Keyfactor/k8s-orchestrator/pull/103)
+(discovery and inventory fixes for 2.0.2) and all passed, apart from the known deviations in
+[section 8](#8-known-issues-k-cases). They are now codified in [`scripts/e2e/`](../scripts/e2e/README.md); every case ID
+below is reported by those scripts under the same ID.
+
+Contents: [1 Prerequisites](#1-prerequisites) · [2 Safety rules](#2-safety-rules) · [3 How to run](#3-how-to-run) ·
+[4 Test data](#4-test-data) · [5 Discovery](#5-discovery-cases-d) · [6 Approve and inventory](#6-approve-and-inventory-cases-i) ·
+[7 Management](#7-management-cases-m) · [8 Known issues](#8-known-issues-k-cases) ·
+[9 Previous-build comparison](#9-previous-build-regression-comparison-b-cases) · [10 Not testable](#10-what-is-not-testable-in-the-lab) ·
+[11 Reading results](#11-reading-results-and-keeping-the-plan-current) · [12 Open questions](#12-open-questions-to-confirm-before-the-first-real-run)
+
+## 1. Prerequisites
+
+Lab pieces (no credentials belong in this repository; they are supplied through environment variables, see
+[`scripts/e2e/lab-env.sh`](../scripts/e2e/lab-env.sh)):
+
+| Piece | Needed for | Notes |
+|---|---|---|
+| Keyfactor Command, reachable API | everything except `fixtures` | the seven store types (`K8SCert`, `K8SCluster`, `K8SJKS`, `K8SNS`, `K8SPKCS12`, `K8SSecret`, `K8STLSSecr`) must be defined, as in `integration-manifest.json` |
+| A Universal Orchestrator, approved in Command, with the extension loaded | everything except `fixtures` | runs **inside the Kubernetes cluster under test** and uses its in-cluster service-account identity (store server username `kubeconfig`, blank server password) |
+| A Kubernetes cluster | everything | the UO's service account can read and write secrets cluster-wide, list namespaces and read CSRs; the `kubernetes.io/kube-apiserver-client` CSR signer is running |
+| A way to deploy a build to the UO | `--stage` / baseline | the suite uses the `kfclab` CLI (see `lab-env.sh`); any other mechanism can replace the `lab_ext_*` functions |
+| The extension build under test, and (for the comparison) a record of the previous build | `--stage` / baseline | |
+
+Roles and permissions:
+
+- **Command API principal** (token): create/approve/delete certificate stores, schedule jobs, read job history,
+  read orchestrators and store types, import and delete certificates.
+- **Kubernetes operator** (your kube context): create/delete namespaces, secrets, CSRs (and approve them), ClusterRoles
+  and ClusterRoleBindings; mint service-account tokens; impersonate service accounts (`kubectl auth can-i --as`).
+- **UO service account**: as above. A broader account than the suite's scoped service account (section 5, D17-D19).
+
+Tools on the machine running the suite: `bash`, `kubectl`, `jq`, `curl`, `openssl`, a JDK 17+ `keytool`; `yq` v4 and
+`kfclab` for staging.
+
+## 2. Safety rules
+
+1. **Everything the suite creates is prefixed** with the run prefix (default `e2e-suite`; the PR #103 run used
+   `e2e-pr103`) and carries the label `e2e-suite=<prefix>`. The single exception is the namespace literally named `all`
+   (cases D1, D4, D5, D8, I11 need it): the suite refuses to run if `all` already exists without its label.
+2. **Existing lab resources are never touched.** Namespaces that exist without the suite's label are never adopted or
+   deleted. Command stores are only deleted when their client machine is `<prefix>` or starts with `<prefix>-`.
+3. **The UO's previous extension is recorded and restored.** Before staging, the plugin entry is recorded and its local
+   artifact snapshotted into the work dir; `stage-extension.sh restore` (or `cleanup.sh`) puts it back and compares
+   `kfclab extension list` before and after. Staging restarts the UO pod, which interrupts other jobs on it.
+4. **Everything created is deleted, and deletion is verified.** `cleanup.sh` removes Command stores and test
+   certificates, namespaces, CSRs, ClusterRole/Binding and the work dir, then re-queries each and fails if anything
+   remains.
+5. **No generic cleanup targets.** There is no "delete all e2e" or `make` target; cleanup is always scoped to one
+   prefix. (The existing `make test-cluster-cleanup` belongs to the integration tests and is unrelated.)
+6. **No secrets in the repo or in output.** Test keys are generated at run time into a temp dir that cleanup removes;
+   keystore passwords are random per run; tokens go to `curl` over stdin; `set -x` is never used.
+7. **Dry run first.** `--dry-run` prints every action and assertion without touching a cluster, Command, or kfclab.
+
+## 3. How to run
+
+Full details and the environment variable list: [`scripts/e2e/README.md`](../scripts/e2e/README.md).
+
+1. Set the `E2E_*` variables (or `E2E_ENV_FILE`) for your lab.
+2. `scripts/e2e/run-all.sh --dry-run --prefix <prefix>` and read it.
+3. `scripts/e2e/run-all.sh --stage --prefix <prefix>`: stages the build under test, runs fixtures, discovery,
+   inventory, management and rbac, prints a per-case table, cleans up and restores the previous extension.
+   Add `--baseline` for the previous-build comparison (section 9).
+4. Phases can be run singly (`fixtures.sh`, `discovery.sh`, `inventory.sh`, `management.sh`, `rbac.sh`, `baseline.sh`,
+   `cleanup.sh`, `stage-extension.sh`) and cases selected with `--only`.
+
+Result statuses: `PASS`, `FAIL` (fails the run), `XFAIL` (known issue still present, expected), `XPASS` (known issue
+now passes: the issue looks fixed, remove the tag), `SKIP`, and for the baseline `REPRO` / `NOREPRO`.
+
+## 4. Test data
+
+Generated at run time (`openssl`, `keytool`), thumbprints are SHA-1, compared case-insensitively. Names embed the prefix.
+
+| Name | Description |
+|---|---|
+| `root`, `int` | root CA and intermediate CA (`CN=<prefix> Root CA`, `CN=<prefix> Intermediate CA`) |
+| `leaf1`..`leaf6` | leaf certificates `CN=leafN.<prefix>.example.test` issued by `int`; `leaf2` has an EC P-256 key, the others RSA-2048 |
+| `csr1` | the certificate issued for the CSR `<prefix>-csr1` (cluster signer) |
+
+Every certificate seen in Command inventory or in a secret is mapped back to these names by thumbprint, so an
+expectation reads "`leaf2` and `int`", never a raw hash. A wrong certificate in the right place fails the case.
+
+Namespaces (all labelled): `<prefix>-a`, `-b`, `-c`, `-ign` (the ignored namespace), `-empty`, `-m` (management),
+`-rbac` (scoped service account), and `all`.
+
+| Namespace | Secret | Type | Contents |
+|---|---|---|---|
+| `<p>-a` | `op-pem` | Opaque | `tls.crt` = leaf2 + int, `tls.key` |
+| | `op-certonly` | Opaque | `tls.crt` = leaf4 |
+| | `op-keyonly` | Opaque | `tls.key` only (leaf3 key) |
+| | `op-noise` | Opaque | `foo=bar` (no certificate-like key) |
+| | `tls-full` | kubernetes.io/tls | leaf1 + int, key |
+| | `tls-certonly` | kubernetes.io/tls | `tls.crt` = leaf5, `tls.key` present but empty |
+| | `jks-a` | Opaque | `keystore.jks`: key entry `leaf1` (chain leaf1 + int) and trusted-cert entry `trustedroot` (root) |
+| | `p12-a` | Opaque | `keystore.p12`: same two entries |
+| | `docker-noise` | docker-registry | noise, must never be reported |
+| `<p>-b` | `op-b` | Opaque | leaf3 + key |
+| | `tls-b` | kubernetes.io/tls | leaf2 + key |
+| | `jks-b` | Opaque | `app.jks` (same shape as jks-a) |
+| | `p12-b` | Opaque | `app.pfx` (same shape as p12-a) |
+| `<p>-c` | `tls-c` | kubernetes.io/tls | leaf5 + key |
+| | `c-noise` | Opaque | `hello=world` |
+| `<p>-ign` | `tls-ign`, `op-ign` | tls / Opaque | leaf4 + key |
+| | `jks-ign` | Opaque | `keystore.jks` |
+| `<p>-empty` | none | | |
+| `all` | `tls-all`, `op-all` | tls / Opaque | leaf6 + key |
+| `<p>-m` | created by the management cases | | |
+
+Plus the issued CSR `<prefix>-csr1`. The keystore password is random per run.
+
+## 5. Discovery cases (D)
+
+How each is driven: `PUT /CertificateStores/DiscoveryJob` with the store type id, a client machine unique to the case
+(`<prefix>-<kind>-<variant>`), `Dirs`, optional `IgnoredDirs` / `NamePatterns`, `ServerUsername=kubeconfig` and a blank
+server password (in-cluster identity); the UO runs it. The suite waits for the job in Command job history, then reads
+the stores Command received for that client machine. Discovered paths are compared without their leading cluster
+segment: `<cluster>/namespace/<ns>` for K8SNS and `<cluster>/<ns>/secrets/<name>` for the other types. For secret types
+only paths inside the fixture namespaces are compared, so unrelated lab secrets cannot affect a case. Leftover stores for
+the case's client machine are removed first, so reruns are clean.
+
+| ID | Store type | Case | Expected |
+|---|---|---|---|
+| D1 | K8SNS | dirs=`all` | exactly one store per namespace in the cluster, including the empty namespace and the namespace named `all` |
+| D2 | K8SNS | dirs=`<p>-a,<p>-b` | exactly those two |
+| D3 | K8SNS | dirs=`all`, ignored=`<p>-ign` | every namespace except `<p>-ign` |
+| D4 | K8SNS | dirs=`all`, ignored=`<P>-IGN,ALL` (upper case) | every namespace except `<p>-ign` and `all` (case-insensitive) |
+| D5 | K8SSecret | dirs=`all` | `a/op-pem`, `a/op-certonly`, `b/op-b`, `ign/op-ign`, `all/op-all`. NOT `op-keyonly`, `op-noise`, `jks-a`, `p12-a`, the docker secret, or any secret outside the fixture namespaces that the comparison ignores |
+| D6 | K8SSecret | dirs=`<p>-a,<p>-b` | `a/op-pem`, `a/op-certonly`, `b/op-b` |
+| D7 | K8SSecret | dirs=`all`, ignored=`<p>-ign` | D5 without `ign/op-ign` |
+| D8 | K8SSecret | dirs=`all`, ignored=` <P>-IGN , all ` (case and whitespace) | D5 without `ign/op-ign` and `all/op-all` |
+| D9 | K8SSecret | dirs=`<p>-a`, patterns=`tls.key` (additive) | `op-pem`, `op-certonly` and now also `op-keyonly` |
+| D10 | K8STLSSecr | dirs=`all` | `a/tls-full`, `a/tls-certonly`, `b/tls-b`, `c/tls-c`, `ign/tls-ign`, `all/tls-all` (all `kubernetes.io/tls`, including the cert-only one) |
+| D11a | K8STLSSecr | dirs=`<p>-a,<p>-b` | `a/tls-full`, `a/tls-certonly`, `b/tls-b` |
+| D11b | K8STLSSecr | dirs=`all`, ignored=`<p>-ign` | D10 without `ign/tls-ign` |
+| D12 | K8SJKS | dirs=`all` | `a/jks-a`, `b/jks-b`, `ign/jks-ign` (data keys matched by `.jks` suffix: `keystore.jks`, `app.jks`) |
+| D13a | K8SJKS | dirs=`<p>-a,<p>-b` | `a/jks-a`, `b/jks-b` |
+| D13b | K8SJKS | dirs=`all`, ignored=`<p>-ign` | `a/jks-a`, `b/jks-b` (`jks-ign` absent) |
+| D14a | K8SPKCS12 | dirs=`all` | `a/p12-a`, `b/p12-b` (data keys `keystore.p12`, `app.pfx`) |
+| D14b | K8SPKCS12 | dirs=`<p>-a,<p>-b` | `a/p12-a`, `b/p12-b` |
+| D14c | K8SPKCS12 | dirs=`all`, ignored=`<p>-ign` | `a/p12-a`, `b/p12-b` |
+| D15 | K8SCert | dirs=`all` | `<p>-csr1` is among the discovered CSRs |
+| D16 | K8SCluster | discovery | **SKIP**: the shipped K8SCluster store type has `Discovery=false`; the suite reads the capability from Command and skips with that reason |
+| D17a-d | K8SSecret, K8STLSSecr, K8SJKS, K8SPKCS12 | scoped service account (section 5.1): dirs=`all`, **every namespace except `<p>-a` and `<p>-b` ignored** | job Success; exactly the secrets of `<p>-a` and `<p>-b` for that type (secret: `op-pem`, `op-certonly`, `op-b`; tls: `tls-full`, `tls-certonly`, `tls-b`; jks: `jks-a`, `jks-b`; pkcs12: `p12-a`, `p12-b`) |
+| D18 | K8SSecret | scoped service account, dirs=`<p>-a,<p>-ign`, ignored=`<p>-ign` | job Success; `a/op-pem`, `a/op-certonly` |
+| D19 | K8SSecret | scoped service account, same as D17 but `<p>-ign` **not** ignored (negative control) | job **Failure** mentioning Forbidden/403. Proves the RBAC is real and that excluding ignored namespaces *before listing secrets* is what makes D17/D18 pass |
+
+### 5.1 Scoped service account (D17-D19)
+
+`rbac.sh` creates (all prefixed and labelled) namespace `<p>-rbac`, service account `<p>-scoped`, ClusterRole +
+ClusterRoleBinding `<p>-ns-lister` (get/list `namespaces` only), and Role + RoleBinding `<p>-secrets` in `<p>-a` and
+`<p>-b` (all verbs on secrets). It checks with `kubectl auth can-i --as=...` that the account can list secrets in `a` and
+`b`, cannot in `ign` or `kube-system`, and can list namespaces; any other result aborts the phase before a single
+discovery job is sent. A 1-hour token is written into a kubeconfig (mode 600, work dir only) pointing at the API server
+URL as the UO sees it (`E2E_RBAC_API_SERVER`), and sent to Command only as the discovery job's server password.
+
+## 6. Approve and inventory cases (I)
+
+How each is driven: the store is approved from the discovered entry of the matching discovery case
+(`POST /CertificateStores/Approve` with `InventorySchedule.Immediate`, store type id, properties
+`{ServerUsername: kubeconfig, ServerUseSsl: false, ...}`), **without pre-filling the namespace or secret name**, so the
+extension's resolution of discovered store paths is part of what is tested. Keystore stores also get the keystore
+password and `CertificateDataFieldName`. I4 and I12 use stores created by hand (`POST /CertificateStores`), because
+discovery correctly does not report a key-only secret and K8SCluster has no discovery. The suite then waits for the
+Inventory job in job history (it must be `Success`), reads `GET /CertificateStores/{id}/Inventory`, and compares for each
+entry: alias, the private-key flag (`Yes`/`No`) and the **set of certificate thumbprints mapped to the generated names**.
+`~x,y` below means "contains at least these"; a plain list is an exact set.
+
+| ID | Store | Expected inventory (per entry: alias, private-key flag, certificates) |
+|---|---|---|
+| I1 | K8SSecret `a/op-pem` | one entry: key=Yes, certs = {leaf2, int} |
+| I2 | K8SSecret `a/op-certonly` | one entry: key=No, certs = {leaf4} |
+| I3 | K8SSecret `b/op-b` | one entry: key=Yes, certs = {leaf3} |
+| I4 | K8SSecret `a/op-keyonly` (hand-made) | job **Success**, zero entries, message "No certificates found in store" |
+| I5 | K8STLSSecr `a/tls-full` | key=Yes, certs = {leaf1, int} |
+| I6 | K8STLSSecr `a/tls-certonly` | key=No, certs = {leaf5} |
+| I7 | K8SJKS `a/jks-a` (`CertificateDataFieldName=keystore.jks`) | exactly two entries: `keystore.jks/leaf1` key=Yes (certs include leaf1); `keystore.jks/trustedroot` key=No (certs = {root}) |
+| I8 | K8SJKS `b/jks-b` (`CertificateDataFieldName=app.jks`) | same shape with aliases `app.jks/leaf1`, `app.jks/trustedroot` |
+| I9a | K8SPKCS12 `a/p12-a` (`keystore.p12`) | `keystore.p12/leaf1` key=Yes (includes leaf1); `keystore.p12/trustedroot` key=No (root). One extra intermediate-CA alias with key=No is accepted (parity with 1.3.0); any other extra entry fails |
+| I9b | K8SPKCS12 `b/p12-b` (`app.pfx`) | same with `app.pfx/...` |
+| I10a | K8SNS namespace `<p>-a` | exactly 4 entries, aliases `<type>/<name>`: `tls/tls-full` (Yes, includes leaf1), `tls/tls-certonly` (No, {leaf5}), `opaque/op-pem` (Yes, includes leaf2), `opaque/op-certonly` (No, {leaf4}) |
+| I10b | K8SNS `<p>-b` | `tls/tls-b` (Yes, includes leaf2), `opaque/op-b` (Yes, includes leaf3) |
+| I10c | K8SNS `<p>-c` | `tls/tls-c` (Yes, includes leaf5) |
+| I10d | K8SNS `<p>-empty` | job Success with no entries |
+| I11 | K8SNS namespace literally named `all` | **only** `opaque/op-all` and `tls/tls-all` (Yes, includes leaf6): not the secrets of other namespaces |
+| I12 | K8SCluster (hand-made) | every Opaque and tls secret that holds a certificate, alias `<ns>/secrets/<type>/<name>`; compared inside the fixture namespaces: a: `tls/tls-full`, `tls/tls-certonly`, `opaque/op-pem`, `opaque/op-certonly`; b: `tls/tls-b`, `opaque/op-b`; c: `tls/tls-c`; ign: `tls/tls-ign`, `opaque/op-ign`; all: `tls/tls-all`, `opaque/op-all`. No keystore, key-only, noise or docker secrets |
+| I13 | K8SCert `<p>-csr1` | one entry, alias `<p>-csr1`, key=No, certs = {csr1} |
+
+## 7. Management cases (M)
+
+How each is driven: certificates are imported into Command (`POST /Certificates/Import`: leaf2, leaf3, leaf4 as PFX
+with int + root so Command can build the chain, leaf6 as a bare certificate with no key). Stores in `<p>-m` are created
+with `CreateIfMissing` (`POST /CertificateStores`, approved, `AgentAssigned`). Operations use
+`POST /CertificateStores/Certificates/Add` (`CertificateId`, `Overwrite`, `IncludePrivateKey`, `Alias`, `PfxPassword`)
+and `.../Remove`. They run in **waves** with at most one operation per store per wave, so each Command job can be
+attributed unambiguously; after each wave Command's inventory of the touched stores is refreshed (Remove and
+overwrite-by-alias need the alias in Command's inventory). Every result is checked twice: the job result and message in
+Command job history, and the real Kubernetes object read back with `kubectl`, `openssl` and `keytool` (certificate
+order in `tls.crt`, presence and size of `tls.key`, keystore aliases, entry types and thumbprints).
+
+Aliases: K8SSecret / K8STLSSecr: optional, the inventory alias is the secret name; K8SJKS / K8SPKCS12: `<alias>` on add,
+`<data field>/<alias>` in inventory; K8SNS: `<tls|opaque>/<secret name>`; K8SCluster: `<ns>/secrets/<tls|opaque>/<name>`.
+
+"3 certs" means leaf, intermediate, root (the chain Command holds for the imported PFX). Where a cert-only add is
+checked, only the first certificate (the leaf) is asserted, because whether Command appends a chain to a key-less add is
+not part of the contract.
+
+| ID | Store | Operation | Expected |
+|---|---|---|---|
+| M1 | K8SSecret (IncludeCertChain=true, SeparateChain=false) | Add leaf3 + key | job Success; `tls.crt` = leaf3, int, root (leaf first); `tls.key` present |
+| M2 | K8SSecret (SeparateChain=true) | Add leaf3 + key | `tls.crt` = leaf3 only; `ca.crt` = {int, root}; `tls.key` present |
+| M3 | K8SSecret (IncludeCertChain=false) | Add leaf3 + key | `tls.crt` = leaf3 only; no `ca.crt` |
+| M4 | K8SSecret (existing, M1) | Add cert-only leaf6, overwrite=false | job **Failure**, message contains "already exists" (Set overwrite=true); secret unchanged (still leaf3, int, root + key) |
+| M5 | K8SSecret (M2) | overwrite=true via the inventory alias (secret name), leaf4 + key | job Success; `tls.crt` = leaf4; `ca.crt` = {int, root}; key present |
+| M6 | K8SSecret (fresh) | cert-only Add leaf6 | job Success; `tls.crt` leaf6; no private key; Command shows key=No |
+| M6b | same | Remove via inventory alias | job Success; secret deleted |
+| M7 | K8SSecret (M1) | Remove via the inventory alias | job Success; secret deleted |
+| M8a | K8STLSSecr (include chain) | Add leaf3 + key | type `kubernetes.io/tls`; `tls.crt` = leaf3, int, root; key present |
+| M8b | K8STLSSecr (SeparateChain=true) | Add leaf3 + key | `tls.crt` = leaf3; `ca.crt` = {int, root}; key present |
+| M8c | same | Remove (no alias) | job Success; secret deleted |
+| M9 | K8STLSSecr (SeparateChain=true **and** IncludeCertChain=false) | Add leaf3 + key | SeparateChain is overridden: `tls.crt` = leaf3 (1 cert), **no** `ca.crt`; key present |
+| M10 | K8STLSSecr (holds leaf3 + key) | cert-only Add leaf6, overwrite=true | job **Failure** (intentional guard: a cert-only add must not strip an existing key); secret unchanged |
+| M11 | K8STLSSecr (fresh) | cert-only Add leaf6 | job Success; type tls; `tls.crt` leaf6; `tls.key` present but **empty** (a warning is logged); Command shows key=No |
+| M11b | same | Remove | job Success; secret deleted |
+| M12a | K8STLSSecr (M8a) | overwrite=true, alias = secret name, leaf4 + key | `tls.crt` = leaf4, int, root; key present (replaced) |
+| M12b | same | Remove (alias = secret name) | secret deleted |
+| M13 | K8SJKS | Add leaf3 + key (alias `leaf3`) | alias `leaf3` is a PrivateKeyEntry |
+| M14 | K8SJKS (M13) | cert-only Add leaf6 (alias `leaf6`) | `leaf6` is a trustedCertEntry; `leaf3` untouched; Command shows key=No for `keystore.jks/leaf6` |
+| M15 | K8SJKS | Add leaf2 + key, alias `keystore.jks/leaf3`, overwrite=true | alias `leaf3` now holds leaf2 as a key entry (replaced) |
+| M16 | K8SJKS (IncludeCertChain=false) | Add leaf3 + key | key entry `leaf3` with certificate chain length 1 |
+| M17a | K8SJKS | Remove `keystore.jks/leaf6` | trusted entry gone, `leaf3` remains |
+| M17b | K8SJKS | Remove `keystore.jks/leaf3` (last alias) | removed; the keystore secret remains, with 0 entries |
+| M18a | K8SPKCS12 | Add leaf3 + key | alias `leaf3` is a PrivateKeyEntry |
+| M18b | K8SPKCS12 | cert-only Add leaf6 | `leaf6` is a trustedCertEntry |
+| M18c | K8SPKCS12 | Add leaf2 + key, alias `<field>/leaf3`, overwrite=true | alias `leaf3` now holds leaf2 |
+| M18d | K8SPKCS12 | Remove `<field>/leaf6` | removed |
+| M18e | K8SPKCS12 | Remove `<field>/leaf3` (last alias) | removed; keystore remains with 0 entries |
+| M19 | K8SNS | Add `tls/ns-tls1` (leaf3 + key) and `opaque/ns-op1` (leaf4 + key) | both jobs Success; secret `ns-tls1` is `kubernetes.io/tls`, `ns-op1` is Opaque, both with a key |
+| M19i | K8SNS | inventory afterwards | lists `tls/ns-tls1` and `opaque/ns-op1` |
+| M20 | K8SNS | overwrite `opaque/ns-op1` with leaf2 (EC) + key | `tls.crt` = leaf2, int, root; key present (replaced) |
+| M21 | K8SNS | Add `tls/ns-tls1` again, overwrite=false | job **Failure**; secret unchanged (leaf3, int, root) |
+| M22a | K8SNS | cert-only Add `opaque/ns-nokey` (leaf6) | created, Opaque, `tls.crt` leaf6, no key |
+| M22b | K8SNS | cert-only Add `tls/ns-tlsnokey` (leaf6) | created, `kubernetes.io/tls`, `tls.key` present but empty |
+| M22c | K8SNS | Remove `opaque/ns-op1` | secret deleted |
+| M22d | K8SNS | Remove `tls/ns-tlsnokey` | secret deleted |
+| M23a | K8SCluster | Add with key: `<m>/secrets/opaque/cl-op1` (leaf4), `<m>/secrets/tls/cl-tls1` (leaf3) | both jobs Success; Opaque and tls secrets created with keys |
+| M23b | K8SCluster | overwrite `<m>/secrets/tls/cl-tls1` with leaf2 + key | `tls.crt` = leaf2, int, root |
+| M23c | K8SCluster | Remove `<m>/secrets/opaque/cl-op1` | secret deleted |
+| M23d | K8SCluster | cert-only Add `<m>/secrets/opaque/cl-nokey` (leaf6) | created, no key |
+| M23e | K8SCluster | Remove `<m>/secrets/tls/cl-tls1` | secret deleted |
+| M23f | K8SCluster | Remove `<m>/secrets/opaque/cl-nokey` | secret deleted |
+| M24 | K8SCert | Add and Remove | **Command refuses at scheduling** (HTTP 4xx for both); K8SCert is read-only |
+
+`<m>` is the namespace `<p>-m`. The management sequence is single-shot: it refuses to start if `<p>-m` already holds
+secrets.
+
+## 8. Known issues (K cases)
+
+These are real deviations found during the PR #103 run. They pre-date the PR and are tracked as GitHub issues. Each is
+codified as a case that asserts the **correct** behaviour and is tagged with its issue number, so it reports `XFAIL` while
+the bug exists and `XPASS` (loudly) as soon as it is fixed; removing the tag then turns it into a normal regression case.
+They never fail the run (unless `E2E_STRICT_XPASS=true`).
+
+| ID | Issue | Correct behaviour asserted | Current behaviour |
+|---|---|---|---|
+| K105a | [#105](https://github.com/Keyfactor/k8s-orchestrator/issues/105) | K8SJKS store created with `CertificateDataFieldName=app.jks`: after an Add the secret's data key is `app.jks` | writes `keystore.jks` |
+| K105b | #105 | K8SPKCS12 store with `CertificateDataFieldName=keystore.p12`: the data key is `keystore.p12` | writes `keystore.pfx` |
+| K106a | [#106](https://github.com/Keyfactor/k8s-orchestrator/issues/106) | K8SJKS Add (leaf4) on an existing alias with overwrite=false is refused (job Failure) and the alias still holds leaf3 | replaces the entry |
+| K106b | #106 | the same for K8SPKCS12 | replaces the entry |
+| K107 | [#107](https://github.com/Keyfactor/k8s-orchestrator/issues/107) | a K8SNS store created with `CreateIfMissing` completes its Create job with Success | fails with "Invalid namespace alias format: ''" and is retried every 5 minutes |
+| K108 | [#108](https://github.com/Keyfactor/k8s-orchestrator/issues/108) | jobs that finished `Success` leave no `[Error]` / `[Warn]` log lines from `Keyfactor.Extensions.Orchestrator.K8S.*` in the UO log | noisy Error/Warn lines on successful jobs |
+
+K107 needs a fresh prefix (the Create job only runs when the store is created). K108 needs `E2E_UO_LOG_CMD`; it reads
+the UO log, keeps lines whose fourth field (the job history id) belongs to a successful job of this run and whose
+logger starts with `Keyfactor.Extensions.Orchestrator.K8S`, counts the `[Error]` and `[Warn]` ones, and prints only
+counts per logger (never log messages). Otherwise it reports SKIP.
+
+K106 is the "Add on an existing alias with overwrite=false must be refused" case that the PR #103 run recorded for
+JKS and PKCS12.
+
+## 9. Previous-build regression comparison (B cases)
+
+Purpose: show that the behaviours fixed by the change under test really were broken in the build that was deployed
+before, using the same stores.
+
+Procedure:
+
+1. Run the main suite with the build under test staged (sections 5-8). This creates the approved stores.
+2. Stage the previous build on the UO. With `run-all.sh --stage --baseline` this is automatic: `stage-extension.sh stage`
+   records the previous extension entry and snapshots its artifact; after the main phases `stage-extension.sh restore`
+   puts it back. (Alternatively stage any older build by hand and run `baseline.sh`.)
+3. Run `baseline.sh`. It re-runs discovery with `dirs=all` for six store types and re-inventories four of the stores
+   from section 6, then reports for each case `REPRO` (the old behaviour is reproduced) or `NOREPRO` (the previous
+   build already behaves correctly, so this case proves nothing for that build).
+4. Re-run `inventory.sh` afterwards if you want Command's inventory refreshed by the build under test.
+
+| ID | Old behaviour that must reproduce (observed on the build deployed before PR #103) |
+|---|---|
+| B1 | `dirs=all` discovery returns **0 stores** on all 6 jobs (K8SSecret x2 [with and without ignored namespace], K8SNS, K8STLSSecr, K8SJKS, K8SPKCS12): "Failed to parse discovery directories" |
+| B2 | inventory of the key-only Opaque secret (`op-keyonly`, I4) **fails** with a Base-64 error |
+| B3 | JKS inventory of `jks-a` is **missing** the trusted alias `keystore.jks/trustedroot` |
+| B4 | PKCS12 `HasPrivateKey` is **always Yes**: `trustedroot` is reported with a private key |
+| B5 | the K8SNS store for the namespace literally named `all` inventories other namespaces too (about 93 secret errors in the log); anything other than exactly `op-all` and `tls-all`, or a failed job, counts as reproduced |
+
+`--require-repro` turns a NOREPRO into a failure; use it only against a build known to carry the old behaviour. A live
+comparison with 1.3.0 was not possible in the lab (section 10).
+
+## 10. What is not testable in the lab
+
+| Item | Why |
+|---|---|
+| Reenrollment | the shipped store types have `Enrollment=false` in the lab |
+| K8SCluster discovery (D16) | the store type has `Discovery=false`; the suite SKIPs with that reason |
+| JKS / PKCS12 password supplied from another Kubernetes secret (`PasswordIsK8SSecret`, `StorePasswordPath`, `PasswordFieldName`) | the lab's store type definitions lacked these properties. A lab whose store types carry them can add cases; the fixtures are cheap (a second secret holding the password, with a trailing newline) |
+| A live comparison with 1.3.0 | not deployable alongside in that lab; the previous-build comparison (section 9) uses whatever build was deployed |
+| A 1.x-style `secrets/<tls\|opaque>/<name>` alias on K8SNS Remove | Command rejects an alias that is not in its own inventory, so the request never reaches the extension (the extension still accepts the form, which is covered by unit tests) |
+| Authentication other than the UO's in-cluster identity (kubeconfig token / client certificate on the store) | the lab UO runs in the cluster under test; only the scoped-service-account discovery cases (D17-D19) send an explicit kubeconfig |
+
+## 11. Reading results and keeping the plan current
+
+- `FAIL` is a real regression (or a lab problem); the `expected:` and `actual:` lines say which. Check the job message
+  in Command job history and the UO log for the job id.
+- `XFAIL` is a known issue. When an issue is fixed, the case flips to `XPASS`; remove the issue argument from its
+  `verdict` call in `management.sh` and move its row from section 8 into the normal tables.
+- To add a case: add a row here with an ID, then add the matching case in the right phase script using
+  `verdict`/`expect_eq`/`set_eq`/`inv_check` so it reports under that ID. Keep IDs stable; split a row into lettered
+  sub-IDs (`M8a`, `M8b`) rather than renumbering.
+- When a case changes, change this document and the script together.
+
+## 12. Open questions to confirm before the first real run
+
+Nothing in `scripts/e2e` has been run against a lab yet. It was written from the PR #103 run's recorded commands and
+results and verified with `bash -n`, `shellcheck`, `--dry-run` against shims that record every `kubectl`/`curl`/`kfclab`
+call (none were made), and unit-style checks of the comparison logic against canned Command and Kubernetes data. These
+points rest on assumptions about the lab and the Command API that could not be verified without running them:
+
+1. **Orchestrator name.** The UO's agent is looked up in `GET /Agents` by `ClientMachine`; the default
+   `kfclab-uo-<E2E_UO_NAME>` follows what job history showed in the earlier run. Confirm, or set `E2E_UO_AGENT`.
+2. **Job history semantics.** Jobs are matched on client machine, store path suffix and a job type ending in
+   `Discovery` / `Inventory` / `Management`, with a status starting `Completed`. `SortAscending=1` is taken to mean
+   newest first (the Keyfactor API inverts this flag).
+3. **Private-key flag value.** Inventory's `Parameters.PrivateKeyEntry` is normalised from `Yes`/`No` or `true`/`false`.
+4. **Add semantics for cert-only adds** with `IncludeCertChain=true`: assumed to return `tls.crt` starting with the leaf
+   (only the leaf is asserted).
+5. **Chain order.** `tls.crt` is asserted leaf-first with the exact certificate set; root last is not asserted.
+6. **Alias forms.** Overwrite and Remove use the inventory aliases described in section 7. For the PKCS12 store the
+   data field is detected from the secret (it is `keystore.pfx` while #105 exists), so the aliases stay correct after the fix.
+7. **K8SNS Create job (K107).** Assumed that `CreateIfMissing` schedules a `K8SNSManagement` job whose history entry
+   (possibly `CompletedWillRetry`) is the signal. If Command does not schedule one, K107 times out.
+8. **Certificate deletion.** `DELETE /Certificates` must be permitted for the token; otherwise cleanup reports the test
+   certificates as left over (the suite never deletes certificates it did not import).
+9. **Extension staging.** `kfclab extension update` with an edited private copy of the spec is assumed to re-stage the
+   artifact and restart the UO, as its help text describes (the earlier run staged the build the same way, from an edited
+   copy of the spec). Confirm that kfclab does not key state to the spec's path, and that the "previous" extension named
+   in the spec is the one actually deployed: the suite snapshots the spec's local path, not the live extension volume.
+10. **K108 log format.** Parsed as `<date> <time> <job guid> <job history id> <logger> [Level] - message`, as seen in the
+    earlier run's UO log.
+11. **Duration.** Management runs eight sequential waves of UO polling plus per-wave inventory refreshes; expect a long
+    run and tune `E2E_JOB_TIMEOUT`.
+
+## Appendix: case IDs to scripts
+
+| IDs | Script |
+|---|---|
+| D1-D15 (D11a/b, D13a/b, D14a-c), D16 | `discovery.sh` |
+| D17a-d, D18, D19 | `rbac.sh` |
+| I1-I13 (I9a/b, I10a-d) | `inventory.sh` |
+| M1-M24 and sub-IDs, K105-K108 | `management.sh` |
+| B1-B5 | `baseline.sh` |
