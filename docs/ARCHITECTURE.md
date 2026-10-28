@@ -149,6 +149,23 @@ Provides shared logic used by multiple handlers:
 - `ResolvePassword(V1Secret)` — Buddy-secret password resolution
 - `HandleCreateIfMissing()` — Create-if-not-exists logic
 
+**Inventory aliases:**
+
+Command keys inventory entries by alias, so handlers (`GetInventoryEntries`) emit stable, store-type-specific aliases:
+
+| Store type | Inventory alias | Source |
+|------------|-----------------|--------|
+| `K8STLSSecr`, `K8SSecret` | `<secret_name>` (one entry per secret, full chain) | `TlsSecretHandler` / `OpaqueSecretHandler` |
+| `K8SJKS`, `K8SPKCS12` | `<secret_field_name>/<keystore_alias>` | `JksSecretHandler` / `Pkcs12SecretHandler` |
+| `K8SNS` | `<tls\|opaque>/<secret_name>` | `NamespaceSecretHandler.ProcessSecretEntry` |
+| `K8SCluster` | `<namespace>/secrets/<tls\|opaque>/<secret_name>` | `ClusterSecretHandler.ProcessSecretEntry` |
+| `K8SCert` | `<csr_name>` | `CertificateSecretHandler` |
+
+The `K8STLSSecr`, `K8SSecret` and `K8SNS` formats changed in 2.0.0 (1.x used the leaf certificate thumbprint for the
+single-secret types and `secrets/<tls|opaque>/<secret_name>` for `K8SNS`); see the 2.0.0 Breaking Changes in
+`CHANGELOG.md`. For Management, `NamespaceSecretHandler` uses the last two alias segments, so both the 2.0 and 1.x
+`K8SNS` forms are accepted; `ClusterSecretHandler` requires `<namespace>/secrets/<type>/<name>`.
+
 ### 3. Services Layer (`Services/`)
 
 Reusable business logic services.

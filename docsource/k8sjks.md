@@ -50,6 +50,8 @@ the Kubernetes secret.
 ### Alias Patterns
 - `<k8s_secret_field_name>/<keystore_alias>`
 
+This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
+
 Example: `test.jks/load_balancer` where `test.jks` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `jks` data store.
 

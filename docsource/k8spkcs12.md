@@ -52,6 +52,8 @@ the Kubernetes secret.
 
 - `<k8s_secret_field_name>/<keystore_alias>`
 
+This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
+
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `pkcs12` data store.
 

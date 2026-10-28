@@ -26,6 +26,13 @@
 - refactor(services): Business logic extracted from `JobBase` into dedicated service classes (`StoreConfigurationParser`, `PasswordResolver`, `CertificateChainExtractor`, `JobCertificateParser`, `StorePathResolver`).
 - refactor(keystores): `KeystoreManager` class removed. JKS and PKCS12 operations are now handled by `JksSecretHandler` and `Pkcs12SecretHandler` respectively.
 - chore(crypto): Remove all usage of `System.Security.Cryptography.X509Certificate2` for certificate store operations. All cryptographic operations now use BouncyCastle exclusively.
+- **breaking(inventory): Inventory aliases changed for `K8STLSSecr`, `K8SSecret` and `K8SNS`.** Keyfactor Command keys inventory entries by alias. After upgrading from 1.x, the first 2.0 inventory of an affected store re-keys its entries: the 1.x entries can appear removed and the 2.0 entries added as new. Re-key mapping:
+  - `K8STLSSecr` and `K8SSecret`: 1.x alias was the thumbprint of the first (leaf) certificate in the secret, so every certificate of the chain shared that alias. 2.0 alias is the secret name (e.g. `tls-chain`, `opq-pem`), with one entry per secret holding the full chain.
+  - `K8SNS`: 1.x alias was `secrets/tls/<secret_name>` / `secrets/opaque/<secret_name>`. 2.0 alias is `tls/<secret_name>` / `opaque/<secret_name>`.
+  - Unchanged: `K8SCluster` (`<namespace>/secrets/<tls|opaque>/<secret_name>`), `K8SJKS` and `K8SPKCS12` (`<secret_field_name>/<keystore_alias>`), and `K8SCert` (CSR name).
+  - Management (Add/Remove): `K8SNS` still accepts the 1.x `secrets/<type>/<name>` form (the last two alias segments are used). `K8STLSSecr`/`K8SSecret` Management ignores the alias value when selecting the secret (as in 1.x), so a leftover thumbprint alias still works.
+  - See `docsource/k8sns.md`, `k8stlssecr.md` and `k8ssecret.md` (Alias Patterns) for the current formats.
+- **breaking(validation): Stricter store path handling.** 1.x did not validate namespace or secret names and logged a warning for store paths with more than 4 segments, continuing with the values already configured. 2.0 rejects namespace/secret name components that do not match Kubernetes DNS subdomain rules (`ArgumentException`) and fails resolution for paths with 5 or more segments. Stores that relied on the lenient 1.x behaviour must be corrected.
 
 ## Features
 - feat(compat): Add `.NET 10` target — extension now ships builds for both `net8.0` and `net10.0`, supporting Keyfactor Command 24.x (net8.0) and 25.x+ (net10.0).

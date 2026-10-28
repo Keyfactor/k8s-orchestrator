@@ -36,6 +36,13 @@ the Kubernetes secret.
 
 ### Alias Patterns
 
-- `<secret_name>` (when certificate is stored directly)
+- `<secret_name>` (the Opaque secret name)
+
+Inventory reports a single entry for the secret, keyed by the secret name and holding the full certificate chain
+(leaf first). Management Add/Remove operates on the whole secret and does not use the alias value to select content.
+
+> **Upgrade note (1.x to 2.0):** 1.x keyed the inventory entry by the thumbprint of the first (leaf) certificate in the
+> secret. 2.0 keys it by the secret name. Existing inventory entries in Command are re-keyed on the first 2.0 inventory.
+> See the 2.0.0 Breaking Changes in `CHANGELOG.md`.
 
 

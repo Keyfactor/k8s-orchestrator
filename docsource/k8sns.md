@@ -34,7 +34,16 @@ have specific keys in the Kubernetes secret.
 
 ### Alias Patterns
 
-- `secrets/<tls|opaque>/<secret_name>`
+Inventory reports one entry per secret, keyed by the alias `<tls|opaque>/<secret_name>`
+(for example `tls/my-tls-secret` or `opaque/my-opaque-secret`). Each entry holds the full certificate chain found in
+that secret.
+
+- `<tls|opaque>/<secret_name>` (the alias returned by inventory in 2.0 and later)
+- `secrets/<tls|opaque>/<secret_name>` (the 1.x alias form; still accepted by Management Add/Remove, which uses the
+  last two segments of the alias)
+
+> **Upgrade note (1.x to 2.0):** 1.x inventory reported these entries as `secrets/<tls|opaque>/<secret_name>`. Existing
+> inventory entries in Command are re-keyed on the first 2.0 inventory. See the 2.0.0 Breaking Changes in `CHANGELOG.md`.
 
 ## Terraform
 
