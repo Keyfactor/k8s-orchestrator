@@ -972,8 +972,18 @@ public class KubeCertificateManagerClient
     {
         try
         {
-            var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
-            var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
+            // A TLS secret qualifies when tls.crt is present and non-empty; tls.key is optional (a cert-only
+            // kubernetes.io/tls secret is supported and simply has no private key).
+            if (secretData.Data == null ||
+                !secretData.Data.TryGetValue("tls.crt", out var certBytes) ||
+                certBytes == null || certBytes.Length == 0)
+            {
+                _logger.LogDebug("TLS secret {SecretName} has no tls.crt data; not a TLS certificate store.",
+                    secretName);
+                return null;
+            }
+
+            var certData = Encoding.UTF8.GetString(certBytes);
             _logger.LogTrace("Successfully parsed TLS secret: {SecretName}.", secretName);
             return certData; // Simply returning certificate data
         }

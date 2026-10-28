@@ -184,7 +184,9 @@ public class ClusterNamespaceInventoryApiCallTests
         Assert.True(Get("tls/tls-no-ca").HasPrivateKey);
         Assert.True(Get("tls/tls-with-ca").Certificates.Count >= 1);
         Assert.True(Get("tls/tls-with-ca").HasPrivateKey);
-        Assert.DoesNotContain(actual, e => e.Alias == prefix + "tls/tls-no-key"); // discovery requires tls.key
+        // cert-only TLS secret (no tls.key) is supported: certificate returned, no private key
+        Assert.Single(Get("tls/tls-no-key").Certificates);
+        Assert.False(Get("tls/tls-no-key").HasPrivateKey);
         Assert.True(Get("opaque/opaque-cert-key").HasPrivateKey);
         Assert.Single(Get("opaque/opaque-cert-key").Certificates);
         Assert.False(Get("opaque/opaque-cert-only").HasPrivateKey);

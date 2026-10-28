@@ -227,16 +227,18 @@ public class KubeClientDiscoverSecretsTests
     #region TLS secrets are unaffected
 
     [Fact]
-    public void DiscoverSecrets_Tls_IgnoresAllowedKeysAndStillRequiresTlsCrtAndKey()
+    public void DiscoverSecrets_Tls_IgnoresAllowedKeysAndRequiresTlsCrtButNotTlsKey()
     {
         var client = CreateClient(
             Secret("good-tls", "kubernetes.io/tls", "tls.crt", "tls.key"),
-            Secret("tls-missing-key", "kubernetes.io/tls", "tls.crt"));
+            Secret("tls-missing-key", "kubernetes.io/tls", "tls.crt"),
+            Secret("tls-missing-crt", "kubernetes.io/tls", "tls.key"));
 
-        // Allowed keys that match nothing in the secret must not hide a valid TLS secret.
+        // Allowed keys that match nothing in the secret must not hide a valid TLS secret. tls.key is optional
+        // (cert-only TLS secrets are supported); tls.crt is required.
         var locations = client.DiscoverSecrets(new[] { "jks" }, "kubernetes.io/tls", Ns);
 
-        Assert.Equal(new[] { "good-tls" }, Names(locations));
+        Assert.Equal(new[] { "good-tls", "tls-missing-key" }, Names(locations));
     }
 
     #endregion
@@ -262,7 +264,7 @@ public class KubeClientDiscoverSecretsTests
         var opaque = kube.Client.DiscoverSecrets(PemKeys, "Opaque", Ns);
 
         // Same results as when each secret was re-read after listing
-        Assert.Equal(new[] { "good-tls" }, Names(tls));
+        Assert.Equal(new[] { "good-tls", "tls-no-key" }, Names(tls));
         Assert.Equal(new[] { "opaque-cert" }, Names(opaque));
         Assert.All(tls.Concat(opaque), l => Assert.Contains($"/{Ns}/secrets/", l));
 
