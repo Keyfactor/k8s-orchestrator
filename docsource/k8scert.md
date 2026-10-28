@@ -24,6 +24,10 @@ When `KubeSecretName` is left empty or set to `*`, the store inventories ALL iss
 
 **Note:** Only CSRs that have been approved AND have an issued certificate are included in the inventory. Pending or denied CSRs are skipped.
 
+## Alias Patterns
+
+- `<csr_name>` - the name of the CertificateSigningRequest (both single CSR and cluster-wide modes). This is unchanged from 1.x.
+
 ## Store Configuration
 
 | Property | Description | Required |

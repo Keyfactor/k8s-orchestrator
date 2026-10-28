@@ -657,14 +657,27 @@ public class KubeCertificateManagerClient
     /// <param name="ns">Namespace to search, or "default".</param>
     /// <param name="namespaceIsStore">When true, treats entire namespace as a single store.</param>
     /// <param name="clusterIsStore">When true, treats entire cluster as a single store.</param>
+    /// <param name="opaqueKeyMatch">
+    /// How Opaque secrets are matched against <paramref name="allowedKeys"/>. Enumerating every Opaque secret
+    /// requires <see cref="OpaqueKeyMatch.AllSecrets"/> explicitly; a null/empty <paramref name="allowedKeys"/> never
+    /// means "everything".
+    /// </param>
+    /// <param name="ignoredNamespaces">
+    /// Namespaces to exclude (case-insensitive, whitespace-tolerant). They are dropped from the namespace list
+    /// BEFORE any secrets are listed, so no API call is made against them (a service account without
+    /// <c>list secrets</c> in an ignored namespace must not fail discovery).
+    /// </param>
     /// <returns>List of discovered secret locations.</returns>
     public List<string> DiscoverSecrets(
         string[] allowedKeys, string secType, string ns = "default",
-        bool namespaceIsStore = false, bool clusterIsStore = false)
+        bool namespaceIsStore = false, bool clusterIsStore = false,
+        OpaqueKeyMatch opaqueKeyMatch = OpaqueKeyMatch.Suffix,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         _logger.MethodEntry(LogLevel.Debug);
-        _logger.LogTrace("Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}",
-            string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns);
+        _logger.LogTrace(
+            "Parameters - AllowedKeys: [{Keys}], SecType: {SecType}, Namespace: {Ns}, OpaqueKeyMatch: {Match}",
+            string.Join(", ", allowedKeys ?? Array.Empty<string>()), secType, ns, opaqueKeyMatch);
         var locations = new List<string>();
         var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         _logger.LogTrace("ClusterName: {ClusterName}", clusterName);
@@ -678,10 +691,22 @@ public class KubeCertificateManagerClient
         }
 
         // Fetch namespaces and selected namespaces based on the ns parameter
-        var namespaces = FetchNamespaces(clusterName);
-        var nsList = ns.Contains(',') ? ns.Split(',') : new[] { ns };
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        var nsList = (ns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _logger.LogDebug("Requested namespaces: [{Requested}]; cluster has {Count} namespaces",
+            string.Join(", ", nsList), namespaces.Count);
 
-        foreach (var nsObj in FilterNamespaces(namespaces, nsList))
+        // Discovery jobs: "all" in the namespace list is the documented wildcard keyword.
+        var matched = FilterNamespaces(namespaces, nsList, allKeywordIsWildcard: true).ToList();
+        if (matched.Count == 0)
+            _logger.LogWarning(
+                "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
+                "Use 'all' to search every namespace",
+                string.Join(", ", nsList), namespaces.Count);
+
+        matched = ExcludeIgnoredNamespaces(matched, ignoredNamespaces);
+
+        foreach (var nsObj in matched)
         {
             if (secType == "namespace")
             {
@@ -690,12 +715,124 @@ public class KubeCertificateManagerClient
             }
 
             DiscoverSecretsInNamespace(
-                nsObj.Metadata.Name, allowedKeys, secType, locations, clusterName);
+                nsObj.Metadata.Name, allowedKeys, secType, locations, clusterName, opaqueKeyMatch);
         }
 
         _logger.LogDebug("Discovered {Count} locations", locations.Count);
         _logger.MethodExit(LogLevel.Debug);
         return locations;
+    }
+
+    /// <summary>
+    /// A secret found by <see cref="DiscoverInventorySecrets"/>, carrying the secret object returned by the list call
+    /// so callers do not need to read it again.
+    /// </summary>
+    /// <param name="Namespace">Namespace the secret lives in.</param>
+    /// <param name="Name">Secret name.</param>
+    /// <param name="Kind">"tls" for kubernetes.io/tls secrets, "opaque" for Opaque secrets.</param>
+    /// <param name="Secret">The listed secret, including its data.</param>
+    /// <param name="Location">Location string <see cref="DiscoverSecrets"/> reports: cluster/namespace/secrets/name.</param>
+    public sealed record DiscoveredSecret(string Namespace, string Name, string Kind, V1Secret Secret, string Location);
+
+    /// <summary>
+    /// Single-pass variant of the two <see cref="DiscoverSecrets"/> calls K8SCluster inventory used to make
+    /// (kubernetes.io/tls with key "tls.crt", then every Opaque secret via <see cref="OpaqueKeyMatch.AllSecrets"/>):
+    /// namespaces are listed once and each namespace's secrets are listed once. The same predicates apply, and the
+    /// secret objects are returned so inventory does not have to GET each one again.
+    /// Covers EVERY namespace in the cluster; this is an explicit "whole cluster" request, not a name match, so a
+    /// namespace that happens to be called "all" is simply one of the namespaces.
+    /// <para>
+    /// The returned sequence is lazy and works one namespace at a time: a namespace's secrets are listed only when the
+    /// caller asks for the first secret after the previous namespace was exhausted, and the previous namespace's list
+    /// (including secret data such as private keys) is dropped at that point. A consumer that converts each secret to
+    /// its result immediately therefore never holds more than one namespace's secret material, instead of the whole
+    /// cluster's. Within a namespace the secrets keep list order; a secret is reported as exactly one of "tls" or
+    /// "opaque". Callers that need the legacy ordering (all TLS, then all Opaque) must keep the two kinds apart
+    /// themselves, retaining only what they derive from each secret and not the secret.
+    /// </para>
+    /// </summary>
+    /// <returns>Discovered TLS and Opaque secrets, namespace by namespace.</returns>
+    public IEnumerable<DiscoveredSecret> EnumerateClusterInventorySecrets()
+    {
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        _logger.LogDebug("Inventorying all {Count} namespaces in the cluster", namespaces.Count);
+
+        return EnumerateInventorySecretsIn(namespaces, clusterName);
+    }
+
+    /// <summary>
+    /// Same single-pass, namespace-at-a-time listing as <see cref="EnumerateClusterInventorySecrets"/>, restricted to
+    /// ONE namespace (K8SNS inventory). <paramref name="namespaceName"/> is matched literally against namespace names
+    /// (case-insensitive, surrounding whitespace ignored): it is never a list and the discovery keyword "all" has no
+    /// special meaning, so a namespace that is really named "all" only returns its own secrets.
+    /// </summary>
+    /// <param name="namespaceName">Exact namespace name.</param>
+    /// <returns>Discovered TLS and Opaque secrets of that namespace.</returns>
+    public IEnumerable<DiscoveredSecret> EnumerateNamespaceInventorySecrets(string namespaceName)
+    {
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        _logger.LogDebug("Requested namespace (literal match): '{Requested}'; cluster has {Count} namespaces",
+            namespaceName, namespaces.Count);
+
+        var matched = FilterNamespaces(namespaces, new[] { namespaceName }, allKeywordIsWildcard: false).ToList();
+        if (matched.Count == 0)
+            _logger.LogWarning(
+                "Namespace '{Requested}' does not exist among the {Count} namespaces in the cluster",
+                namespaceName, namespaces.Count);
+
+        return EnumerateInventorySecretsIn(matched, clusterName);
+    }
+
+    private IEnumerable<DiscoveredSecret> EnumerateInventorySecretsIn(
+        IReadOnlyList<V1Namespace> matched, string clusterName)
+    {
+        _logger.MethodEntry(LogLevel.Debug);
+        var tlsKeys = new[] { "tls.crt" };
+        var tlsCount = 0;
+        var opaqueCount = 0;
+
+        try
+        {
+            foreach (var nsObj in matched)
+            {
+                var namespaceName = nsObj.Metadata.Name;
+                _logger.LogDebug("Listing secrets in namespace: {Namespace}", namespaceName);
+                var secrets = RetryPolicy(() => _secretOperations.ListSecrets(namespaceName).Items);
+
+                foreach (var secret in secrets)
+                {
+                    // Reuse the discovery predicates verbatim; a one-element location list records "matched".
+                    var hit = new List<string>();
+                    ProcessSecretIfSupported(secret, "kubernetes.io/tls", tlsKeys, clusterName, namespaceName, hit,
+                        OpaqueKeyMatch.Suffix);
+                    if (hit.Count > 0)
+                    {
+                        tlsCount++;
+                        yield return new DiscoveredSecret(namespaceName, secret.Metadata.Name, "tls", secret,
+                            $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}");
+                    }
+
+                    hit.Clear();
+                    ProcessSecretIfSupported(secret, "Opaque", null, clusterName, namespaceName, hit,
+                        OpaqueKeyMatch.AllSecrets);
+                    if (hit.Count > 0)
+                    {
+                        opaqueCount++;
+                        yield return new DiscoveredSecret(namespaceName, secret.Metadata.Name, "opaque", secret,
+                            $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}");
+                    }
+                }
+
+                _logger.LogDebug("Finished namespace {Namespace}; its secret list is released", namespaceName);
+            }
+        }
+        finally
+        {
+            _logger.LogDebug("Discovered {Tls} TLS and {Opaque} Opaque secrets", tlsCount, opaqueCount);
+            _logger.MethodExit(LogLevel.Debug);
+        }
     }
 
     /// <summary>
@@ -719,12 +856,19 @@ public class KubeCertificateManagerClient
     /// Filters namespaces based on the provided list.
     /// </summary>
     /// <param name="namespaces">All available namespaces.</param>
-    /// <param name="nsList">List of namespace names to include, or "all" for all namespaces.</param>
+    /// <param name="nsList">List of namespace names to include.</param>
+    /// <param name="allKeywordIsWildcard">
+    /// True only for discovery-job input, where the entry "all" (case-insensitive) means "every namespace". False
+    /// matches every entry as a literal namespace name, so a namespace actually called "all" is just a namespace.
+    /// </param>
     /// <returns>Filtered enumerable of namespaces.</returns>
-    private IEnumerable<V1Namespace> FilterNamespaces(IEnumerable<V1Namespace> namespaces, string[] nsList)
+    private IEnumerable<V1Namespace> FilterNamespaces(
+        IEnumerable<V1Namespace> namespaces, string[] nsList, bool allKeywordIsWildcard)
     {
+        var searchAll = allKeywordIsWildcard &&
+                        nsList.Any(n => string.Equals(n?.Trim(), "all", StringComparison.OrdinalIgnoreCase));
         foreach (var nsObj in namespaces)
-            if (nsList.Contains("all") || nsList.Contains(nsObj.Metadata.Name))
+            if (searchAll || nsList.Any(n => string.Equals(n?.Trim(), nsObj.Metadata.Name, StringComparison.OrdinalIgnoreCase)))
             {
                 _logger.LogDebug("Processing namespace: {Namespace}", nsObj.Metadata.Name);
                 yield return nsObj;
@@ -733,6 +877,32 @@ public class KubeCertificateManagerClient
             {
                 _logger.LogTrace("Skipping namespace '{Namespace}' as it does not match filter", nsObj.Metadata.Name);
             }
+    }
+
+    /// <summary>
+    /// Removes namespaces named in <paramref name="ignoredNamespaces"/> (case-insensitive, whitespace-tolerant) so
+    /// that nothing is listed in them. Matching is on the whole name; the discovery keyword "all" has no meaning here.
+    /// </summary>
+    /// <param name="matched">Namespaces selected by the search filter.</param>
+    /// <param name="ignoredNamespaces">Namespace names to exclude; null or empty keeps everything.</param>
+    /// <returns>The namespaces that remain, in their original order.</returns>
+    private List<V1Namespace> ExcludeIgnoredNamespaces(List<V1Namespace> matched, IEnumerable<string> ignoredNamespaces)
+    {
+        var ignored = new HashSet<string>(
+            (ignoredNamespaces ?? Enumerable.Empty<string>()).Select(n => n?.Trim()).Where(n => !string.IsNullOrEmpty(n)),
+            StringComparer.OrdinalIgnoreCase);
+        if (ignored.Count == 0) return matched;
+
+        var kept = new List<V1Namespace>();
+        foreach (var nsObj in matched)
+            if (ignored.Contains(nsObj.Metadata.Name?.Trim() ?? string.Empty))
+                _logger.LogDebug("Skipping namespace '{Namespace}': listed in the ignored namespaces", nsObj.Metadata.Name);
+            else
+                kept.Add(nsObj);
+
+        _logger.LogDebug("Ignored namespaces [{Ignored}] excluded {Excluded} of {Matched} matched namespace(s) before listing secrets",
+            string.Join(", ", ignored), matched.Count - kept.Count, matched.Count);
+        return kept;
     }
 
     /// <summary>
@@ -756,8 +926,10 @@ public class KubeCertificateManagerClient
     /// <param name="secType">Secret type filter.</param>
     /// <param name="locations">List to add discovered locations to.</param>
     /// <param name="clusterName">Name of the cluster.</param>
+    /// <param name="opaqueKeyMatch">How Opaque secrets are matched against the allowed keys.</param>
     private void DiscoverSecretsInNamespace(
-        string namespaceName, string[] allowedKeys, string secType, List<string> locations, string clusterName)
+        string namespaceName, string[] allowedKeys, string secType, List<string> locations, string clusterName,
+        OpaqueKeyMatch opaqueKeyMatch)
     {
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogDebug("Discovering secrets in namespace: {Namespace}", namespaceName);
@@ -766,12 +938,13 @@ public class KubeCertificateManagerClient
             _secretOperations.ListSecrets(namespaceName).Items);
 
         foreach (var secret in secrets)
-            ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations);
+            ProcessSecretIfSupported(secret, secType, allowedKeys, clusterName, namespaceName, locations,
+                opaqueKeyMatch);
     }
 
     private void ProcessSecretIfSupported(
         V1Secret secret, string secType, string[] allowedKeys, string clusterName, string namespaceName,
-        List<string> locations)
+        List<string> locations, OpaqueKeyMatch opaqueKeyMatch)
     {
         if (!IsSupportedSecretType(secret.Type, secType))
         {
@@ -781,20 +954,9 @@ public class KubeCertificateManagerClient
             return;
         }
 
-        try
-        {
-            var secretData = RetryPolicy(() =>
-                Client.CoreV1.ReadNamespacedSecret(secret.Metadata.Name, namespaceName));
-
-            ProcessSecret(secret, secretData, allowedKeys, clusterName, namespaceName, locations);
-        }
-        catch (k8s.Autorest.HttpOperationException ex) when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
-        {
-            // Secret was deleted between listing and reading - this can happen in dynamic environments
-            _logger.LogDebug(
-                "Secret '{SecretName}' in namespace '{Namespace}' was deleted before it could be read, skipping.",
-                secret.Metadata.Name, namespaceName);
-        }
+        // A listed secret already includes its Data, so it is processed directly (no per-secret GET). A secret
+        // deleted after the list simply is not re-fetched, so there is no NotFound race to handle here.
+        ProcessSecret(secret, allowedKeys, clusterName, namespaceName, locations, opaqueKeyMatch);
     }
 
     private T RetryPolicy<T>(Func<T> action)
@@ -839,8 +1001,8 @@ public class KubeCertificateManagerClient
         };
     }
 
-    private void ProcessSecret(V1Secret secret, V1Secret secretData, string[] allowedKeys,
-        string clusterName, string namespaceName, List<string> locations)
+    private void ProcessSecret(V1Secret secret, string[] allowedKeys,
+        string clusterName, string namespaceName, List<string> locations, OpaqueKeyMatch opaqueKeyMatch)
     {
         var secretLocation = $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}";
         _logger.LogTrace("Processing secret: {SecretName}. Secret location: {SecretLocation}",
@@ -851,7 +1013,7 @@ public class KubeCertificateManagerClient
             switch (secret.Type.ToLower())
             {
                 case "kubernetes.io/tls":
-                    var cert = ParseTlsSecret(secretData, secret.Metadata.Name);
+                    var cert = ParseTlsSecret(secret, secret.Metadata.Name);
                     if (cert != null)
                     {
                         _logger.LogDebug("Discovered TLS certificate at: {Location}", secretLocation);
@@ -861,9 +1023,19 @@ public class KubeCertificateManagerClient
                     break;
 
                 case "opaque":
-                    ParseOpaqueSecret(secretData, allowedKeys);
-                    _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
-                    locations.Add(secretLocation);
+                    if (ParseOpaqueSecret(secret, allowedKeys, opaqueKeyMatch))
+                    {
+                        _logger.LogDebug("Discovered opaque secret at: {Location}", secretLocation);
+                        locations.Add(secretLocation);
+                    }
+                    else
+                    {
+                        _logger.LogDebug(
+                            "Skipping opaque secret '{SecretName}' in namespace '{Namespace}': it has no data key matching the allowed keys [{AllowedKeys}] ({Match} match)",
+                            secret.Metadata.Name, namespaceName, string.Join(", ", allowedKeys ?? Array.Empty<string>()),
+                            opaqueKeyMatch);
+                    }
+
                     break;
 
                 default:
@@ -883,8 +1055,18 @@ public class KubeCertificateManagerClient
     {
         try
         {
-            var certData = Encoding.UTF8.GetString(secretData.Data["tls.crt"]);
-            var keyData = Encoding.UTF8.GetString(secretData.Data["tls.key"]);
+            // A TLS secret qualifies when tls.crt is present and non-empty; tls.key is optional (a cert-only
+            // kubernetes.io/tls secret is supported and simply has no private key).
+            if (secretData.Data == null ||
+                !secretData.Data.TryGetValue("tls.crt", out var certBytes) ||
+                certBytes == null || certBytes.Length == 0)
+            {
+                _logger.LogDebug("TLS secret {SecretName} has no tls.crt data; not a TLS certificate store.",
+                    secretName);
+                return null;
+            }
+
+            var certData = Encoding.UTF8.GetString(certBytes);
             _logger.LogTrace("Successfully parsed TLS secret: {SecretName}.", secretName);
             return certData; // Simply returning certificate data
         }
@@ -896,26 +1078,100 @@ public class KubeCertificateManagerClient
     }
 #nullable restore
 
-    private void ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys)
+    /// <summary>
+    /// Determines whether an Opaque secret holds at least one data key that discovery is looking for.
+    /// </summary>
+    /// <param name="secretData">The secret (with data) to inspect.</param>
+    /// <param name="allowedKeys">
+    /// Allowed data keys / extensions. A null or empty list matches nothing (unless <paramref name="match"/> is
+    /// <see cref="OpaqueKeyMatch.AllSecrets"/>): a missing filter is never treated as "everything".
+    /// </param>
+    /// <param name="match">How data keys are matched, or <see cref="OpaqueKeyMatch.AllSecrets"/> to skip filtering.</param>
+    /// <returns>True if the secret should be reported as a discovered store.</returns>
+    private bool ParseOpaqueSecret(V1Secret secretData, string[] allowedKeys, OpaqueKeyMatch match)
     {
-        if (secretData.Data == null)
+        if (match == OpaqueKeyMatch.AllSecrets)
         {
-            _logger.LogWarning("Secret data is null. Skipping this secret.");
-            return;
+            _logger.LogDebug("All Opaque secrets requested explicitly; not filtering opaque secret by data key.");
+            return true;
+        }
+
+        if (allowedKeys == null || allowedKeys.Length == 0)
+        {
+            _logger.LogWarning(
+                "No allowed keys supplied for Opaque discovery ({Match} match); no secret can match. " +
+                "Request OpaqueKeyMatch.AllSecrets to enumerate every Opaque secret.", match);
+            return false;
+        }
+
+        if (secretData.Data == null || secretData.Data.Count == 0)
+        {
+            _logger.LogDebug("Secret data is null or empty. Skipping this secret.");
+            return false;
         }
 
         foreach (var dataKey in secretData.Data.Keys)
         {
-            var extension = Path.GetExtension(dataKey).TrimStart('.').ToLowerInvariant();
-            if (!allowedKeys.Contains(extension) && !allowedKeys.Contains(dataKey))
+            if (!IsAllowedDataKey(dataKey, allowedKeys, match))
             {
                 _logger.LogDebug("Skipping key {Key} as it is not in the list of allowed keys.", dataKey);
                 continue;
             }
 
-            _logger.LogDebug("Allowed key {Key} found in secret. Parsing secret as needed.", dataKey);
-            // Further processing logic here if required
+            _logger.LogDebug("Allowed key {Key} found in secret.", dataKey);
+            return true;
         }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if any of the given secret data keys matches one of the allowed keys.
+    /// See <see cref="IsAllowedDataKey"/> for the matching rules.
+    /// </summary>
+    /// <param name="dataKeys">Secret data field names.</param>
+    /// <param name="allowedKeys">Allowed keys / extensions.</param>
+    /// <param name="match">
+    /// <see cref="OpaqueKeyMatch.Suffix"/> (default) or <see cref="OpaqueKeyMatch.Exact"/>.
+    /// </param>
+    public static bool HasAllowedDataKey(IEnumerable<string> dataKeys, IEnumerable<string> allowedKeys,
+        OpaqueKeyMatch match = OpaqueKeyMatch.Suffix)
+    {
+        if (dataKeys == null || allowedKeys == null) return false;
+        var allowed = allowedKeys.ToArray();
+        return dataKeys.Any(k => IsAllowedDataKey(k, allowed, match));
+    }
+
+    /// <summary>
+    /// <see cref="OpaqueKeyMatch.Suffix"/>: a secret data key matches an allowed key when it equals it, or ends with
+    /// <c>.&lt;allowed&gt;</c> (so the default <c>jks</c> matches <c>keystore.jks</c>, <c>p12</c> matches
+    /// <c>my.p12</c>), ignoring case and surrounding whitespace.
+    /// <see cref="OpaqueKeyMatch.Exact"/>: the data key must equal an allowed key exactly (case-sensitive, like the
+    /// dictionary lookup K8SSecret inventory performs). Leading dots and whitespace on the allowed key are ignored.
+    /// </summary>
+    private static bool IsAllowedDataKey(string dataKey, string[] allowedKeys, OpaqueKeyMatch match)
+    {
+        if (string.IsNullOrWhiteSpace(dataKey)) return false;
+        var key = dataKey.Trim();
+        var exact = match == OpaqueKeyMatch.Exact;
+
+        foreach (var allowedRaw in allowedKeys)
+        {
+            var allowed = allowedRaw?.Trim().TrimStart('.');
+            if (string.IsNullOrEmpty(allowed)) continue;
+
+            if (exact)
+            {
+                if (key.Equals(allowed, StringComparison.Ordinal)) return true;
+                continue;
+            }
+
+            if (key.Equals(allowed, StringComparison.OrdinalIgnoreCase)
+                || key.EndsWith("." + allowed, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -957,7 +1213,7 @@ public class KubeCertificateManagerClient
                     _logger.LogTrace("secretFieldName: {Name}", secretFieldName);
                     var sField = secretFieldName;
                     if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
-                    var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+                    var isJksField = allowedKeys.Any(allowedKey => sField.Contains(allowedKey, StringComparison.OrdinalIgnoreCase));
 
                     if (!isJksField) continue;
 
@@ -1040,7 +1296,7 @@ public class KubeCertificateManagerClient
                 _logger.LogTrace("secretFieldName: {FieldName}", secretFieldName);
                 var sField = secretFieldName;
                 if (secretFieldName.Contains('.')) sField = secretFieldName.Split(".")[^1];
-                var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey));
+                var isPkcs12Field = allowedKeys.Any(allowedKey => sField.Contains(allowedKey, StringComparison.OrdinalIgnoreCase));
 
                 if (!isPkcs12Field) continue;
 

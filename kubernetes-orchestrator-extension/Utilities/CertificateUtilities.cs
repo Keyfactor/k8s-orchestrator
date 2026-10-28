@@ -148,7 +148,9 @@ public static class CertificateUtilities
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error parsing certificate from DER: {Message}", ex.Message);
+            // Debug, not Error: the exception is rethrown and the caller decides how serious it is. Callers such as
+            // CertificateChainExtractor probe arbitrary secret data as DER, where "not a certificate" is expected.
+            Logger.LogDebug(ex, "Error parsing certificate from DER: {Message}", ex.Message);
             throw;
         }
     }
