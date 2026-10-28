@@ -548,6 +548,7 @@ public static class CertificateUtilities
         {
             var pemReader = new PemReader(new StringReader(pemData));
             var certificates = new List<X509Certificate>();
+            var blockIndex = 0;
 
             PemObject pemObject;
             while ((pemObject = pemReader.ReadPemObject()) != null)
@@ -558,11 +559,21 @@ public static class CertificateUtilities
                     // here: PemReader accepts any well-formed Base-64 body inside a CERTIFICATE block and
                     // X509CertificateParser.ReadCertificate returns null (it does not throw) when those bytes are not an
                     // X.509 certificate. So a placeholder such as
-                    // "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----" (or an empty body) is not rejected: it
-                    // yields an entry in the returned list that is null, not a certificate. Only a body that is not valid
-                    // Base-64 throws (FormatException). Callers must not assume every returned entry is a real certificate.
+                    // "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----" (or an empty body) is not rejected, and
+                    // ReadCertificate returns null for it. We skip that block (logged at Debug) rather than add the null, so
+                    // every entry in the returned list is a real certificate and callers need not null-check. Only a body
+                    // that is not valid Base-64 throws (FormatException), which is left to propagate.
+                    blockIndex++;
                     var certificateParser = new X509CertificateParser();
                     var certificate = certificateParser.ReadCertificate(pemObject.Content);
+                    if (certificate == null)
+                    {
+                        Logger.LogDebug(
+                            "CERTIFICATE block {BlockIndex} in PEM data ({ByteCount} decoded bytes) did not contain an X.509 certificate; skipping it",
+                            blockIndex, pemObject.Content?.Length ?? 0);
+                        continue;
+                    }
+
                     certificates.Add(certificate);
                     Logger.LogTrace("Loaded certificate {Index}: {Summary}",
                         certificates.Count, LoggingUtilities.GetCertificateSummary(certificate));
