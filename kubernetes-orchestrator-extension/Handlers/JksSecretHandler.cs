@@ -59,6 +59,22 @@ public class JksSecretHandler : SecretHandlerBase
 
         try
         {
+            return ReadKeystoreEntries().ToDictionary(e => e.Alias, e => e.Certificates);
+        }
+        finally
+        {
+            LogMethodExit(nameof(GetCertificatesWithAliases));
+        }
+    }
+
+    /// <summary>
+    /// Reads every keystore field in the secret and returns one entry per alias, recording whether the alias is a
+    /// private-key entry or a trusted-certificate-only entry.
+    /// </summary>
+    private List<KeystoreAliasEntry> ReadKeystoreEntries()
+    {
+        try
+        {
             var keys = BuildAllowedKeys(DefaultAllowedKeys);
             var k8sData = KubeClient.GetJksSecret(
                 Context.KubeSecretName,
@@ -67,7 +83,7 @@ public class JksSecretHandler : SecretHandlerBase
                 keys.ToList());
 
             var serializer = new JksCertificateStoreSerializer(null);
-            var result = new Dictionary<string, List<string>>();
+            var result = new Dictionary<string, KeystoreAliasEntry>();
 
             foreach (var (keyName, keyBytes) in k8sData.Inventory)
             {
@@ -76,25 +92,37 @@ public class JksSecretHandler : SecretHandlerBase
 
                 foreach (var alias in store.Aliases)
                 {
-                    var certChain = store.GetCertificateChain(alias);
-                    if (certChain == null) continue;
-
                     var certsList = new List<string>();
-                    foreach (var cert in certChain)
+                    var isKeyEntry = store.IsKeyEntry(alias);
+
+                    if (isKeyEntry)
                     {
-                        var pem = new StringBuilder();
-                        pem.AppendLine("-----BEGIN CERTIFICATE-----");
-                        pem.AppendLine(Convert.ToBase64String(cert.Certificate.GetEncoded()));
-                        pem.AppendLine("-----END CERTIFICATE-----");
-                        certsList.Add(pem.ToString());
+                        var certChain = store.GetCertificateChain(alias);
+                        if (certChain == null) continue;
+
+                        foreach (var cert in certChain)
+                            certsList.Add(ToPem(cert.Certificate.GetEncoded()));
+                    }
+                    else
+                    {
+                        // Trusted-certificate-only entry: no chain and no private key, report the single certificate
+                        var certEntry = store.GetCertificate(alias);
+                        if (certEntry == null)
+                        {
+                            Logger.LogDebug("Alias '{Alias}' has no key and no certificate, skipping", alias);
+                            continue;
+                        }
+
+                        Logger.LogDebug("Alias '{Alias}' is a trusted certificate entry (no private key)", alias);
+                        certsList.Add(ToPem(certEntry.Certificate.GetEncoded()));
                     }
 
                     var fullAlias = $"{keyName}/{alias}";
-                    result[fullAlias] = certsList;
+                    result[fullAlias] = new KeystoreAliasEntry(fullAlias, certsList, isKeyEntry);
                 }
             }
 
-            return result;
+            return result.Values.ToList();
         }
         catch (k8s.Autorest.HttpOperationException ex)
             when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -102,36 +130,45 @@ public class JksSecretHandler : SecretHandlerBase
             throw new StoreNotFoundException(
                 $"JKS keystore secret '{Context.KubeSecretName}' was not found in namespace '{Context.KubeNamespace}'.");
         }
-        finally
-        {
-            LogMethodExit(nameof(GetCertificatesWithAliases));
-        }
     }
+
+    private static string ToPem(byte[] der)
+    {
+        var pem = new StringBuilder();
+        pem.AppendLine("-----BEGIN CERTIFICATE-----");
+        pem.AppendLine(Convert.ToBase64String(der));
+        pem.AppendLine("-----END CERTIFICATE-----");
+        return pem.ToString();
+    }
+
+    private sealed record KeystoreAliasEntry(string Alias, List<string> Certificates, bool HasPrivateKey);
 
     /// <inheritdoc />
     public override List<InventoryEntry> GetInventoryEntries(long jobId)
     {
-        var aliasedCerts = GetCertificatesWithAliases(jobId);
-        var entries = new List<InventoryEntry>();
+        LogMethodEntry(nameof(GetInventoryEntries));
 
-        foreach (var kvp in aliasedCerts)
+        try
         {
-            entries.Add(new InventoryEntry
+            return ReadKeystoreEntries().Select(e => new InventoryEntry
             {
-                Alias = kvp.Key,
-                Certificates = kvp.Value,
-                HasPrivateKey = true // JKS entries typically have private keys
-            });
+                Alias = e.Alias,
+                Certificates = e.Certificates,
+                // Only private-key entries carry a key; trusted-certificate entries do not
+                HasPrivateKey = e.HasPrivateKey
+            }).ToList();
         }
-
-        return entries;
+        finally
+        {
+            LogMethodExit(nameof(GetInventoryEntries));
+        }
     }
 
     /// <inheritdoc />
     public override bool HasPrivateKey()
     {
-        // JKS keystores typically have private keys
-        return true;
+        // True when at least one alias in the keystore is a private-key entry
+        return ReadKeystoreEntries().Any(e => e.HasPrivateKey);
     }
 
     #endregion
@@ -300,14 +337,15 @@ public class JksSecretHandler : SecretHandlerBase
     #region Discovery Operations
 
     /// <inheritdoc />
-    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         LogMethodEntry(nameof(DiscoverStores));
 
         try
         {
             var keys = allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys;
-            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv);
+            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv, ignoredNamespaces: ignoredNamespaces);
         }
         finally
         {

@@ -150,6 +150,13 @@ public abstract class InventoryBase : K8SJobBase, IInventoryJobExtension
         {
             submitInventory.Invoke(inventoryItems);
             Logger.LogInformation("Successfully submitted inventory");
+            if (inventoryItems.Count == 0)
+            {
+                Logger.LogDebug("No certificates found in store '{StorePath}'; returning Success with an empty inventory",
+                    StorePath);
+                return SuccessJob(jobHistoryId, $"No certificates found in store '{StorePath}'");
+            }
+
             return SuccessJob(jobHistoryId);
         }
         catch (Exception ex)

@@ -148,7 +148,9 @@ public static class CertificateUtilities
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error parsing certificate from DER: {Message}", ex.Message);
+            // Debug, not Error: the exception is rethrown and the caller decides how serious it is. Callers such as
+            // CertificateChainExtractor probe arbitrary secret data as DER, where "not a certificate" is expected.
+            Logger.LogDebug(ex, "Error parsing certificate from DER: {Message}", ex.Message);
             throw;
         }
     }
@@ -552,6 +554,13 @@ public static class CertificateUtilities
             {
                 if (pemObject.Type == "CERTIFICATE")
                 {
+                    // Upstream BouncyCastle behaviour (BouncyCastle.Cryptography 2.6.2), deliberately not worked around
+                    // here: PemReader accepts any well-formed Base-64 body inside a CERTIFICATE block and
+                    // X509CertificateParser.ReadCertificate returns null (it does not throw) when those bytes are not an
+                    // X.509 certificate. So a placeholder such as
+                    // "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----" (or an empty body) is not rejected: it
+                    // yields an entry in the returned list that is null, not a certificate. Only a body that is not valid
+                    // Base-64 throws (FormatException). Callers must not assume every returned entry is a real certificate.
                     var certificateParser = new X509CertificateParser();
                     var certificate = certificateParser.ReadCertificate(pemObject.Content);
                     certificates.Add(certificate);

@@ -227,14 +227,16 @@ public class TlsSecretHandler : SecretHandlerBase
     #region Discovery Operations
 
     /// <inheritdoc />
-    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         LogMethodEntry(nameof(DiscoverStores));
 
         try
         {
             var keys = allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys;
-            return KubeClient.DiscoverSecrets(keys, "kubernetes.io/tls", namespacesCsv);
+            return KubeClient.DiscoverSecrets(keys, "kubernetes.io/tls", namespacesCsv,
+                ignoredNamespaces: ignoredNamespaces);
         }
         finally
         {

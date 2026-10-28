@@ -55,6 +55,16 @@ Run all unit tests (excludes integration tests).
 make test-unit
 ```
 
+Run a single test class or method (or any subset) with the optional `TEST_FILTER` variable. It is ANDed with the
+target's own filter, so integration tests stay excluded here; it works with all `make test*` targets, including coverage.
+A bare name means `FullyQualifiedName~<name>`; a value with `~ = ! & |` is used as a full `dotnet test --filter`
+expression.
+```bash
+make test-unit TEST_FILTER=DiscoveryRegressionTests
+make test-unit TEST_FILTER='FullyQualifiedName~Namespace&FullyQualifiedName!~Opaque'
+make test-integration TEST_FILTER=K8SJKSStoreIntegrationTests
+```
+
 ### Integration Tests
 
 Integration tests require:
