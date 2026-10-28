@@ -75,17 +75,22 @@ public class NamespaceSecretHandler : SecretHandlerBase
 
         try
         {
-            var entries = new List<InventoryEntry>();
+            var tlsEntries = new List<InventoryEntry>();
+            var opaqueEntries = new List<InventoryEntry>();
             var errors = new List<string>();
             var targetNamespace = Context.KubeNamespace;
 
             // One namespace list and one secret list for the namespace; the listed secrets (with data) are handed
-            // to the inner handlers so no secret is read again (GitHub issue #104). TLS secrets come first, then
-            // every Opaque secret (#101), exactly as the two separate discovery passes used to order them.
-            foreach (var found in KubeClient.DiscoverNamespaceInventorySecrets(targetNamespace))
+            // to the inner handlers so no secret is read again (GitHub issue #104). Each secret is converted to its
+            // (public-certificate-only) inventory entry as it is enumerated and the raw secret is not retained.
+            // TLS entries come first, then every Opaque entry (#101), exactly as the two separate discovery passes
+            // used to order them.
+            foreach (var found in KubeClient.EnumerateNamespaceInventorySecrets(targetNamespace))
             {
-                ProcessSecretEntry(found, entries, errors, jobId);
+                ProcessSecretEntry(found, found.Kind == "tls" ? tlsEntries : opaqueEntries, errors, jobId);
             }
+
+            var entries = tlsEntries.Concat(opaqueEntries).ToList();
 
             if (errors.Count > 0)
             {

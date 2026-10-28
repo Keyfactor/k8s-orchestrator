@@ -737,36 +737,40 @@ public class KubeCertificateManagerClient
     /// <summary>
     /// Single-pass variant of the two <see cref="DiscoverSecrets"/> calls K8SCluster inventory used to make
     /// (kubernetes.io/tls with key "tls.crt", then every Opaque secret via <see cref="OpaqueKeyMatch.AllSecrets"/>):
-    /// namespaces are listed once and each namespace's secrets are listed once. The same predicates apply, and
-    /// the result keeps the same order (all TLS secrets, then all Opaque secrets), but the secret objects are returned
-    /// so inventory does not have to GET each one again.
+    /// namespaces are listed once and each namespace's secrets are listed once. The same predicates apply, and the
+    /// secret objects are returned so inventory does not have to GET each one again.
     /// Covers EVERY namespace in the cluster; this is an explicit "whole cluster" request, not a name match, so a
     /// namespace that happens to be called "all" is simply one of the namespaces.
+    /// <para>
+    /// The returned sequence is lazy and works one namespace at a time: a namespace's secrets are listed only when the
+    /// caller asks for the first secret after the previous namespace was exhausted, and the previous namespace's list
+    /// (including secret data such as private keys) is dropped at that point. A consumer that converts each secret to
+    /// its result immediately therefore never holds more than one namespace's secret material, instead of the whole
+    /// cluster's. Within a namespace the secrets keep list order; a secret is reported as exactly one of "tls" or
+    /// "opaque". Callers that need the legacy ordering (all TLS, then all Opaque) must keep the two kinds apart
+    /// themselves, retaining only what they derive from each secret and not the secret.
+    /// </para>
     /// </summary>
-    /// <returns>Discovered TLS secrets followed by discovered Opaque secrets.</returns>
-    public List<DiscoveredSecret> DiscoverClusterInventorySecrets()
+    /// <returns>Discovered TLS and Opaque secrets, namespace by namespace.</returns>
+    public IEnumerable<DiscoveredSecret> EnumerateClusterInventorySecrets()
     {
-        _logger.MethodEntry(LogLevel.Debug);
         var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         var namespaces = FetchNamespaces(clusterName).ToList();
         _logger.LogDebug("Inventorying all {Count} namespaces in the cluster", namespaces.Count);
 
-        var result = DiscoverInventorySecretsIn(namespaces, clusterName);
-        _logger.MethodExit(LogLevel.Debug);
-        return result;
+        return EnumerateInventorySecretsIn(namespaces, clusterName);
     }
 
     /// <summary>
-    /// Same single-pass listing as <see cref="DiscoverClusterInventorySecrets"/>, restricted to ONE namespace
-    /// (K8SNS inventory). <paramref name="namespaceName"/> is matched literally against namespace names
+    /// Same single-pass, namespace-at-a-time listing as <see cref="EnumerateClusterInventorySecrets"/>, restricted to
+    /// ONE namespace (K8SNS inventory). <paramref name="namespaceName"/> is matched literally against namespace names
     /// (case-insensitive, surrounding whitespace ignored): it is never a list and the discovery keyword "all" has no
     /// special meaning, so a namespace that is really named "all" only returns its own secrets.
     /// </summary>
     /// <param name="namespaceName">Exact namespace name.</param>
-    /// <returns>Discovered TLS secrets followed by discovered Opaque secrets.</returns>
-    public List<DiscoveredSecret> DiscoverNamespaceInventorySecrets(string namespaceName)
+    /// <returns>Discovered TLS and Opaque secrets of that namespace.</returns>
+    public IEnumerable<DiscoveredSecret> EnumerateNamespaceInventorySecrets(string namespaceName)
     {
-        _logger.MethodEntry(LogLevel.Debug);
         var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
         var namespaces = FetchNamespaces(clusterName).ToList();
         _logger.LogDebug("Requested namespace (literal match): '{Requested}'; cluster has {Count} namespaces",
@@ -778,44 +782,57 @@ public class KubeCertificateManagerClient
                 "Namespace '{Requested}' does not exist among the {Count} namespaces in the cluster",
                 namespaceName, namespaces.Count);
 
-        var result = DiscoverInventorySecretsIn(matched, clusterName);
-        _logger.MethodExit(LogLevel.Debug);
-        return result;
+        return EnumerateInventorySecretsIn(matched, clusterName);
     }
 
-    private List<DiscoveredSecret> DiscoverInventorySecretsIn(IEnumerable<V1Namespace> matched, string clusterName)
+    private IEnumerable<DiscoveredSecret> EnumerateInventorySecretsIn(
+        IReadOnlyList<V1Namespace> matched, string clusterName)
     {
-        var tls = new List<DiscoveredSecret>();
-        var opaque = new List<DiscoveredSecret>();
+        _logger.MethodEntry(LogLevel.Debug);
         var tlsKeys = new[] { "tls.crt" };
+        var tlsCount = 0;
+        var opaqueCount = 0;
 
-        foreach (var nsObj in matched)
+        try
         {
-            var namespaceName = nsObj.Metadata.Name;
-            _logger.LogDebug("Listing secrets in namespace: {Namespace}", namespaceName);
-            var secrets = RetryPolicy(() => _secretOperations.ListSecrets(namespaceName).Items);
-
-            foreach (var secret in secrets)
+            foreach (var nsObj in matched)
             {
-                // Reuse the discovery predicates verbatim; a one-element location list records "matched".
-                var hit = new List<string>();
-                ProcessSecretIfSupported(secret, "kubernetes.io/tls", tlsKeys, clusterName, namespaceName, hit,
-                    OpaqueKeyMatch.Suffix);
-                if (hit.Count > 0)
-                    tls.Add(new DiscoveredSecret(namespaceName, secret.Metadata.Name, "tls", secret,
-                        $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}"));
+                var namespaceName = nsObj.Metadata.Name;
+                _logger.LogDebug("Listing secrets in namespace: {Namespace}", namespaceName);
+                var secrets = RetryPolicy(() => _secretOperations.ListSecrets(namespaceName).Items);
 
-                hit.Clear();
-                ProcessSecretIfSupported(secret, "Opaque", null, clusterName, namespaceName, hit,
-                    OpaqueKeyMatch.AllSecrets);
-                if (hit.Count > 0)
-                    opaque.Add(new DiscoveredSecret(namespaceName, secret.Metadata.Name, "opaque", secret,
-                        $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}"));
+                foreach (var secret in secrets)
+                {
+                    // Reuse the discovery predicates verbatim; a one-element location list records "matched".
+                    var hit = new List<string>();
+                    ProcessSecretIfSupported(secret, "kubernetes.io/tls", tlsKeys, clusterName, namespaceName, hit,
+                        OpaqueKeyMatch.Suffix);
+                    if (hit.Count > 0)
+                    {
+                        tlsCount++;
+                        yield return new DiscoveredSecret(namespaceName, secret.Metadata.Name, "tls", secret,
+                            $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}");
+                    }
+
+                    hit.Clear();
+                    ProcessSecretIfSupported(secret, "Opaque", null, clusterName, namespaceName, hit,
+                        OpaqueKeyMatch.AllSecrets);
+                    if (hit.Count > 0)
+                    {
+                        opaqueCount++;
+                        yield return new DiscoveredSecret(namespaceName, secret.Metadata.Name, "opaque", secret,
+                            $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}");
+                    }
+                }
+
+                _logger.LogDebug("Finished namespace {Namespace}; its secret list is released", namespaceName);
             }
         }
-
-        _logger.LogDebug("Discovered {Tls} TLS and {Opaque} Opaque secrets", tls.Count, opaque.Count);
-        return tls.Concat(opaque).ToList();
+        finally
+        {
+            _logger.LogDebug("Discovered {Tls} TLS and {Opaque} Opaque secrets", tlsCount, opaqueCount);
+            _logger.MethodExit(LogLevel.Debug);
+        }
     }
 
     /// <summary>

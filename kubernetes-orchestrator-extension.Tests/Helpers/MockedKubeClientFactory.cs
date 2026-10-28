@@ -108,11 +108,15 @@ public static class MockedKubeClientFactory
     /// Namespaces in which listing secrets fails with HTTP 403 Forbidden, as for a service account that lacks
     /// <c>list secrets</c> there.
     /// </param>
+    /// <param name="onSecretsListed">
+    /// Invoked with the namespace each time its secrets are listed, before the response is returned. Lets a test place
+    /// the list calls on the same timeline as other recorded events.
+    /// </param>
     public static MockedKubeClient Create(
         IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null, bool allowSecretReads = true,
-        IEnumerable<string> forbiddenSecretListNamespaces = null)
+        IEnumerable<string> forbiddenSecretListNamespaces = null, System.Action<string> onSecretsListed = null)
         => Attach(new KubeCertificateManagerClient(BuildKubeconfig()), secrets, namespaces, allowSecretReads,
-            forbiddenSecretListNamespaces);
+            forbiddenSecretListNamespaces, onSecretsListed);
 
     /// <summary>
     /// Same as <see cref="Create"/> but rewires an EXISTING client instance in place (its Kubernetes API and secret
@@ -121,7 +125,8 @@ public static class MockedKubeClientFactory
     /// </summary>
     public static MockedKubeClient Attach(
         KubeCertificateManagerClient client, IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null,
-        bool allowSecretReads = true, IEnumerable<string> forbiddenSecretListNamespaces = null)
+        bool allowSecretReads = true, IEnumerable<string> forbiddenSecretListNamespaces = null,
+        System.Action<string> onSecretsListed = null)
     {
         var all = secrets.ToList();
         var forbidden = new HashSet<string>(forbiddenSecretListNamespaces ?? Enumerable.Empty<string>());
@@ -153,6 +158,7 @@ public static class MockedKubeClientFactory
             .Returns((string ns, bool? _, string _, string _, string _, int? _, string _, string _, bool? _,
                 int? _, bool? _, bool? _, IReadOnlyDictionary<string, IReadOnlyList<string>> _, CancellationToken _) =>
             {
+                onSecretsListed?.Invoke(ns);
                 if (forbidden.Contains(ns))
                     throw new HttpOperationException($"secrets is forbidden: cannot list secrets in namespace \"{ns}\"")
                     {

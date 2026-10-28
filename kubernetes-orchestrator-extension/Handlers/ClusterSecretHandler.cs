@@ -75,16 +75,22 @@ public class ClusterSecretHandler : SecretHandlerBase
 
         try
         {
-            var entries = new List<InventoryEntry>();
+            var tlsEntries = new List<InventoryEntry>();
+            var opaqueEntries = new List<InventoryEntry>();
             var errors = new List<string>();
 
             // One namespace list and one secret list per namespace; the listed secrets (with data) are handed to
-            // the inner handlers so no secret is read again (GitHub issue #104). TLS secrets come first, then
-            // every Opaque secret (#101), exactly as the two separate discovery passes used to order them.
-            foreach (var found in KubeClient.DiscoverClusterInventorySecrets())
+            // the inner handlers so no secret is read again (GitHub issue #104). The client streams one namespace
+            // at a time and each secret is converted to its (public-certificate-only) inventory entry right away, so
+            // the raw secret data of the whole cluster is never resident at once; only the derived entries are kept.
+            // TLS entries come first, then every Opaque entry (#101), exactly as the two separate discovery passes
+            // used to order them.
+            foreach (var found in KubeClient.EnumerateClusterInventorySecrets())
             {
-                ProcessSecretEntry(found, entries, errors, jobId);
+                ProcessSecretEntry(found, found.Kind == "tls" ? tlsEntries : opaqueEntries, errors, jobId);
             }
+
+            var entries = tlsEntries.Concat(opaqueEntries).ToList();
 
             if (errors.Count > 0)
             {
