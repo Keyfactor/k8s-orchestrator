@@ -44,6 +44,25 @@ Test targets run on `net10.0` only by default (the project still builds for `net
 `TEST_FRAMEWORK=net8.0`, or `TEST_FRAMEWORK=` to run every target framework, e.g. `make test-unit TEST_FRAMEWORK=`.
 `test-integration-fast`, `test-integration-full` and `test-integration-smoke-net10` keep their fixed frameworks.
 
+#### Running a single test or class
+
+Set `TEST_FILTER` to run only matching tests. It is optional (empty by default, which leaves every target unchanged) and is
+combined (AND) with the filter each target already applies, so `make test-unit` still excludes integration tests and the
+integration targets still select only integration tests. It works with every `make test*` target, including the
+coverage targets, and with `TEST_FRAMEWORK`.
+
+```bash
+make test-unit TEST_FILTER=DiscoveryRegressionTests             # a bare name = FullyQualifiedName~<name> (class, method or namespace fragment)
+make test-unit TEST_FILTER='FullyQualifiedName~Namespace&FullyQualifiedName!~Opaque'   # a full dotnet filter expression
+make test-integration TEST_FILTER=K8SJKSStoreIntegrationTests   # integration targets: only the matching integration tests
+make test-coverage-unit TEST_FILTER=KeyOnlyOpaqueInventoryTests
+```
+
+A value containing any of `~ = ! & |` is passed through as a `dotnet test --filter` expression (see
+[the VSTest filter syntax](https://learn.microsoft.com/dotnet/core/testing/selective-unit-tests)); anything else is
+treated as `FullyQualifiedName~<value>`. Quote values containing `&` or `|` so the shell does not interpret them. `make help`
+lists the variables. Use `make -n <target> TEST_FILTER=...` to see the resulting `dotnet test` command.
+
 ### Integration Tests
 
 Integration tests require a Kubernetes cluster. By default, tests use `~/.kube/config` with the `kf-integrations` context.

@@ -16,6 +16,9 @@
 - fix(inventory): A `K8SNS` store whose namespace is literally named `all` no longer inventories every secret in the cluster. The `all` keyword is now a wildcard only for discovery job input (`Directories to search`) and for the explicit whole-cluster request that `K8SCluster` inventory makes; `K8SNS` inventory matches its namespace by name only. Behaviour is unchanged for every other namespace name.
 - perf(discovery): Discovery (and the `K8SCluster`/`K8SNS` inventory pass that enumerates secrets) no longer issues a separate `GET` for every secret after listing a namespace. The list response already contains each secret's data, so it is used directly: one API call per namespace instead of one plus one per secret. Results are unchanged.
 
+## Chores
+- chore(build): Add an optional `TEST_FILTER` Makefile variable to run a single test or class, e.g. `make test-unit TEST_FILTER=DiscoveryRegressionTests` or `TEST_FILTER='FullyQualifiedName~Namespace&FullyQualifiedName!~Opaque'`. A bare name means `FullyQualifiedName~<name>`; a value containing `~ = ! & |` is used as a full `dotnet test --filter` expression. It is ANDed with each target's own filter (unit targets still exclude integration tests) and defaults to empty, which leaves every target unchanged. Listed in `make help`.
+
 # 2.0.1
 
 ## Bug Fixes
