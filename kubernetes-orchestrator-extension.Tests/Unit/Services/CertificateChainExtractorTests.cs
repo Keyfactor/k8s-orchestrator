@@ -117,15 +117,16 @@ public class CertificateChainExtractorTests
     }
 
     [Fact]
-    public void ExtractCertificates_InvalidData_ReturnsEmptyAndLogsWarning()
+    public void ExtractCertificates_InvalidData_ReturnsEmpty()
     {
-        // Data that is neither PEM nor DER — exercises the else/warning branch at line 78.
+        // Data that is neither PEM nor DER — exercises the "not a certificate" branch (logged at Debug only;
+        // see CertificateChainExtractorNonCertificateTests for the log-level assertions).
         var junk = Convert.ToBase64String(new byte[] { 0x01, 0x02, 0x03, 0x04 });
 
         var kubeClient = CreateKubeClient();
         var extractor = new CertificateChainExtractor(kubeClient);
 
-        // Should not throw; logs a warning and returns empty
+        // Should not throw; returns empty
         var result = extractor.ExtractCertificates(junk);
 
         Assert.Empty(result);
