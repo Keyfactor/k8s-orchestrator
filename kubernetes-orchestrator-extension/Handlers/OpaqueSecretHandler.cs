@@ -11,6 +11,7 @@ using System.Text;
 using k8s.Autorest;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
+using Keyfactor.Extensions.Orchestrator.K8S.Enums;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs;
 using Keyfactor.Orchestrators.Extensions;
 using Microsoft.Extensions.Logging;
@@ -33,8 +34,21 @@ public class OpaqueSecretHandler : SecretHandlerBase
         "ca.crt", "ca", "ca-bundle", "ca-bundle.crt"
     };
 
-    /// <inheritdoc />
-    public override string[] AllowedKeys => DefaultAllowedKeys;
+    /// <summary>
+    /// Data keys that mark an Opaque secret as a K8SSecret store during discovery: the exact keys inventory reads as
+    /// the store's certificate (<see cref="DefaultAllowedKeys"/> minus the private-key and CA fields, which alone do
+    /// not make a secret a certificate store).
+    /// </summary>
+    private static readonly string[] DiscoveryKeys =
+    {
+        "tls.crt", "certificate", "cert", "crt", "cert.pem", "certificate.pem"
+    };
+
+    /// <summary>
+    /// Keys DiscoveryBase merges job patterns into for discovery. Intentionally narrower than the keys inventory
+    /// scans (<see cref="DefaultAllowedKeys"/>): see <see cref="DiscoveryKeys"/>.
+    /// </summary>
+    public override string[] AllowedKeys => DiscoveryKeys;
 
     /// <inheritdoc />
     public override string SecretTypeName => "opaque";
@@ -253,8 +267,11 @@ public class OpaqueSecretHandler : SecretHandlerBase
 
         try
         {
+            // Exact (not suffix) matching: K8SSecret inventory looks the cert keys up by exact name, so discovery
+            // must only report secrets inventory can actually read (e.g. not "server.crt", "api.key" or a lone "ca").
             var keys = allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys;
-            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv);
+            Logger.LogDebug("Opaque discovery using exact match on keys: [{Keys}]", string.Join(", ", keys));
+            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv, opaqueKeyMatch: OpaqueKeyMatch.Exact);
         }
         finally
         {

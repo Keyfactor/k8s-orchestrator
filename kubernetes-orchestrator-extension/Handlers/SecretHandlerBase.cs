@@ -164,6 +164,15 @@ public abstract class SecretHandlerBase : ISecretHandler
         }
     }
 
+    private V1Secret _prefetchedSecret;
+
+    /// <summary>
+    /// Supplies a secret that was already fetched (e.g. by a list call) so <see cref="GetSecret"/> returns it instead
+    /// of reading it again. Used only by the cluster / namespace inventory fan-out; do not use for management paths,
+    /// which must read the live secret.
+    /// </summary>
+    internal void UseSecret(V1Secret secret) => _prefetchedSecret = secret;
+
     /// <summary>
     /// Gets the secret from Kubernetes.
     /// </summary>
@@ -171,6 +180,13 @@ public abstract class SecretHandlerBase : ISecretHandler
     /// <exception cref="StoreNotFoundException">Thrown if secret doesn't exist.</exception>
     protected V1Secret GetSecret()
     {
+        if (_prefetchedSecret != null)
+        {
+            Logger.LogDebug("Using already-listed secret {Name} from namespace {Namespace}",
+                Context.KubeSecretName, Context.KubeNamespace);
+            return _prefetchedSecret;
+        }
+
         Logger.LogDebug("Getting secret {Name} from namespace {Namespace}",
             Context.KubeSecretName, Context.KubeNamespace);
 
