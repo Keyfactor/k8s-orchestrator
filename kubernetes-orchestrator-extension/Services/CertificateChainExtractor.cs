@@ -5,11 +5,13 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions
 // and limitations under the License.
 
+using System;
 using System.Collections.Generic;
 using System.Text;
 using Keyfactor.Extensions.Orchestrator.K8S.Clients;
 using Keyfactor.Logging;
 using Microsoft.Extensions.Logging;
+using Org.BouncyCastle.X509;
 
 namespace Keyfactor.Extensions.Orchestrator.K8S.Services;
 
@@ -66,7 +68,19 @@ public class CertificateChainExtractor
 
         // Fallback: try to parse as a single DER certificate
         _logger.LogDebug("Failed to parse {Source} as PEM chain, trying DER format", sourceDescription);
-        var certObj = _kubeClient.ReadDerCertificate(certData);
+        X509Certificate certObj = null;
+        try
+        {
+            certObj = _kubeClient.ReadDerCertificate(certData);
+        }
+        catch (Exception ex)
+        {
+            // Not Base-64 (e.g. a PEM private key stored under a certificate key) or not a DER certificate.
+            // Data that is not a certificate is skipped, not fatal: a key-only secret has no certificates.
+            _logger.LogDebug("{Source} is not a DER certificate ({ExceptionType}), skipping", sourceDescription,
+                ex.GetType().Name);
+        }
+
         if (certObj != null)
         {
             var certPem = _kubeClient.ConvertToPem(certObj);
@@ -75,7 +89,7 @@ public class CertificateChainExtractor
         }
         else
         {
-            _logger.LogWarning("Failed to parse certificate from {Source} as PEM or DER format", sourceDescription);
+            _logger.LogWarning("No certificate found in {Source}: data is neither a PEM certificate nor a DER certificate; skipping", sourceDescription);
         }
 
         return result;

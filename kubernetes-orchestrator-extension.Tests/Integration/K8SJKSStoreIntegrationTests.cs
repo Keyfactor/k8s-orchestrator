@@ -598,6 +598,19 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
             await K8sClient.CoreV1.CreateNamespacedSecretAsync(secret, TestNamespace);
         }
 
+        // Negative control (#101): an Opaque secret with no allowed key must NOT be discovered
+        var noKeySecretName = $"test-discover-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
         // Create Discovery job config
         var jobConfig = new DiscoveryJobConfiguration
         {
@@ -615,14 +628,86 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
         // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
-        // Note: Discovery returns store paths in the result
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret1Name}"));
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secret2Name}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
+    }
+
+    /// <summary>
+    /// 'Directories to search' = <c>all</c> (lower case, as Command sends it) must search every namespace.
+    /// Includes the #101 negative control.
+    /// </summary>
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_DirectoriesAll_FindsJksSecrets()
+    {
+        // Arrange
+        Assert.NotEqual("default", TestNamespace);
+        var secretName = $"test-discover-all-{Guid.NewGuid():N}";
+        TrackSecret(secretName);
+
+        var certInfo = CachedCertificateProvider.GetOrCreate(KeyType.Rsa2048, "Discovery Test");
+        var jksBytes = CertificateTestHelper.GenerateJks(certInfo.Certificate, certInfo.KeyPair, "testpassword");
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(secretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]> { { "keystore.jks", jksBytes } }
+        }, TestNamespace);
+
+        var noKeySecretName = $"test-discover-all-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
+        {
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
+            {
+                { "config.txt", System.Text.Encoding.UTF8.GetBytes("not-a-certificate-store") }
+            }
+        }, TestNamespace);
+
+        var jobConfig = new DiscoveryJobConfiguration
+        {
+            Capability = "K8SJKS",
+            ClientMachine = TestNamespace,
+            ServerUsername = string.Empty,
+            ServerPassword = KubeconfigJson,
+            UseSSL = true,
+            JobProperties = new Dictionary<string, object>
+            {
+                { "dirs", "all" },
+                { "extensions", "" },
+                { "ignoreddirs", "" },
+                { "patterns", "" }
+            }
+        };
+
+        var discovered = new List<string>();
+
+        // Act
+        var result = await Task.Run(() => new Discovery(MockPamResolver.Object).ProcessJob(jobConfig, items =>
+        {
+            discovered.AddRange(items);
+            return true;
+        }));
+
+        // Assert
+        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
+            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.Contains(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{secretName}"));
+        Assert.DoesNotContain(discovered, d => d.EndsWith($"/{TestNamespace}/secrets/{noKeySecretName}"));
     }
 
     #endregion
@@ -921,30 +1006,32 @@ public class K8SJKSStoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
-        // NOTE: JKS inventory only returns entries with private keys (PrivateKeyEntry).
-        // Trusted certificate entries (certificate-only, no private key) are NOT returned.
-        // This is because GetCertificateChain() returns null for certificate-only entries,
-        // which causes them to be marked as "skip" in the JKS inventory handler.
-        // Should have 2 inventory items (only the private key entries)
-        Assert.Equal(2, inventoryItems.Count);
+        // JKS inventory returns ALL entries (2.0.2+): private key entries with their chain, and trusted
+        // certificate entries as a single certificate. Before 2.0.2 (and in 1.x) trusted entries were dropped.
+        // Should have 4 inventory items (2 private key entries + 2 trusted cert entries)
+        Assert.Equal(4, inventoryItems.Count);
 
-        // Verify private key entries are returned
-        // Note: JKS inventory uses full alias format: <secretDataKey>/<entryAlias>
+        // Verify all entries are returned with full alias format: <secretDataKey>/<entryAlias>
         var server1Item = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/server1");
         var server2Item = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/server2");
+        var rootCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/root-ca");
+        var intermediateCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/intermediate-ca");
 
         Assert.NotNull(server1Item);
         Assert.NotNull(server2Item);
+        Assert.NotNull(rootCaItem);
+        Assert.NotNull(intermediateCaItem);
 
-        // Private key entries should have PrivateKeyEntry = true
+        // PrivateKeyEntry is reported per alias: only private key entries carry a key
         Assert.True(server1Item.PrivateKeyEntry, "server1 should have PrivateKeyEntry = true");
         Assert.True(server2Item.PrivateKeyEntry, "server2 should have PrivateKeyEntry = true");
+        Assert.False(rootCaItem.PrivateKeyEntry, "root-ca is a trusted cert entry and should have PrivateKeyEntry = false");
+        Assert.False(intermediateCaItem.PrivateKeyEntry,
+            "intermediate-ca is a trusted cert entry and should have PrivateKeyEntry = false");
 
-        // Verify trusted cert entries are NOT returned (expected behavior for JKS)
-        var rootCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/root-ca");
-        var intermediateCaItem = inventoryItems.FirstOrDefault(i => i.Alias == "keystore.jks/intermediate-ca");
-        Assert.Null(rootCaItem); // Trusted certs are not included in JKS inventory
-        Assert.Null(intermediateCaItem); // Trusted certs are not included in JKS inventory
+        // Trusted cert entries are reported as a single certificate
+        Assert.Single(rootCaItem.Certificates);
+        Assert.Single(intermediateCaItem.Certificates);
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]

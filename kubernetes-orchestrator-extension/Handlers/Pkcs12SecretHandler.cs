@@ -60,6 +60,22 @@ public class Pkcs12SecretHandler : SecretHandlerBase
 
         try
         {
+            return ReadKeystoreEntries().ToDictionary(e => e.Alias, e => e.Certificates);
+        }
+        finally
+        {
+            LogMethodExit(nameof(GetCertificatesWithAliases));
+        }
+    }
+
+    /// <summary>
+    /// Reads every keystore field in the secret and returns one entry per alias, recording whether the alias is a
+    /// private-key entry or a trusted-certificate-only entry.
+    /// </summary>
+    private List<KeystoreAliasEntry> ReadKeystoreEntries()
+    {
+        try
+        {
             var keys = BuildAllowedKeys(DefaultAllowedKeys);
             var k8sData = KubeClient.GetPkcs12Secret(
                 Context.KubeSecretName,
@@ -68,7 +84,7 @@ public class Pkcs12SecretHandler : SecretHandlerBase
                 keys.ToList());
 
             var serializer = new Pkcs12CertificateStoreSerializer(null);
-            var result = new Dictionary<string, List<string>>();
+            var result = new Dictionary<string, KeystoreAliasEntry>();
 
             foreach (var (keyName, keyBytes) in k8sData.Inventory)
             {
@@ -81,7 +97,8 @@ public class Pkcs12SecretHandler : SecretHandlerBase
 
                     // For key entries, get the certificate chain
                     // For certificate-only entries (trusted certs), get the single certificate
-                    if (store.IsKeyEntry(alias))
+                    var isKeyEntry = store.IsKeyEntry(alias);
+                    if (isKeyEntry)
                     {
                         var certChain = store.GetCertificateChain(alias);
                         if (certChain == null) continue;
@@ -109,11 +126,12 @@ public class Pkcs12SecretHandler : SecretHandlerBase
                     }
 
                     var fullAlias = $"{keyName}/{alias}";
-                    result[fullAlias] = certsList;
+                    Logger.LogDebug("Alias '{Alias}' isKeyEntry={IsKeyEntry}", fullAlias, isKeyEntry);
+                    result[fullAlias] = new KeystoreAliasEntry(fullAlias, certsList, isKeyEntry);
                 }
             }
 
-            return result;
+            return result.Values.ToList();
         }
         catch (k8s.Autorest.HttpOperationException ex)
             when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
@@ -121,37 +139,36 @@ public class Pkcs12SecretHandler : SecretHandlerBase
             throw new StoreNotFoundException(
                 $"PKCS12 keystore secret '{Context.KubeSecretName}' was not found in namespace '{Context.KubeNamespace}'.");
         }
-        finally
-        {
-            LogMethodExit(nameof(GetCertificatesWithAliases));
-        }
     }
+
+    private sealed record KeystoreAliasEntry(string Alias, List<string> Certificates, bool HasPrivateKey);
 
     /// <inheritdoc />
     public override List<InventoryEntry> GetInventoryEntries(long jobId)
     {
-        var aliasedCerts = GetCertificatesWithAliases(jobId);
-        var entries = new List<InventoryEntry>();
+        LogMethodEntry(nameof(GetInventoryEntries));
 
-        foreach (var kvp in aliasedCerts)
+        try
         {
-            entries.Add(new InventoryEntry
+            return ReadKeystoreEntries().Select(e => new InventoryEntry
             {
-                Alias = kvp.Key,
-                Certificates = kvp.Value,
-                // PKCS12 keystores typically contain private keys
-                HasPrivateKey = true
-            });
+                Alias = e.Alias,
+                Certificates = e.Certificates,
+                // Only private-key entries carry a key; trusted-certificate entries do not
+                HasPrivateKey = e.HasPrivateKey
+            }).ToList();
         }
-
-        return entries;
+        finally
+        {
+            LogMethodExit(nameof(GetInventoryEntries));
+        }
     }
 
     /// <inheritdoc />
     public override bool HasPrivateKey()
     {
-        // PKCS12 keystores typically have private keys
-        return true;
+        // True when at least one alias in the keystore is a private-key entry
+        return ReadKeystoreEntries().Any(e => e.HasPrivateKey);
     }
 
     #endregion
