@@ -1642,6 +1642,11 @@ have specific keys in the Kubernetes secret.
 - `<cluster_name>/<namespace_name>`
 - `<cluster_name>/namespace/<namespace_name>` (the form returned by discovery)
 
+The namespace in the store path is always matched literally (case-insensitive), with no wildcard meaning. In particular, a
+namespace that is really named `all` is inventoried like any other namespace and returns only its own secrets. The word
+`all` is a keyword only in the discovery `Directories to search` field, where it selects every namespace, so such a
+namespace cannot be selected by name there; add its store manually using the store path above.
+
 ### Alias Patterns
 
 Inventory reports one entry per secret, keyed by the alias `<tls|opaque>/<secret_name>`
@@ -2147,6 +2152,8 @@ namespaces. Namespace names are trimmed and `all` is case-insensitive. If left b
   the same as `File name patterns to match` and added to the default keys.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Only `Opaque` secrets that contain at least one matching data key are discovered; other `Opaque` secrets are skipped. A data
 key matches when it equals an allowed key or ends with `.<allowed key>`, case-insensitively, so the default `jks` matches
@@ -2167,6 +2174,8 @@ For discovery of `K8SNS` stores you can use the following params to select which
   A namespace that does not exist in the cluster is not returned (a warning is logged).
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Every namespace matched by `Directories to search` (and not ignored) is returned, whether or not it currently contains
 any certificate secrets. Secret-level filters such as `File name patterns to match` do not apply to `K8SNS` discovery.
@@ -2184,6 +2193,8 @@ For discovery of `K8SPKCS12` stores you can use the following params to filter t
   the same as `File name patterns to match` and added to the default keys.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Only `Opaque` secrets that contain at least one matching data key are discovered; other `Opaque` secrets are skipped. A data
 key matches when it equals an allowed key or ends with `.<allowed key>`, case-insensitively, so the default `pfx` matches
@@ -2199,6 +2210,8 @@ For discovery of `K8SSecret` stores you can use the following params to filter t
   namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 An `Opaque` secret is discovered only when it contains a data key that `K8SSecret` inventory reads as a certificate.
 Keys are matched exactly and case-sensitively: `tls.crt`, `certificate`, `cert`, `crt`, `cert.pem`, `certificate.pem`.
@@ -2221,6 +2234,8 @@ For discovery of `K8STLSSecr` stores you can use the following params to filter 
   namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Only secrets of type `kubernetes.io/tls` that contain both `tls.crt` and `tls.key` are discovered.
 
