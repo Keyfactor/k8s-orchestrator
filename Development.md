@@ -40,13 +40,17 @@ Run unit tests (no Kubernetes cluster required):
 make test-unit
 ```
 
+Test targets run on `net10.0` only by default (the project still builds for `net8.0`). Override with
+`TEST_FRAMEWORK=net8.0`, or `TEST_FRAMEWORK=` to run every target framework, e.g. `make test-unit TEST_FRAMEWORK=`.
+`test-integration-fast`, `test-integration-full` and `test-integration-smoke-net10` keep their fixed frameworks.
+
 ### Integration Tests
 
 Integration tests require a Kubernetes cluster. By default, tests use `~/.kube/config` with the `kf-integrations` context.
 
 ```bash
-make test-integration           # Run all integration tests (net8.0 only, with cleanup)
-make test-integration-fast      # Same as above (net8.0 only, ~50% faster than full)
+make test-integration           # Run all integration tests (TEST_FRAMEWORK, default net10.0)
+make test-integration-fast      # net8.0 only (~50% faster than full)
 make test-integration-full      # Run on all frameworks (net8.0 + net10.0)
 make test-integration-no-cleanup # Leave secrets for manual inspection
 make test-all-with-cleanup      # Unit + integration with pre/post cleanup

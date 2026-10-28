@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using k8s;
 using k8s.Models;
 using Keyfactor.Extensions.Orchestrator.K8S.Jobs.StoreTypes.K8SNS;
+using Keyfactor.Extensions.Orchestrator.K8S.Services;
 using Keyfactor.Orchestrators.Common.Enums;
 using Keyfactor.Orchestrators.Extensions;
 using Keyfactor.Orchestrators.K8S.Tests.Attributes;
@@ -62,15 +63,11 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
 
     #region Discovery Tests
 
-    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Discovery_SingleNamespace_FindsAllSecrets()
-    {
-        // Arrange - Create secrets in the namespace (read-only test uses cached certs)
-        var secret1Name = $"test-ns-1-{Guid.NewGuid():N}";
-        var secret2Name = $"test-ns-2-{Guid.NewGuid():N}";
-        await CreateTestSecret(secret1Name, useCache: true);
-        await CreateTestSecret(secret2Name, useCache: true);
+    // K8SNS discovery returns ONE "<cluster>/namespace/<ns>" location per matched namespace (not per-secret
+    // paths), as in 1.x. Such a location resolves for a K8SNS store via StorePathResolver (GitHub issue #102).
 
+    private async Task<(JobResult Result, List<string> Discovered)> RunDiscovery(string dirs, string ignoredDirs = "")
+    {
         var jobConfig = new DiscoveryJobConfiguration
         {
             Capability = "K8SNS",
@@ -80,54 +77,95 @@ public class K8SNSStoreIntegrationTests : IntegrationTestBase
             UseSSL = true,
             JobProperties = new Dictionary<string, object>
             {
-                { "dirs", TestNamespace },
-                { "ignoreddirs", "" },
+                { "dirs", dirs },
+                { "ignoreddirs", ignoredDirs },
                 { "patterns", "" }
             }
         };
 
         var discovery = new Discovery(MockPamResolver.Object);
+        var discovered = new List<string>();
 
-        // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, discoveryItems =>
+        {
+            discovered.AddRange(discoveryItems);
+            return true;
+        }));
 
-        // Assert
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        return (result, discovered);
+    }
+
+    private static void AssertResolvesAsNamespaceStore(string location, string expectedNamespace)
+    {
+        var resolved = new StorePathResolver().Resolve(location, "K8SNS", "", "");
+        Assert.True(resolved.Success, $"'{location}' did not resolve for K8SNS: {resolved.Warning}");
+        Assert.Equal(expectedNamespace, resolved.Namespace);
+        Assert.Equal("", resolved.SecretName);
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
-    public async Task Discovery_MixedSecretTypes_FindsAllTypes()
+    public async Task Discovery_SingleNamespace_ReturnsNamespaceLocation()
     {
-        // Arrange - Create different secret types in the namespace (read-only test uses cached certs)
-        var opaqueSecret = $"test-opaque-ns-{Guid.NewGuid():N}";
-        var tlsSecret = $"test-tls-ns-{Guid.NewGuid():N}";
-        await CreateTestSecret(opaqueSecret, KeyType.Rsa2048, "Opaque", useCache: true);
-        await CreateTestSecret(tlsSecret, KeyType.Rsa2048, "kubernetes.io/tls", useCache: true);
+        // Arrange - Create secrets in the namespace (read-only test uses cached certs)
+        await CreateTestSecret($"test-ns-1-{Guid.NewGuid():N}", useCache: true);
+        await CreateTestSecret($"test-ns-2-{Guid.NewGuid():N}", useCache: true);
 
-        var jobConfig = new DiscoveryJobConfiguration
+        // An Opaque secret with no allowed key does not change anything: the namespace is the store
+        var noKeySecretName = $"test-ns-nokey-{Guid.NewGuid():N}";
+        TrackSecret(noKeySecretName);
+        await K8sClient.CoreV1.CreateNamespacedSecretAsync(new V1Secret
         {
-            Capability = "K8SNS",
-            ClientMachine = TestNamespace,
-            ServerUsername = string.Empty,
-            ServerPassword = KubeconfigJson,
-            UseSSL = true,
-            JobProperties = new Dictionary<string, object>
+            Metadata = CreateTestSecretMetadata(noKeySecretName),
+            Type = "Opaque",
+            Data = new Dictionary<string, byte[]>
             {
-                { "dirs", TestNamespace },
-                { "ignoreddirs", "" },
-                { "patterns", "" }
+                { "username", Encoding.UTF8.GetBytes("not-a-certificate-store") }
             }
-        };
-
-        var discovery = new Discovery(MockPamResolver.Object);
+        }, TestNamespace);
 
         // Act
-        var result = await Task.Run(() => discovery.ProcessJob(jobConfig, (discoveryItems) => true));
+        var (_, discovered) = await RunDiscovery(TestNamespace);
+
+        // Assert - exactly one location, namespace-level, no per-secret paths
+        var location = Assert.Single(discovered);
+        Assert.EndsWith($"/namespace/{TestNamespace}", location);
+        Assert.DoesNotContain("/secrets/", location);
+        AssertResolvesAsNamespaceStore(location, TestNamespace);
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_MixedSecretTypes_ReturnsSingleNamespaceLocation()
+    {
+        // Arrange - Create different secret types in the namespace (read-only test uses cached certs)
+        await CreateTestSecret($"test-opaque-ns-{Guid.NewGuid():N}", KeyType.Rsa2048, "Opaque", useCache: true);
+        await CreateTestSecret($"test-tls-ns-{Guid.NewGuid():N}", KeyType.Rsa2048, "kubernetes.io/tls", useCache: true);
+
+        // Act
+        var (_, discovered) = await RunDiscovery(TestNamespace);
+
+        // Assert - one store for the namespace regardless of how many / which kinds of secrets it holds
+        Assert.Single(discovered, d => d.EndsWith($"/namespace/{TestNamespace}"));
+        Assert.DoesNotContain(discovered, d => d.Contains("/secrets/"));
+    }
+
+    [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
+    public async Task Discovery_AllDirectories_ReturnsEveryNamespace_AndIgnoredDirsExcludesOne()
+    {
+        // Arrange
+        await CreateTestSecret($"test-all-ns-{Guid.NewGuid():N}", useCache: true);
+
+        // Act - 'All' is case-insensitive and matches every namespace in the cluster
+        var (_, all) = await RunDiscovery("All");
+        var (_, withIgnored) = await RunDiscovery("all", TestNamespace);
 
         // Assert
-        Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
-            $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
+        Assert.All(all, d => Assert.Matches(@"/namespace/[^/]+$", d));
+        Assert.Contains(all, d => d.EndsWith($"/namespace/{TestNamespace}"));
+        Assert.DoesNotContain(withIgnored, d => d.EndsWith($"/namespace/{TestNamespace}"));
+        foreach (var location in all)
+            AssertResolvesAsNamespaceStore(location, location.Split('/')[^1]);
     }
 
     #endregion

@@ -23,9 +23,18 @@ The K8SJKS store type supports certificates with the following key algorithms:
 
 For discovery of `K8SJKS` stores you can use the following params to filter the certificates that will be discovered:
 - `Directories to search` - comma separated list of namespaces to search for certificates OR `all` to search all 
-namespaces. *This cannot be left blank.*
-- `File name patterns to match` - comma separated list of K8S secret keys to search for PKCS12 or JKS data. Will use 
-the following keys by default: `tls.pfx`,`tls.pkcs12`,`pfx`,`pkcs12`,`tls.jks`,`jks`.
+namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
+- `File name patterns to match` - comma separated list of additional K8S secret data keys (or extensions) to look for
+  JKS data in. Added to the default keys: `jks`, `keystore.jks`, `truststore.jks`.
+- `File name extensions to match` - comma separated list of additional secret data key names/extensions to look for. Treated
+  the same as `File name patterns to match` and added to the default keys.
+- `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
+  namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+
+Only `Opaque` secrets that contain at least one matching data key are discovered; other `Opaque` secrets are skipped. A data
+key matches when it equals an allowed key or ends with `.<allowed key>`, case-insensitively, so the default `jks` matches
+`keystore.jks`, `truststore.jks` and `my-app.jks`. A keystore stored under a data key with no extension (for example
+`keystore`) is not discovered unless that exact name is added via `File name patterns to match`.
 
 ## Certificate Store Configuration
 
@@ -40,6 +49,8 @@ the Kubernetes secret.
 
 ### Alias Patterns
 - `<k8s_secret_field_name>/<keystore_alias>`
+
+This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
 
 Example: `test.jks/load_balancer` where `test.jks` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `jks` data store.

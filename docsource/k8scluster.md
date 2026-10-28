@@ -15,6 +15,10 @@ have specific keys in the Kubernetes secret.
 ### Alias Patterns
 - `<namespace_name>/secrets/<tls|opaque>/<secret_name>`
 
+Inventory reports one entry per secret, holding the full certificate chain found in that secret. This alias format is
+the same as in 1.x. Management Add/Remove requires exactly this form (at least four `/`-separated segments; the
+namespace, type and secret name are taken from segments 1, 3 and 4).
+
 ## Terraform
 
 A reusable Terraform module is available for this store type. See [terraform/modules/k8s-cluster](../terraform/modules/k8s-cluster/) for full documentation.
