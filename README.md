@@ -1498,6 +1498,9 @@ the Kubernetes secret.
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
+Private-key entries are reported with their certificate chain and the private-key flag set. Trusted-certificate entries
+(for example CA trust anchors) are reported as a single certificate with the private-key flag cleared, and can be added
+and removed through Management like any other alias. Before 2.0.2, trusted-certificate entries were not inventoried.
 
 Example: `test.jks/load_balancer` where `test.jks` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `jks` data store.
@@ -1767,6 +1770,8 @@ the Kubernetes secret.
 - `<k8s_secret_field_name>/<keystore_alias>`
 
 This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
+The private-key flag is set only for aliases that contain a private key. Certificate-only aliases (for example CA trust
+anchors) are reported as a single certificate without the flag. Before 2.0.2, every alias was flagged as having a key.
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `pkcs12` data store.
