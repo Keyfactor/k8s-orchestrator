@@ -1000,8 +1000,7 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         Assert.True(result.Result == OrchestratorJobStatusJobResult.Success,
             $"Expected Success but got {result.Result}. FailureMessage: {result.FailureMessage}");
 
-        // NOTE: PKCS12 inventory returns ALL entries including trusted certificate entries.
-        // This differs from JKS inventory which only returns key entries.
+        // NOTE: PKCS12 inventory returns ALL entries including trusted certificate entries (as does JKS from 2.0.2).
         // Should have 4 inventory items (2 private key entries + 2 trusted cert entries)
         Assert.Equal(4, inventoryItems.Count);
 
@@ -1016,13 +1015,13 @@ public class K8SPKCS12StoreIntegrationTests : IntegrationTestBase
         Assert.NotNull(rootCaItem);
         Assert.NotNull(intermediateCaItem);
 
-        // All entries have PrivateKeyEntry=true because the PKCS12 inventory
-        // sets this globally based on whether ANY entry has a private key
+        // PrivateKeyEntry is reported per alias (2.0.2+): only private key entries carry a key.
+        // Before 2.0.2 (and in 1.x) every alias was flagged as having a key.
         Assert.True(server1Item.PrivateKeyEntry, "server1 should have PrivateKeyEntry = true");
         Assert.True(server2Item.PrivateKeyEntry, "server2 should have PrivateKeyEntry = true");
-        // Note: Trusted certs also get PrivateKeyEntry=true because the flag is set globally
-        Assert.True(rootCaItem.PrivateKeyEntry, "root-ca has PrivateKeyEntry = true (global flag)");
-        Assert.True(intermediateCaItem.PrivateKeyEntry, "intermediate-ca has PrivateKeyEntry = true (global flag)");
+        Assert.False(rootCaItem.PrivateKeyEntry, "root-ca is a trusted cert entry and should have PrivateKeyEntry = false");
+        Assert.False(intermediateCaItem.PrivateKeyEntry,
+            "intermediate-ca is a trusted cert entry and should have PrivateKeyEntry = false");
     }
 
     [SkipUnless(EnvironmentVariable = "RUN_INTEGRATION_TESTS")]
