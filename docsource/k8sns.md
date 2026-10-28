@@ -25,8 +25,15 @@ any certificate secrets. Secret-level filters such as `File name patterns to mat
 
 In order for certificates of type `Opaque` and/or `kubernetes.io/tls` to be inventoried in `K8SNS` store types, they must 
 have specific keys in the Kubernetes secret.
-- Required keys: `tls.crt` or `ca.crt`
-- Additional keys: `tls.key`
+- `kubernetes.io/tls` secrets: required key `tls.crt`; optional keys `tls.key` and `ca.crt`. A secret with `tls.crt` but
+  no `tls.key` is inventoried with its certificate(s) and no private key. A TLS secret without a non-empty `tls.crt` is
+  not inventoried.
+- `Opaque` secrets: every `Opaque` secret in the namespace is visited. A certificate is read from the first of `tls.crt`,
+  `certificate`, `cert`, `crt`, `cert.pem`, `certificate.pem` (then `ca`, `ca-bundle`, `ca-bundle.crt`) that holds one,
+  and certificates in `ca.crt` are added to it. A secret with no certificate (for example one that only holds a private
+  key) contributes no inventory entry and is logged at Debug level only.
+- Private key: a secret is reported as having a private key when `tls.key` (TLS) or one of `tls.key`, `key`,
+  `private-key`, `key.pem`, `private-key.pem` (Opaque) is present.
 
 ### Storepath Patterns
 

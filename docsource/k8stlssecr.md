@@ -12,14 +12,20 @@ For discovery of `K8STLSSecr` stores you can use the following params to filter 
   Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
   list secrets there (for example `kube-system`).
 
-Only secrets of type `kubernetes.io/tls` that contain both `tls.crt` and `tls.key` are discovered.
+Only secrets of type `kubernetes.io/tls` that contain a non-empty `tls.crt` are discovered. `tls.key` is not required: a
+secret with `tls.crt` but no `tls.key` (a certificate-only TLS secret) is discovered and inventoried with its
+certificate(s) and no private key.
 
 ## Certificate Store Configuration
 
 In order for certificates of type `kubernetes.io/tls` to be inventoried, they must have specific keys in
 the Kubernetes secret.
-- Required keys: `tls.crt` and `tls.key`
-- Optional keys: `ca.crt`
+- Required keys: `tls.crt`
+- Optional keys: `tls.key`, `ca.crt`
+
+A secret without `tls.key` is inventoried with its certificate(s) and reported as having no private key. A secret
+without a non-empty `tls.crt` is not a certificate store: discovery skips it, and inventory of a configured store
+returns no certificates (a warning is logged).
 
 ### Storepath Patterns
 
