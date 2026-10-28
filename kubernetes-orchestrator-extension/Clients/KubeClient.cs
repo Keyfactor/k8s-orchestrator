@@ -715,6 +715,76 @@ public class KubeCertificateManagerClient
     }
 
     /// <summary>
+    /// A secret found by <see cref="DiscoverInventorySecrets"/>, carrying the secret object returned by the list call
+    /// so callers do not need to read it again.
+    /// </summary>
+    /// <param name="Namespace">Namespace the secret lives in.</param>
+    /// <param name="Name">Secret name.</param>
+    /// <param name="Kind">"tls" for kubernetes.io/tls secrets, "opaque" for Opaque secrets.</param>
+    /// <param name="Secret">The listed secret, including its data.</param>
+    /// <param name="Location">Location string <see cref="DiscoverSecrets"/> reports: cluster/namespace/secrets/name.</param>
+    public sealed record DiscoveredSecret(string Namespace, string Name, string Kind, V1Secret Secret, string Location);
+
+    /// <summary>
+    /// Single-pass variant of the two <see cref="DiscoverSecrets"/> calls K8SCluster / K8SNS inventory used to make
+    /// (kubernetes.io/tls with key "tls.crt", then every Opaque secret via <see cref="OpaqueKeyMatch.AllSecrets"/>):
+    /// namespaces are listed once and each matched namespace's secrets are listed once. The same predicates apply, and
+    /// the result keeps the same order (all TLS secrets, then all Opaque secrets), but the secret objects are returned
+    /// so inventory does not have to GET each one again.
+    /// </summary>
+    /// <param name="ns">Namespace filter: a CSV of names, or "all".</param>
+    /// <returns>Discovered TLS secrets followed by discovered Opaque secrets.</returns>
+    public List<DiscoveredSecret> DiscoverInventorySecrets(string ns)
+    {
+        _logger.MethodEntry(LogLevel.Debug);
+        var clusterName = SanitizeClusterName(GetClusterName() ?? GetHost());
+        var namespaces = FetchNamespaces(clusterName).ToList();
+        var nsList = (ns ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        _logger.LogDebug("Requested namespaces: [{Requested}]; cluster has {Count} namespaces",
+            string.Join(", ", nsList), namespaces.Count);
+
+        var matched = FilterNamespaces(namespaces, nsList).ToList();
+        if (matched.Count == 0)
+            _logger.LogWarning(
+                "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
+                "Use 'all' to search every namespace",
+                string.Join(", ", nsList), namespaces.Count);
+
+        var tls = new List<DiscoveredSecret>();
+        var opaque = new List<DiscoveredSecret>();
+        var tlsKeys = new[] { "tls.crt" };
+
+        foreach (var nsObj in matched)
+        {
+            var namespaceName = nsObj.Metadata.Name;
+            _logger.LogDebug("Listing secrets in namespace: {Namespace}", namespaceName);
+            var secrets = RetryPolicy(() => _secretOperations.ListSecrets(namespaceName).Items);
+
+            foreach (var secret in secrets)
+            {
+                // Reuse the discovery predicates verbatim; a one-element location list records "matched".
+                var hit = new List<string>();
+                ProcessSecretIfSupported(secret, "kubernetes.io/tls", tlsKeys, clusterName, namespaceName, hit,
+                    OpaqueKeyMatch.Suffix);
+                if (hit.Count > 0)
+                    tls.Add(new DiscoveredSecret(namespaceName, secret.Metadata.Name, "tls", secret,
+                        $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}"));
+
+                hit.Clear();
+                ProcessSecretIfSupported(secret, "Opaque", null, clusterName, namespaceName, hit,
+                    OpaqueKeyMatch.AllSecrets);
+                if (hit.Count > 0)
+                    opaque.Add(new DiscoveredSecret(namespaceName, secret.Metadata.Name, "opaque", secret,
+                        $"{clusterName}/{namespaceName}/secrets/{secret.Metadata.Name}"));
+            }
+        }
+
+        _logger.LogDebug("Discovered {Tls} TLS and {Opaque} Opaque secrets", tls.Count, opaque.Count);
+        _logger.MethodExit(LogLevel.Debug);
+        return tls.Concat(opaque).ToList();
+    }
+
+    /// <summary>
     /// Fetches all namespaces from the Kubernetes cluster.
     /// </summary>
     /// <param name="clusterName">Name of the cluster for logging.</param>

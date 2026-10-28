@@ -78,28 +78,12 @@ public class ClusterSecretHandler : SecretHandlerBase
             var entries = new List<InventoryEntry>();
             var errors = new List<string>();
 
-            // Discover TLS secrets
-            var tlsSecrets = KubeClient.DiscoverSecrets(
-                new[] { "tls.crt" },
-                "kubernetes.io/tls",
-                "all");
-
-            foreach (var secretPath in tlsSecrets)
+            // One namespace list and one secret list per namespace; the listed secrets (with data) are handed to
+            // the inner handlers so no secret is read again (GitHub issue #104). TLS secrets come first, then
+            // every Opaque secret (#101), exactly as the two separate discovery passes used to order them.
+            foreach (var found in KubeClient.DiscoverInventorySecrets("all"))
             {
-                ProcessSecretEntry(secretPath, "tls", entries, errors, jobId);
-            }
-
-            // Discover Opaque secrets. Inventory enumerates EVERY Opaque secret, so say so explicitly with
-            // OpaqueKeyMatch.AllSecrets (a null/empty key list never means "everything"; GitHub issue #101).
-            var opaqueSecrets = KubeClient.DiscoverSecrets(
-                null,
-                "Opaque",
-                "all",
-                opaqueKeyMatch: OpaqueKeyMatch.AllSecrets);
-
-            foreach (var secretPath in opaqueSecrets)
-            {
-                ProcessSecretEntry(secretPath, "opaque", entries, errors, jobId);
+                ProcessSecretEntry(found, entries, errors, jobId);
             }
 
             if (errors.Count > 0)
@@ -216,36 +200,32 @@ public class ClusterSecretHandler : SecretHandlerBase
     #region Private Helpers
 
     private void ProcessSecretEntry(
-        string secretPath,
-        string secretType,
+        KubeCertificateManagerClient.DiscoveredSecret found,
         List<InventoryEntry> entries,
         List<string> errors,
         long jobId)
     {
         try
         {
-            // secretPath format from DiscoverSecrets: cluster/namespace/secrets/secretname
-            var parts = secretPath.Split('/');
-            if (parts.Length < 4) return;
-
-            var ns = parts[1];  // Namespace is the second part
-            var name = parts[^1];  // Secret name is the last part
+            var ns = found.Namespace;
+            var name = found.Name;
 
             var innerContext = CreateInnerContext(ns, name);
-            var handler = CreateInnerHandler(secretType, innerContext);
+            var handler = CreateInnerHandler(found.Kind, innerContext);
+            handler.UseSecret(found.Secret);
 
             var innerEntries = handler.GetInventoryEntries(jobId);
 
             // Modify aliases to include full path for cluster view
             foreach (var entry in innerEntries)
             {
-                entry.Alias = $"{ns}/secrets/{secretType}/{name}";
+                entry.Alias = $"{ns}/secrets/{found.Kind}/{name}";
                 entries.Add(entry);
             }
         }
         catch (Exception ex)
         {
-            errors.Add($"{secretPath}: {ex.Message}");
+            errors.Add($"{found.Location}: {ex.Message}");
         }
     }
 
@@ -278,7 +258,7 @@ public class ClusterSecretHandler : SecretHandlerBase
         };
     }
 
-    private ISecretHandler CreateInnerHandler(string secretType, ISecretOperationContext innerContext)
+    private SecretHandlerBase CreateInnerHandler(string secretType, ISecretOperationContext innerContext)
     {
         var normalizedType = SecretTypes.Normalize(secretType);
 
