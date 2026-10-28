@@ -9,6 +9,8 @@ For discovery of `K8SSecret` stores you can use the following params to filter t
   namespaces. Namespace names are trimmed and `all` is case-insensitive. If left blank, only the `default` namespace is searched.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 An `Opaque` secret is discovered only when it contains a data key that `K8SSecret` inventory reads as a certificate.
 Keys are matched exactly and case-sensitively: `tls.crt`, `certificate`, `cert`, `crt`, `cert.pem`, `certificate.pem`.

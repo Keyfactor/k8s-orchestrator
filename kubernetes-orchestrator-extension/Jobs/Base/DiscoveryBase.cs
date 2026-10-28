@@ -86,11 +86,13 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
 
             var ignoredDirs = GetIgnoredNamespaces(config);
 
-            // Discover stores via handler
-            var discoveredStores = Handler.DiscoverStores(customKeys, namespacesCsv);
+            // Discover stores via handler. The ignored namespaces are handed to the handler so they are excluded
+            // BEFORE any secrets are listed: a service account that cannot list secrets in an ignored namespace
+            // (e.g. kube-system) must not fail the job when the user asked to skip that namespace.
+            var discoveredStores = Handler.DiscoverStores(customKeys, namespacesCsv, ignoredDirs);
 
-            // Post-filter by namespace so 'Directories to ignore' applies to every handler without
-            // changing the ISecretHandler contract (also applies when 'Directories to search' is 'all').
+            // Defense in depth: also post-filter the returned locations by namespace, so 'Directories to ignore'
+            // holds for any handler that does not (fully) apply the ignore list itself.
             discoveredStores = FilterIgnoredNamespaces(discoveredStores, ignoredDirs, out var droppedStores);
             if (droppedStores.Count > 0)
                 Logger.LogDebug(
@@ -100,11 +102,11 @@ public abstract class DiscoveryBase : K8SJobBase, IDiscoveryJobExtension
             Logger.LogInformation("Discovered {Count} stores", discoveredStores.Count);
             if (discoveredStores.Count == 0)
                 Logger.LogWarning(
-                    "Discovery found 0 stores. Namespaces searched: '{Namespaces}'; namespaces ignored: [{IgnoredDirs}] " +
-                    "({DroppedCount} location(s) dropped by 'Directories to ignore'). Verify the 'Directories to search' value " +
-                    "(use 'all' or a comma-separated list of existing namespaces) and that the service account can list " +
-                    "namespaces and secrets",
-                    namespacesCsv, string.Join(", ", ignoredDirs), droppedStores.Count);
+                    "Discovery found 0 stores. Namespaces searched: '{Namespaces}'; namespaces ignored: [{IgnoredDirs}]. " +
+                    "Verify the 'Directories to search' value (use 'all' or a comma-separated list of existing " +
+                    "namespaces), that it is not entirely covered by 'Directories to ignore', and that the service " +
+                    "account can list namespaces and secrets",
+                    namespacesCsv, string.Join(", ", ignoredDirs));
 
             // Submit discovered stores
             submitDiscovery.Invoke(discoveredStores);

@@ -15,6 +15,8 @@ For discovery of `K8SNS` stores you can use the following params to select which
   A namespace that does not exist in the cluster is not returned (a warning is logged).
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Every namespace matched by `Directories to search` (and not ignored) is returned, whether or not it currently contains
 any certificate secrets. Secret-level filters such as `File name patterns to match` do not apply to `K8SNS` discovery.

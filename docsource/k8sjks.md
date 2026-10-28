@@ -30,6 +30,8 @@ namespaces. Namespace names are trimmed and `all` is case-insensitive. If left b
   the same as `File name patterns to match` and added to the default keys.
 - `Directories to ignore` - comma separated list of namespaces to exclude from the discovery results. Applies to every
   namespace in `Directories to search`, including when it is `all`. Namespace names are trimmed and compared case-insensitively.
+  Ignored namespaces are skipped before anything is listed in them, so the service account does not need permission to
+  list secrets there (for example `kube-system`).
 
 Only `Opaque` secrets that contain at least one matching data key are discovered; other `Opaque` secrets are skipped. A data
 key matches when it equals an allowed key or ends with `.<allowed key>`, case-insensitively, so the default `jks` matches

@@ -174,7 +174,8 @@ public class CertificateSecretHandler : SecretHandlerBase
     #region Discovery Operations
 
     /// <inheritdoc />
-    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         LogMethodEntry(nameof(DiscoverStores));
 

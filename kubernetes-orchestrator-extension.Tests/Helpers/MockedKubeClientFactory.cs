@@ -45,6 +45,12 @@ public sealed class MockedKubeClient
     /// <summary>Number of times secrets were listed (GET /namespaces/{ns}/secrets).</summary>
     public int ListSecretsCallCount => Core.Invocations.Count(i =>
         i.Method.Name == nameof(ICoreV1Operations.ListNamespacedSecretWithHttpMessagesAsync));
+
+    /// <summary>Namespaces whose secrets were listed, in call order (includes calls that were answered with an error).</summary>
+    public List<string> ListedSecretNamespaces => Core.Invocations
+        .Where(i => i.Method.Name == nameof(ICoreV1Operations.ListNamespacedSecretWithHttpMessagesAsync))
+        .Select(i => (string)i.Arguments[0])
+        .ToList();
 }
 
 public static class MockedKubeClientFactory
@@ -98,9 +104,15 @@ public static class MockedKubeClientFactory
     /// When false, any single-secret read (GET /secrets/{name}) throws, so a test fails if the code under test
     /// makes one (e.g. discovery must rely on the list response only).
     /// </param>
+    /// <param name="forbiddenSecretListNamespaces">
+    /// Namespaces in which listing secrets fails with HTTP 403 Forbidden, as for a service account that lacks
+    /// <c>list secrets</c> there.
+    /// </param>
     public static MockedKubeClient Create(
-        IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null, bool allowSecretReads = true)
-        => Attach(new KubeCertificateManagerClient(BuildKubeconfig()), secrets, namespaces, allowSecretReads);
+        IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null, bool allowSecretReads = true,
+        IEnumerable<string> forbiddenSecretListNamespaces = null)
+        => Attach(new KubeCertificateManagerClient(BuildKubeconfig()), secrets, namespaces, allowSecretReads,
+            forbiddenSecretListNamespaces);
 
     /// <summary>
     /// Same as <see cref="Create"/> but rewires an EXISTING client instance in place (its Kubernetes API and secret
@@ -109,9 +121,10 @@ public static class MockedKubeClientFactory
     /// </summary>
     public static MockedKubeClient Attach(
         KubeCertificateManagerClient client, IEnumerable<V1Secret> secrets, IEnumerable<string> namespaces = null,
-        bool allowSecretReads = true)
+        bool allowSecretReads = true, IEnumerable<string> forbiddenSecretListNamespaces = null)
     {
         var all = secrets.ToList();
+        var forbidden = new HashSet<string>(forbiddenSecretListNamespaces ?? Enumerable.Empty<string>());
         var nsNames = (namespaces ?? Enumerable.Empty<string>())
             .Concat(all.Select(s => s.Metadata.NamespaceProperty))
             .Distinct()
@@ -139,13 +152,21 @@ public static class MockedKubeClientFactory
                 It.IsAny<CancellationToken>()))
             .Returns((string ns, bool? _, string _, string _, string _, int? _, string _, string _, bool? _,
                 int? _, bool? _, bool? _, IReadOnlyDictionary<string, IReadOnlyList<string>> _, CancellationToken _) =>
-                Task.FromResult(new HttpOperationResponse<V1SecretList>
+            {
+                if (forbidden.Contains(ns))
+                    throw new HttpOperationException($"secrets is forbidden: cannot list secrets in namespace \"{ns}\"")
+                    {
+                        Response = new HttpResponseMessageWrapper(new HttpResponseMessage(HttpStatusCode.Forbidden), "")
+                    };
+
+                return Task.FromResult(new HttpOperationResponse<V1SecretList>
                 {
                     Body = new V1SecretList
                     {
                         Items = all.Where(s => s.Metadata.NamespaceProperty == ns).ToList()
                     }
-                }));
+                });
+            });
 
         core.Setup(c => c.ReadNamespacedSecretWithHttpMessagesAsync(
                 It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool?>(),

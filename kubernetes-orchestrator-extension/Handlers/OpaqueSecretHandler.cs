@@ -261,7 +261,8 @@ public class OpaqueSecretHandler : SecretHandlerBase
     #region Discovery Operations
 
     /// <inheritdoc />
-    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         LogMethodEntry(nameof(DiscoverStores));
 
@@ -271,7 +272,8 @@ public class OpaqueSecretHandler : SecretHandlerBase
             // must only report secrets inventory can actually read (e.g. not "server.crt", "api.key" or a lone "ca").
             var keys = allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys;
             Logger.LogDebug("Opaque discovery using exact match on keys: [{Keys}]", string.Join(", ", keys));
-            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv, opaqueKeyMatch: OpaqueKeyMatch.Exact);
+            return KubeClient.DiscoverSecrets(keys, "Opaque", namespacesCsv, opaqueKeyMatch: OpaqueKeyMatch.Exact,
+                ignoredNamespaces: ignoredNamespaces);
         }
         finally
         {

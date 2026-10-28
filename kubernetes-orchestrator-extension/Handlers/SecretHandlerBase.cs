@@ -102,7 +102,8 @@ public abstract class SecretHandlerBase : ISecretHandler
     public abstract V1Secret CreateEmptyStore();
 
     /// <inheritdoc />
-    public abstract List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv);
+    public abstract List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null);
 
     #endregion
 

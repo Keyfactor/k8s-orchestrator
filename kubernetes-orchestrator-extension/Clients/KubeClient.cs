@@ -662,11 +662,17 @@ public class KubeCertificateManagerClient
     /// requires <see cref="OpaqueKeyMatch.AllSecrets"/> explicitly; a null/empty <paramref name="allowedKeys"/> never
     /// means "everything".
     /// </param>
+    /// <param name="ignoredNamespaces">
+    /// Namespaces to exclude (case-insensitive, whitespace-tolerant). They are dropped from the namespace list
+    /// BEFORE any secrets are listed, so no API call is made against them (a service account without
+    /// <c>list secrets</c> in an ignored namespace must not fail discovery).
+    /// </param>
     /// <returns>List of discovered secret locations.</returns>
     public List<string> DiscoverSecrets(
         string[] allowedKeys, string secType, string ns = "default",
         bool namespaceIsStore = false, bool clusterIsStore = false,
-        OpaqueKeyMatch opaqueKeyMatch = OpaqueKeyMatch.Suffix)
+        OpaqueKeyMatch opaqueKeyMatch = OpaqueKeyMatch.Suffix,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         _logger.MethodEntry(LogLevel.Debug);
         _logger.LogTrace(
@@ -696,6 +702,8 @@ public class KubeCertificateManagerClient
                 "None of the requested namespaces [{Requested}] matched any of the {Count} namespaces in the cluster. " +
                 "Use 'all' to search every namespace",
                 string.Join(", ", nsList), namespaces.Count);
+
+        matched = ExcludeIgnoredNamespaces(matched, ignoredNamespaces);
 
         foreach (var nsObj in matched)
         {
@@ -820,6 +828,32 @@ public class KubeCertificateManagerClient
             {
                 _logger.LogTrace("Skipping namespace '{Namespace}' as it does not match filter", nsObj.Metadata.Name);
             }
+    }
+
+    /// <summary>
+    /// Removes namespaces named in <paramref name="ignoredNamespaces"/> (case-insensitive, whitespace-tolerant) so
+    /// that nothing is listed in them. Matching is on the whole name; the discovery keyword "all" has no meaning here.
+    /// </summary>
+    /// <param name="matched">Namespaces selected by the search filter.</param>
+    /// <param name="ignoredNamespaces">Namespace names to exclude; null or empty keeps everything.</param>
+    /// <returns>The namespaces that remain, in their original order.</returns>
+    private List<V1Namespace> ExcludeIgnoredNamespaces(List<V1Namespace> matched, IEnumerable<string> ignoredNamespaces)
+    {
+        var ignored = new HashSet<string>(
+            (ignoredNamespaces ?? Enumerable.Empty<string>()).Select(n => n?.Trim()).Where(n => !string.IsNullOrEmpty(n)),
+            StringComparer.OrdinalIgnoreCase);
+        if (ignored.Count == 0) return matched;
+
+        var kept = new List<V1Namespace>();
+        foreach (var nsObj in matched)
+            if (ignored.Contains(nsObj.Metadata.Name?.Trim() ?? string.Empty))
+                _logger.LogDebug("Skipping namespace '{Namespace}': listed in the ignored namespaces", nsObj.Metadata.Name);
+            else
+                kept.Add(nsObj);
+
+        _logger.LogDebug("Ignored namespaces [{Ignored}] excluded {Excluded} of {Matched} matched namespace(s) before listing secrets",
+            string.Join(", ", ignored), matched.Count - kept.Count, matched.Count);
+        return kept;
     }
 
     /// <summary>

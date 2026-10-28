@@ -166,7 +166,8 @@ public class ClusterSecretHandler : SecretHandlerBase
     #region Discovery Operations
 
     /// <inheritdoc />
-    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv)
+    public override List<string> DiscoverStores(string[] allowedKeys, string namespacesCsv,
+        IEnumerable<string> ignoredNamespaces = null)
     {
         LogMethodEntry(nameof(DiscoverStores));
 
@@ -178,14 +179,16 @@ public class ClusterSecretHandler : SecretHandlerBase
             stores.AddRange(KubeClient.DiscoverSecrets(
                 new[] { "tls.crt" },
                 "kubernetes.io/tls",
-                "all"));
+                "all",
+                ignoredNamespaces: ignoredNamespaces));
 
             // Discover Opaque secrets with cert data. Opaque discovery only reports secrets that contain at
             // least one of these keys, so use the full handler key list (plus any job-supplied patterns).
             stores.AddRange(KubeClient.DiscoverSecrets(
                 allowedKeys?.Length > 0 ? allowedKeys : AllowedKeys,
                 "Opaque",
-                "all"));
+                "all",
+                ignoredNamespaces: ignoredNamespaces));
 
             return stores.Distinct().ToList();
         }
