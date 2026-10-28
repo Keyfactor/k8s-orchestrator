@@ -1325,6 +1325,10 @@ When `KubeSecretName` is left empty or set to `*`, the store inventories ALL iss
 
 **Note:** Only CSRs that have been approved AND have an issued certificate are included in the inventory. Pending or denied CSRs are skipped.
 
+### Alias Patterns
+
+- `<csr_name>` - the name of the CertificateSigningRequest (both single CSR and cluster-wide modes). This is unchanged from 1.x.
+
 ### Store Configuration
 
 | Property | Description | Required |
@@ -1379,6 +1383,10 @@ have specific keys in the Kubernetes secret.
 
 ### Alias Patterns
 - `<namespace_name>/secrets/<tls|opaque>/<secret_name>`
+
+Inventory reports one entry per secret, holding the full certificate chain found in that secret. This alias format is
+the same as in 1.x. Management Add/Remove requires exactly this form (at least four `/`-separated segments; the
+namespace, type and secret name are taken from segments 1, 3 and 4).
 
 ### Store Creation
 
@@ -1488,6 +1496,8 @@ the Kubernetes secret.
 
 ### Alias Patterns
 - `<k8s_secret_field_name>/<keystore_alias>`
+
+This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
 
 Example: `test.jks/load_balancer` where `test.jks` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `jks` data store.
@@ -1631,7 +1641,16 @@ have specific keys in the Kubernetes secret.
 
 ### Alias Patterns
 
-- `secrets/<tls|opaque>/<secret_name>`
+Inventory reports one entry per secret, keyed by the alias `<tls|opaque>/<secret_name>`
+(for example `tls/my-tls-secret` or `opaque/my-opaque-secret`). Each entry holds the full certificate chain found in
+that secret.
+
+- `<tls|opaque>/<secret_name>` (the alias returned by inventory in 2.0 and later)
+- `secrets/<tls|opaque>/<secret_name>` (the 1.x alias form; still accepted by Management Add/Remove, which uses the
+  last two segments of the alias)
+
+> **Upgrade note (1.x to 2.0):** 1.x inventory reported these entries as `secrets/<tls|opaque>/<secret_name>`. Existing
+> inventory entries in Command are re-keyed on the first 2.0 inventory. See the 2.0.0 Breaking Changes in `CHANGELOG.md`.
 
 ### Store Creation
 
@@ -1746,6 +1765,8 @@ the Kubernetes secret.
 ### Alias Patterns
 
 - `<k8s_secret_field_name>/<keystore_alias>`
+
+This alias format is unchanged from 1.x. One entry is reported per keystore alias in every keystore field of the secret.
 
 Example: `test.pkcs12/load_balancer` where `test.pkcs12` is the field name on the `Opaque` secret and `load_balancer` is
 the certificate alias in the `pkcs12` data store.
@@ -1888,7 +1909,14 @@ the Kubernetes secret.
 
 ### Alias Patterns
 
-- `<secret_name>` (when certificate is stored directly)
+- `<secret_name>` (the Opaque secret name)
+
+Inventory reports a single entry for the secret, keyed by the secret name and holding the full certificate chain
+(leaf first). Management Add/Remove operates on the whole secret and does not use the alias value to select content.
+
+> **Upgrade note (1.x to 2.0):** 1.x keyed the inventory entry by the thumbprint of the first (leaf) certificate in the
+> secret. 2.0 keys it by the secret name. Existing inventory entries in Command are re-keyed on the first 2.0 inventory.
+> See the 2.0.0 Breaking Changes in `CHANGELOG.md`.
 
 ### Store Creation
 
@@ -1991,6 +2019,13 @@ the Kubernetes secret.
 ### Alias Patterns
 
 - `<secret_name>` (the TLS secret name)
+
+Inventory reports a single entry for the secret, keyed by the secret name and holding the full certificate chain
+(leaf first). Management Add/Remove operates on the whole secret and does not use the alias value to select content.
+
+> **Upgrade note (1.x to 2.0):** 1.x keyed the inventory entry by the thumbprint of the first (leaf) certificate in the
+> secret. 2.0 keys it by the secret name. Existing inventory entries in Command are re-keyed on the first 2.0 inventory.
+> See the 2.0.0 Breaking Changes in `CHANGELOG.md`.
 
 ### Store Creation
 
