@@ -14,7 +14,7 @@ Contents: [1 Prerequisites](#1-prerequisites) · [2 Safety rules](#2-safety-rule
 [4 Test data](#4-test-data) · [5 Discovery](#5-discovery-cases-d) · [6 Approve and inventory](#6-approve-and-inventory-cases-i) ·
 [7 Management](#7-management-cases-m) · [8 Known issues](#8-known-issues-k-cases) ·
 [9 Previous-build comparison](#9-previous-build-regression-comparison-b-cases) · [10 Not testable](#10-what-is-not-testable-in-the-lab) ·
-[11 Reading results](#11-reading-results-and-keeping-the-plan-current) · [12 Open questions](#12-open-questions-to-confirm-before-the-first-real-run)
+[11 Reading results](#11-reading-results-and-keeping-the-plan-current) · [12 Assumptions and their status](#12-assumptions-status-after-the-read-only-lab-probe)
 
 ## 1. Prerequisites
 
@@ -47,9 +47,11 @@ Tools on the machine running the suite: `bash`, `kubectl`, `jq`, `curl`, `openss
    (cases D1, D4, D5, D8, I11 need it): the suite refuses to run if `all` already exists without its label.
 2. **Existing lab resources are never touched.** Namespaces that exist without the suite's label are never adopted or
    deleted. Command stores are only deleted when their client machine is `<prefix>` or starts with `<prefix>-`.
-3. **The UO's previous extension is recorded and restored.** Before staging, the plugin entry is recorded and its local
-   artifact snapshotted into the work dir; `stage-extension.sh restore` (or `cleanup.sh`) puts it back and compares
-   `kfclab extension list` before and after. Staging restarts the UO pod, which interrupts other jobs on it.
+3. **The UO's previous extension is recorded and restored.** Before staging, the plugin entry is recorded, checked
+   against what the UO pod really has deployed (staging is refused when they differ), and its local artifact
+   snapshotted into the work dir; `stage-extension.sh restore` (or `cleanup.sh`) puts it back and compares a
+   fingerprint of the pod's extension directory before and after. Staging restarts the UO pod, which interrupts other
+   jobs on it, and changes the extension files that every UO of the lab shares (see section 12, item 9c).
 4. **Everything created is deleted, and deletion is verified.** `cleanup.sh` removes Command stores and test
    certificates, namespaces, CSRs, ClusterRole/Binding and the work dir, then re-queries each and fails if anything
    remains.
@@ -333,36 +335,42 @@ comparison with 1.3.0 was not possible in the lab (section 10).
   sub-IDs (`M8a`, `M8b`) rather than renumbering.
 - When a case changes, change this document and the script together.
 
-## 12. Open questions to confirm before the first real run
+## 12. Assumptions: status after the read-only lab probe
 
-Nothing in `scripts/e2e` has been run against a lab yet. It was written from the PR #103 run's recorded commands and
-results and verified with `bash -n`, `shellcheck`, `--dry-run` against shims that record every `kubectl`/`curl`/`kfclab`
-call (none were made), and unit-style checks of the comparison logic against canned Command and Kubernetes data. These
-points rest on assumptions about the lab and the Command API that could not be verified without running them:
+Before the first real run the suite's assumptions about the lab and the Command API were checked with read-only calls
+(GET/list requests, `kubectl get` / `auth can-i`, and the suite's own read-only helpers): nothing was staged, created,
+modified or deleted. The first column gives the original assumption number. Status: **confirmed**, **corrected** (the
+suite was changed), or **not probed** (the check would have to change state; the first real run is the check).
 
-1. **Orchestrator name.** The UO's agent is looked up in `GET /Agents` by `ClientMachine`; the default
-   `kfclab-uo-<E2E_UO_NAME>` follows what job history showed in the earlier run. Confirm, or set `E2E_UO_AGENT`.
-2. **Job history semantics.** Jobs are matched on client machine, store path suffix and a job type ending in
-   `Discovery` / `Inventory` / `Management`, with a status starting `Completed`. `SortAscending=1` is taken to mean
-   newest first (the Keyfactor API inverts this flag).
-3. **Private-key flag value.** Inventory's `Parameters.PrivateKeyEntry` is normalised from `Yes`/`No` or `true`/`false`.
-4. **Add semantics for cert-only adds** with `IncludeCertChain=true`: assumed to return `tls.crt` starting with the leaf
-   (only the leaf is asserted).
-5. **Chain order.** `tls.crt` is asserted leaf-first with the exact certificate set; root last is not asserted.
-6. **Alias forms.** Overwrite and Remove use the inventory aliases described in section 7. For the PKCS12 store the
-   data field is detected from the secret (it is `keystore.pfx` while #105 exists), so the aliases stay correct after the fix.
-7. **K8SNS Create job (K107).** Assumed that `CreateIfMissing` schedules a `K8SNSManagement` job whose history entry
-   (possibly `CompletedWillRetry`) is the signal. If Command does not schedule one, K107 times out.
-8. **Certificate deletion.** `DELETE /Certificates` must be permitted for the token; otherwise cleanup reports the test
-   certificates as left over (the suite never deletes certificates it did not import).
-9. **Extension staging.** `kfclab extension update` with an edited private copy of the spec is assumed to re-stage the
-   artifact and restart the UO, as its help text describes (the earlier run staged the build the same way, from an edited
-   copy of the spec). Confirm that kfclab does not key state to the spec's path, and that the "previous" extension named
-   in the spec is the one actually deployed: the suite snapshots the spec's local path, not the live extension volume.
-10. **K108 log format.** Parsed as `<date> <time> <job guid> <job history id> <logger> [Level] - message`, as seen in the
-    earlier run's UO log.
-11. **Duration.** Management runs eight sequential waves of UO polling plus per-wave inventory refreshes; expect a long
-    run and tune `E2E_JOB_TIMEOUT`.
+| # | Assumption | Status | Evidence / change |
+|---|---|---|---|
+| 1 | The UO's agent is `ClientMachine == kfclab-uo-<E2E_UO_NAME>` in `GET /Agents` | confirmed | `GET /Agents` returns `AgentId` and `ClientMachine` (`kfclab-uo-<name>`); job history carries the same value in `AgentMachine`; the stores served by the UO have that `AgentId` |
+| 2 | Job history matching on client machine, store path suffix, job type, `Completed*` status | confirmed | Fields are `ClientMachine` (the **store's** client machine), `StorePath` (the full store path including the discovered cluster segment; **null** for discovery jobs, which the suite matches without a path), `JobType` (`K8SNSDiscovery`, `K8SSecretInventory`, `K8STLSSecrManagement`, ...), `Status` (`Completed`, `CompletedWillRetry`, `InProcess`), `Result` (`Success`, `Failure`, `Unknown`), `Message`. A job that will be retried is `CompletedWillRetry` and gets a **new** `JobHistoryId` on every retry |
+| 2b | `SortAscending=1` returns the newest first | confirmed | The parameter is an enum (0, 1); `1` returns descending `OperationStart`, `0` ascending. `OperationStart` has one-minute resolution, so ties inside a minute are in arbitrary order; harmless because the suite takes the maximum id. The newest 500 entries cover days on a quiet lab; on a lab running hundreds of jobs per hour raise `E2E_HIST_LIMIT` |
+| 3 | `Parameters.PrivateKeyEntry` is `Yes`/`No` | confirmed | Only parameter on inventory rows, values `Yes` / `No`; thumbprints are 40 hex characters |
+| 4 | Cert-only add with `IncludeCertChain=true` returns `tls.crt` starting with the leaf | not probed | needs a write |
+| 5 | `tls.crt` is leaf-first | not probed | needs a write |
+| 6 | Alias forms for overwrite/remove | partly | K8SNS (`<tls\|opaque>/<name>`) and K8SCluster (`<ns>/secrets/<tls\|opaque>/<name>`) aliases were seen in existing inventories. JKS/PKCS12 alias forms and the PKCS12 data field detection could not be observed |
+| 7 | `CreateIfMissing` on K8SNS schedules a Management job (K107) | confirmed | History of an earlier run: a `CreateIfMissing` K8SNS store scheduled a `K8SNSManagement` job with the namespace as `StorePath`, `CompletedWillRetry` / `Failure` ("Invalid namespace alias format"), and was re-queued every ~5 minutes while the store existed (one history entry per retry). The other store types scheduled a `*Management` job on creation too. No evidence either way for a `CreateIfMissing` K8SCluster store (the earlier run created its cluster store by hand): if none is scheduled, the wait for `c.mg-cluster` times out after `E2E_JOB_TIMEOUT` and only produces a warning |
+| 8 | The token may delete certificates | confirmed (by permissions, not exercised) | `GET /Security/My` for the token lists the `Administrator` and `InstanceAdmin` roles with `Certificates:Delete` and `CertificateStoreManagement:Modify`/`Schedule`/`Read` (store create/delete, scheduling, discovery). `DELETE /Certificates` takes a JSON array of integer ids and `DELETE /CertificateStores` an array of GUIDs, as `cleanup.sh` sends them. The token is the lab's Command OAuth client, so it is broadly privileged |
+| 9 | `kfclab extension update` on an edited private copy of the spec re-stages the build and restarts the UO | confirmed, with corrections | It resolves the artifact, stages it, rollout-restarts the UO, waits for the new pod to be Ready and compares the primary DLL hash in the running pod with the artifact. **Corrected:** `kfclab extension list` is a listing of kfclab's global plugin cache (not per UO), ignores `--json`, and its `--uo` filter compares against the *source* so it never matches; it cannot confirm a restore. The suite now fingerprints the extension directory inside the UO pod (sha256 of every `*.dll` and `manifest.json`, via `kubectl exec`) before staging, after staging and after restore |
+| 9b | The spec's "previous" extension is what is deployed | confirmed, now enforced | For the lab checked, the fingerprint of the spec's local build directory equals the pod's. That directory is a developer's working build output though, so `stage-extension.sh` now refuses to stage when it differs (`E2E_ALLOW_PREVIOUS_MISMATCH=true` overrides) |
+| 9c | Staging affects only the target UO | **no** | The extension directory is one volume shared by every UO of the lab (mounted per extension by sub-path); `kfclab extension update` restarts only the target UO's pod. The other UOs keep the assemblies they loaded at startup but see the new files on disk, and may load them if they restart or load a dependency lazily. See "Staging risk" in the [README](../scripts/e2e/README.md) |
+| 10 | K108 log line layout | confirmed | `<date> <time> <job guid> <job history id> <logger> [Level] - message`; the fourth field equals `JobHistoryId`. The lab's UO logs at Trace and the container log is rotated by size, so the suite now skips K108 instead of reporting XPASS when the log does not reach back to the run's first successful job |
+| 11 | Duration | not measured | dominated by waiting on the UO; record the first real run's duration here |
+
+Setup facts the probe established (generic; the real values belong in your env file):
+
+- `kfclab token -f <spec>` prints a bare JWT (three dot-separated segments) valid for about a day, so it works directly as
+  `E2E_TOKEN_CMD`. The Command endpoint is served with the lab's own CA, so `E2E_CA_CERT` is required.
+- kfclab writes a separate kubeconfig for the lab cluster whose only context has a generic name, so both
+  `E2E_KUBECONFIG` and `E2E_KUBE_CONTEXT` are needed. The suite refuses the `kf-integrations` context.
+- The UO pod's service account is bound to secrets (all verbs), namespaces (get/list) and CSRs, cluster-wide, as the
+  suite assumes; `kubernetes.default.svc` is in the API server certificate, so the default `E2E_RBAC_API_SERVER` works.
+- Store type definitions in the lab match the suite: K8SCluster has `Discovery=false`; K8SCert only supports discovery;
+  all other types support Add/Remove/Create/Discovery; none supports Enrollment. K8SJKS and K8SPKCS12 have
+  `CertificateDataFieldName` (required, default `.p12`, for PKCS12) but none of the password-from-secret properties.
+  `KubeNamespace`, `KubeSecretName`, `IncludeCertChain` and `SeparateChain` exist where the suite sets them.
 
 ## Appendix: case IDs to scripts
 

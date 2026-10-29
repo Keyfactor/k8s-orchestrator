@@ -19,7 +19,10 @@ Kubernetes namespaces, and (with `--stage`) restarts a UO.
 - Nothing else is ever modified. There is no "delete everything" mode: `cleanup.sh` deletes by prefix and label only,
   then verifies, and exits non-zero if anything is left.
 - The UO's previous extension is recorded (and its local artifact snapshotted) before `--stage` replaces it, and is
-  restored by `stage-extension.sh restore` or by `cleanup.sh`.
+  restored by `stage-extension.sh restore` or by `cleanup.sh`. Staging is refused when the recorded previous build is
+  not what the UO pod actually has deployed (it would be restored to something else), and the pod's extension
+  directory is fingerprinted before and after to confirm the restore.
+- `E2E_KUBE_CONTEXT=kf-integrations` (the integration-test cluster) is refused.
 - Generated key material, the keystore password (random per run), the scoped kubeconfig and the lab-spec copy live only
   in the work dir (`${TMPDIR:-/tmp}/e2e-lab-<prefix>`, mode 700), which `cleanup.sh` removes. Nothing secret is printed,
   `set -x` is never used, and the API token is passed to `curl` over stdin, never on a command line.
@@ -41,7 +44,8 @@ Lab:
 - An API token (any mechanism, see `E2E_TOKEN_CMD`) allowed to manage certificate stores and certificates, delete
   stores and certificates, and read job history and orchestrators.
 - Your kube context may create/delete namespaces, secrets, CSRs, ClusterRoles and ClusterRoleBindings, mint service
-  account tokens, and impersonate service accounts (`auth can-i --as`). The cluster must run the
+  account tokens, and impersonate service accounts (`auth can-i --as`); with `--stage` it should also be able to
+  `kubectl exec` into the UO pod (to read back what is deployed). The cluster must run the
   `kubernetes.io/kube-apiserver-client` CSR signer (any normal cluster does).
 
 ## Configuration
@@ -58,9 +62,11 @@ default that is secret or lab-specific. A missing variable stops the run with a 
 | `E2E_KFCLAB_SPEC` | `--stage` | kfclab lab spec; **copied** into the work dir (mode 600), never modified |
 | `E2E_EXT_BUILD_PATH` | `--stage` | directory or `.zip` with the extension build under test |
 | `E2E_UO_AGENT` | optional | the UO's orchestrator name in Command (default `kfclab-uo-<E2E_UO_NAME>`) |
-| `E2E_KUBECONFIG` | optional | kubeconfig file (default: kubectl's default) |
+| `E2E_KUBECONFIG` | optional | kubeconfig file (default: kubectl's default). kfclab writes a separate kubeconfig for its lab cluster, so set this together with `E2E_KUBE_CONTEXT` |
 | `E2E_CA_CERT` | optional | PEM CA bundle for the Command endpoint (default: system trust) |
-| `E2E_UO_LOG_CMD` | optional | command that prints the UO log; enables case K108 (otherwise it is SKIPped) |
+| `E2E_UO_LOG_CMD` | optional | command that prints the whole UO log; enables case K108 (otherwise it is SKIPped), e.g. `kubectl --kubeconfig "$E2E_KUBECONFIG" --context "$E2E_KUBE_CONTEXT" -n "$E2E_UO_NAMESPACE" logs -l "$E2E_UO_SELECTOR"`. K108 is skipped when the log was rotated and no longer reaches the run's first job |
+| `E2E_UO_NAMESPACE` / `E2E_UO_SELECTOR` / `E2E_UO_EXT_DIR` | optional | where the UO pod and its extension directory are, used to read back what is deployed (`kubectl exec`). Defaults follow kfclab: namespace `keyfactor-lab`, selector `app.kubernetes.io/instance=uo-<E2E_UO_NAME>`, directory `/app/extensions` |
+| `E2E_ALLOW_PREVIOUS_MISMATCH` | optional | `true`: stage even though the spec's previous build differs from what is deployed (restore will then not return the UO to its current build) |
 | `E2E_EXT_NAME` | optional | extension name in the spec (default `k8s-orchestrator`) |
 | `E2E_RBAC_API_SERVER` | optional | API server URL **as seen from the UO pod** (default `https://kubernetes.default.svc:443`) |
 | `E2E_JOB_TIMEOUT` / `E2E_JOB_POLL` | optional | seconds to wait per job (300) / poll interval (5) |
@@ -70,6 +76,7 @@ default that is secret or lab-specific. A missing variable stops the run with a 
 Example (placeholders; put real values in a file outside the repo and point `E2E_ENV_FILE` at it):
 
 ```bash
+export E2E_KUBECONFIG=$HOME/.kube/my-lab.yaml
 export E2E_KUBE_CONTEXT=my-lab
 export E2E_COMMAND_URL=https://command.example.com/KeyfactorAPI
 export E2E_TOKEN_CMD='kfclab token -f "$E2E_KFCLAB_SPEC"'
@@ -137,8 +144,22 @@ Exit codes: `0` ok, `1` at least one unexpected FAIL (or cleanup could not verif
 - Waiting is by polling Command's job history for a job on the same client machine and store path that is newer than
   the batch start. A job the UO never picks up reports a timeout, which fails the case.
 - `K108` needs `E2E_UO_LOG_CMD`; the log line layout it parses is described in the plan.
-- The scripts were derived from an earlier manual run and then verified statically and with canned data only; see the
-  "Open questions" section of the plan for assumptions to confirm on the first real run.
+- The scripts were derived from an earlier manual run. Their read-only assumptions about the lab and the Command API
+  were checked against a real lab (section 12 of the plan lists each as confirmed, corrected or not probed); the write
+  paths (stores, Add/Remove, staging) have not run yet.
+
+## Staging risk
+
+`--stage` is the only part that changes something other than the run's own resources. kfclab keeps one extension
+volume for all UOs of a lab and mounts the extension's directory into each UO pod; `kfclab extension update` swaps the
+files in it and restarts **only the target UO's pod**. Other UOs keep the assemblies they already loaded but see the new
+files on disk, and would load them on a restart (or if they load a dependency lazily). While a build is staged:
+
+- compare the build under test with the deployed one (the fingerprints are in the work dir's `state/`); if only the
+  extension's own assembly differs, the exposure of the other UOs is small;
+- do not restart other UOs, and avoid staging while other people use them;
+- always finish with `restore` (`run-all.sh` and `cleanup.sh` do it, also after a failed phase) and check the
+  "restored: the UO's extension directory matches" line.
 
 ## Static checks
 
