@@ -44,6 +44,12 @@
 #                           .ClientMachine). Default: kfclab-uo-<E2E_UO_NAME>
 #     E2E_EXT_NAME          extension name in the kfclab spec (default k8s-orchestrator)
 #     E2E_KFCLAB_BIN        kfclab executable (default kfclab)
+#     E2E_UO_NAMESPACE      namespace of the UO pod (default keyfactor-lab, kfclab's default)
+#     E2E_UO_SELECTOR       label selector of the UO pod (default
+#                           app.kubernetes.io/instance=uo-<E2E_UO_NAME>, kfclab's naming)
+#     E2E_UO_EXT_DIR        extensions directory inside the UO pod (default /app/extensions).
+#                           Used to read back what the UO really has deployed (needs
+#                           `kubectl exec` on the pod); without it the checks are skipped
 #     E2E_UO_LOG_CMD        command that prints the UO log (enables case K108)
 #     E2E_RBAC_API_SERVER   API server URL as seen from the UO pod, written into the
 #                           scoped-service-account kubeconfig
@@ -182,8 +188,31 @@ lab_ext_apply() {
   "$E2E_KFCLAB_BIN" extension update --uo "$E2E_UO_NAME" --extension "$E2E_EXT_NAME" -f "$1"
 }
 
-# lab_ext_list SPEC : JSON describing the extensions staged for the UO (used to
-# confirm the previous extension is back after restore)
-lab_ext_list() {
-  "$E2E_KFCLAB_BIN" extension list --uo "$E2E_UO_NAME" -f "$1" --json
+# Fingerprints. `kfclab extension list` is NOT usable for this: it lists kfclab's
+# local plugin cache (one global list, not per UO), ignores --json, and its --uo
+# filter never matches. Instead the extension directory the UO pod actually has is
+# fingerprinted: one "<sha256> <file>" line per *.dll plus manifest.json, sorted.
+# kfclab itself already verifies the primary DLL after every update; this covers
+# the rest and lets the suite compare "before staging" with "after restore".
+
+_lab_sha() {
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi
+}
+
+# lab_ext_dir_fp DIR : fingerprint of a local extension build directory
+lab_ext_dir_fp() {
+  ( cd "$1" 2>/dev/null && _lab_sha ./*.dll manifest.json ) | sed 's# \./# #; s#  *# #' | sort -k2
+}
+
+# lab_ext_deployed_fp : fingerprint of the extension directory inside the UO pod.
+# Needs permission to `kubectl exec` into the pod; returns non-zero (and prints
+# nothing) when it cannot be read.
+lab_ext_deployed_fp() {
+  local pod out
+  pod=$(lab_kubectl -n "$E2E_UO_NAMESPACE" get pod -l "$E2E_UO_SELECTOR" -o name 2>/dev/null | head -1)
+  [ -n "$pod" ] || return 1
+  out=$(lab_kubectl -n "$E2E_UO_NAMESPACE" exec "$pod" -- sh -c \
+    "cd '$E2E_UO_EXT_DIR/$E2E_EXT_NAME' && sha256sum *.dll manifest.json" 2>/dev/null) || return 1
+  [ -n "$out" ] || return 1
+  printf '%s\n' "$out" | sed 's#  *# #' | sort -k2
 }

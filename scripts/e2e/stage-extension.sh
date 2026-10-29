@@ -32,8 +32,9 @@ esac
 
 SPEC=$WORK/state/kfclab-spec.yaml
 NODE_ORIG=$WORK/state/ext.orig.json
-LIST_BEFORE=$WORK/state/ext.list.before.json
-: "${E2E_STAGE_TIMEOUT:=300}"
+FP_BEFORE=$WORK/state/ext.fp.before
+# The UO checks in with Command about every 5 minutes, so allow a little more than that.
+: "${E2E_STAGE_TIMEOUT:=420}"
 
 agent_seen() {
   api GET "/Agents?PageReturned=1&ReturnLimit=500" | jq -r --arg n "$E2E_UO_AGENT" '[.[]? | select(.ClientMachine == $n) | (.LastSeen // "")] | first // ""'
@@ -64,6 +65,7 @@ status)
 stage)
   if dry; then
     dsay "copy the kfclab spec into the work dir (mode 600), record the '$E2E_EXT_NAME' entry of orchestrator '$E2E_UO_NAME'"
+    dsay "fingerprint what the UO pod has deployed (kubectl exec sha256sum) and refuse to continue if the previous local artifact differs from it"
     dsay "snapshot the previous local artifact into the work dir"
     dsay "point the spec copy's plugin path at E2E_EXT_BUILD_PATH and run: $E2E_KFCLAB_BIN extension update --uo $E2E_UO_NAME --extension $E2E_EXT_NAME -f <spec copy>"
     dsay "wait for the UO to restart and check in with Command"
@@ -75,9 +77,24 @@ stage)
   node=$(lab_ext_get_node "$SPEC") || die "yq failed reading the spec"
   [ -n "$node" ] || die "extension '$E2E_EXT_NAME' not found under orchestrator '$E2E_UO_NAME' in the kfclab spec"
   src=$(printf '%s' "$node" | jq -r '.source // ""')
+  # What the UO really runs right now. The spec names a build directory that may have been
+  # rebuilt since it was deployed; restoring from it must put back exactly what is there now.
+  if lab_ext_deployed_fp > "$FP_BEFORE.new" 2>/dev/null; then
+    mv "$FP_BEFORE.new" "$FP_BEFORE"
+  else
+    rm -f "$FP_BEFORE.new" "$FP_BEFORE"
+    warn "could not read the UO's deployed extension (kubectl exec); cannot confirm that the spec's previous extension is what is deployed"
+  fi
   if [ "$src" = local ]; then
     oldpath=$(expand_home "$(printf '%s' "$node" | jq -r '.path // ""')")
     [ -e "$oldpath" ] || die "the previous extension's local path does not exist, cannot snapshot it for restore"
+    if [ -s "$FP_BEFORE" ] && [ -d "$oldpath" ] && [ "$(lab_ext_dir_fp "$oldpath")" != "$(cat "$FP_BEFORE")" ]; then
+      if [ "${E2E_ALLOW_PREVIOUS_MISMATCH:-false}" = true ]; then
+        warn "the spec's previous extension differs from what the UO has deployed; restore will NOT return the UO to its current build (E2E_ALLOW_PREVIOUS_MISMATCH=true)"
+      else
+        die "the previous extension recorded in the spec ($oldpath) differs from what the UO has deployed. Restoring from it would change the UO's build. Rebuild or fix the spec's path first (set E2E_ALLOW_PREVIOUS_MISMATCH=true to continue anyway)"
+      fi
+    fi
     ( umask 077; mkdir -p "$WORK/prev-ext"; rm -rf "${WORK:?}/prev-ext"/*; cp -R "$oldpath" "$WORK/prev-ext/" )
     snap=$WORK/prev-ext/$(basename "$oldpath")
     printf '%s' "$node" | jq --arg p "$snap" '.path = $p' > "$NODE_ORIG"
@@ -87,7 +104,6 @@ stage)
     warn "the previous extension has source='$src' (not local): restore re-applies the recorded entry, so it must still resolve to the previous build"
   fi
   chmod 600 "$NODE_ORIG"
-  lab_ext_list "$SPEC" > "$LIST_BEFORE" 2>/dev/null || warn "could not list the UO's staged extensions before staging"
   before=$(agent_seen)
   newnode=$(printf '%s' "$node" | jq -c --arg p "$(cd "$(dirname "$E2E_EXT_BUILD_PATH")" && pwd)/$(basename "$E2E_EXT_BUILD_PATH")" \
     '.source = "local" | .path = $p | del(.repo, .version, .url, .checksum, .assetPattern)')
@@ -96,13 +112,20 @@ stage)
   say "-- staging $(basename "$E2E_EXT_BUILD_PATH") on $E2E_UO_NAME"
   lab_ext_apply "$SPEC" || die "kfclab extension update failed; run '$0 restore' to put the previous extension back"
   wait_uo_back "$before"
+  if [ -d "$E2E_EXT_BUILD_PATH" ] && lab_ext_deployed_fp > "$WORK/tmp/ext.fp.staged" 2>/dev/null; then
+    if [ "$(lab_ext_dir_fp "$E2E_EXT_BUILD_PATH")" = "$(cat "$WORK/tmp/ext.fp.staged")" ]; then
+      say "verified: the UO's extension directory matches the build under test"
+    else
+      warn "the UO's extension directory differs from E2E_EXT_BUILD_PATH after staging; results may not reflect the build under test"
+    fi
+  fi
   say "extension staged"
   ;;
 
 restore)
   if dry; then
     dsay "write the recorded previous '$E2E_EXT_NAME' entry back into the spec copy and run: $E2E_KFCLAB_BIN extension update --uo $E2E_UO_NAME --extension $E2E_EXT_NAME -f <spec copy>"
-    dsay "wait for the UO to restart, then compare 'kfclab extension list' with the listing taken before staging"
+    dsay "wait for the UO to restart, then compare the pod's extension directory fingerprint with the one taken before staging"
     finish
   fi
   if [ "$(state_get ext.staged)" != yes ]; then say "no extension staged by this run; nothing to restore"; exit 0; fi
@@ -113,14 +136,14 @@ restore)
   lab_ext_apply "$SPEC" || die "kfclab extension update failed while restoring; the previous entry is in $NODE_ORIG"
   wait_uo_back "$before"
   state_set ext.staged no
-  if [ -s "$LIST_BEFORE" ] && lab_ext_list "$SPEC" > "$WORK/tmp/ext.list.after.json" 2>/dev/null; then
-    if [ "$(jq -S . "$LIST_BEFORE")" = "$(jq -S . "$WORK/tmp/ext.list.after.json")" ]; then
-      say "restored: the UO's staged extension listing matches the one recorded before staging"
+  if [ -s "$FP_BEFORE" ] && lab_ext_deployed_fp > "$WORK/tmp/ext.fp.after" 2>/dev/null; then
+    if [ "$(cat "$FP_BEFORE")" = "$(cat "$WORK/tmp/ext.fp.after")" ]; then
+      say "restored: the UO's extension directory matches what was deployed before staging"
     else
-      warn "the UO's extension listing differs from the one recorded before staging; compare $LIST_BEFORE with 'kfclab extension list' output"
+      warn "the UO's extension directory differs from what was deployed before staging; compare $FP_BEFORE with the pod's extension directory"
     fi
   else
-    warn "could not compare extension listings; verify the previous extension is back"
+    warn "could not compare the deployed extension with the one recorded before staging; verify the previous extension is back"
   fi
   ;;
 esac
