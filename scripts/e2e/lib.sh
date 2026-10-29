@@ -659,23 +659,63 @@ cert_lookup() {
     | jq -r '[.[]? | .Id] | first // empty'
 }
 
+# cert_has_key ID : yes | no. Only the single-certificate GET reports the flag reliably; the
+# list endpoint says false for certificates that do have a key.
+cert_has_key() {
+  local r
+  r=$(api GET "/Certificates/$1?includeHasPrivateKey=true" | jq -r 'if .HasPrivateKey == true then "yes" else "no" end') || return 1
+  printf '%s' "$r"
+}
+
 # cert_import NAME [pfx|der] : import into Command once; stores state cid.NAME
+#
+# A PFX import must end with a record that HAS a private key, or every later Add with
+# IncludePrivateKey=true is refused ("No private key could be found for the given
+# certificate"). Command's Import never adds a key to a record that already exists (it
+# answers HTTP 200 with ImportStatus ExistsMissingOwnerRole and leaves the record as it
+# was), and the inventory of a store that holds the certificate creates exactly such a
+# keyless record. So an existing record is only reused when it has a key; a keyless record
+# of one of OUR test certificates (issuer = this run's test CA) is deleted and the PFX is
+# imported again.
 cert_import() {
-  local n=$1 kind=${2:-pfx} body id
+  local n=$1 kind=${2:-pfx} body id res status haskey
   if dry; then dsay "import test certificate $n ($kind) into Command"; return 0; fi
-  id=$(cert_lookup "$n")
+  id=$(cert_lookup "$n") || return 1
+  if [ -n "$id" ] && [ "$kind" = pfx ]; then
+    haskey=$(cert_has_key "$id") || { warn "cannot read certificate $n (Command id $id)"; return 1; }   # never act on a failed read
+  else
+    haskey=yes
+  fi
+  if [ "$haskey" != yes ]; then
+    # never delete anything that is not issued by this run's own test CA
+    if ! api GET "/Certificates/$id" | jq -e --arg p "CN=$PREFIX Intermediate CA" '(.IssuerDN // "") | contains($p)' >/dev/null; then
+      warn "certificate $n (Command id $id) exists without a private key and is not issued by this run's test CA; not touching it"
+      return 1
+    fi
+    say "certificate $n exists in Command without a private key (created by an inventory?); replacing it with the PFX import"
+    body=$(mktemp "$WORK/tmp/delc.XXXXXX") || return 1
+    printf '[%s]' "$id" > "$body"
+    api DELETE /Certificates "$body" >/dev/null || { rm -f "$body"; warn "could not delete the keyless record of $n (Command id $id)"; return 1; }
+    rm -f "$body"
+    id=""
+  fi
   if [ -z "$id" ]; then
-    body=$(mktemp "$WORK/tmp/imp.XXXXXX")
+    body=$(mktemp "$WORK/tmp/imp.XXXXXX") || return 1
     if [ "$kind" = pfx ]; then
       jq -n --rawfile c <(base64 < "$WORK/pki/$n.pfx" | tr -d '\n') --rawfile p "$KSPW_FILE" '{Certificate:$c,Password:$p}' > "$body"
     else
       jq -n --rawfile c <(base64 < "$WORK/pki/$n.der" | tr -d '\n') '{Certificate:$c}' > "$body"
     fi
-    api POST /Certificates/Import "$body" >/dev/null || { rm -f "$body"; return 1; }
+    res=$(api POST /Certificates/Import "$body") || { rm -f "$body"; return 1; }
     rm -f "$body"
-    id=$(cert_lookup "$n")
+    status=$(printf '%s' "$res" | jq -r '.ImportStatus // ""' 2>/dev/null)
+    id=$(cert_lookup "$n") || return 1
   fi
   [ -n "$id" ] || return 1
+  if [ "$kind" = pfx ] && [ "$(cert_has_key "$id" 2>/dev/null)" != yes ]; then
+    warn "certificate $n (Command id $id) has no private key after the PFX import${status:+ (ImportStatus $status)}; Add with a key cannot work"
+    return 1
+  fi
   state_set "cid.$n" "$id"
 }
 cid() { state_get "cid.$1"; }

@@ -197,7 +197,10 @@ entry: alias, the private-key flag (`Yes`/`No`) and the **set of certificate thu
 ## 7. Management cases (M)
 
 How each is driven: certificates are imported into Command (`POST /Certificates/Import`: leaf2, leaf3, leaf4 as PFX
-with int + root so Command can build the chain, leaf6 as a bare certificate with no key). Stores in `<p>-m` are created
+with int + root so Command can build the chain, leaf6 as a bare certificate with no key). The inventory phase has by then
+already put the same certificates into Command **without a key**, and an import never adds a key to an existing record,
+so a keyless record of a test certificate is deleted first and the PFX imported again (the import fails the phase when
+the record still has no private key). Stores in `<p>-m` are created
 with `CreateIfMissing` (`POST /CertificateStores`, approved, `AgentAssigned`). Operations use
 `POST /CertificateStores/Certificates/Add` (`CertificateId`, `Overwrite`, `IncludePrivateKey`, `Alias`, `PfxPassword`)
 and `.../Remove`. They run in **waves** with at most one operation per store per wave, so each Command job can be
@@ -372,6 +375,26 @@ Setup facts the probe established (generic; the real values belong in your env f
   all other types support Add/Remove/Create/Discovery; none supports Enrollment. K8SJKS and K8SPKCS12 have
   `CertificateDataFieldName` (required, default `.p12`, for PKCS12) but none of the password-from-secret properties.
   `KubeNamespace`, `KubeSecretName`, `IncludeCertChain` and `SeparateChain` exist where the suite sets them.
+
+### What the first real run taught
+
+The first full run (discovery D1-D15 and inventory I1-I13 passed; extension staging and restore worked) failed in the
+management phase and mis-reported cleanup. Each finding changed the suite:
+
+- **Every Add was refused ("No private key could be found for the given certificate", HTTP 400 `0xA0110010`).**
+  Cause: the suite looked a certificate up by thumbprint before importing it and skipped the import when a record
+  existed. By the management phase the inventory phase had already put leaf2, leaf3 and leaf4 into Command, because the
+  fixture secrets in `<p>-a` / `<p>-b` hold those certificates and a store inventory creates a certificate record
+  **without a private key**. Command's `POST /Certificates/Import` does not add a key to an existing record (HTTP 200
+  with `ImportStatus` `ExistsMissingOwnerRole`; the record stays keyless), so `cid.leaf3` pointed at a keyless record and
+  every Add with `IncludePrivateKey=true` was rejected at scheduling. The earlier manual run imported the PFX files
+  before any inventory, which is why it worked. The PFX generation, the import request and the Add body were never the
+  problem. `cert_import` now checks the record with `GET /Certificates/{id}?includeHasPrivateKey=true` (the list
+  endpoint reports `HasPrivateKey: false` for keyed certificates too), deletes a keyless record of one of the suite's own
+  test certificates (issuer = the run's test CA; deleting a certificate that has inventory locations is allowed) and
+  imports the PFX again, and fails the phase when the record still has no key afterwards. Proven against the lab with a
+  minimal store: keyless record from an inventory -> Add rejected -> `cert_import` replaces it -> Add accepted, the
+  Management job completed `Success`, the secret holds leaf, intermediate, root and a private key.
 
 ## Appendix: case IDs to scripts
 
