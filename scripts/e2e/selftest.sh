@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
+# shellcheck disable=SC1091,SC2030,SC2031  # lib.sh is sourced inside subshells on purpose; variables set there must not leak
 #
 # selftest.sh - offline self-test of the suite's own safety nets. Needs no lab, no Command,
 # no cluster: curl, kubectl and kfclab are replaced by mocks on PATH. Run it after changing
@@ -16,6 +17,8 @@
 #   - the positive control: a reachable, empty lab does end in "verified" with exit 0
 #   - a missing scratch dir is recreated, and a child phase does not remove its parent's
 #     scratch space
+#   - a rejected scheduling request is a FAIL at once with Command's reason, and three in a
+#     row abort the phase
 #   - --dry-run makes no external call at all
 set -u -o pipefail
 
@@ -117,6 +120,28 @@ case $? in
   0) ok "a child phase leaves the parent's scratch dir alone; a vanished scratch dir is recreated" ;;
   *) fail "scratch dir handling (code $?)" ;;
 esac
+
+# ---- scheduling guard ----------------------------------------------------------
+sched_out=$(
+  PHASE=selftest
+  . "$HERE/lib.sh"
+  e2e_init --prefix "$P" --workdir "$T/w3" > /dev/null
+  export MOCK_CURL=rejected E2E_MAX_REJECTS=3
+  for i in 1 2 3 4 5; do
+    api POST /CertificateStores/Certificates/Add > /dev/null 2>&1
+    sched_fail "w1.X$i" "Add leaf to store 'x$i'" 2>/dev/null
+  done
+  echo "NOT REACHED"
+) 2>&1
+rc=$?
+if [ "$rc" -eq 1 ] && ! printf '%s' "$sched_out" | grep -q 'NOT REACHED' \
+   && [ "$(printf '%s\n' "$sched_out" | grep -c '^FAIL ')" -eq 3 ] \
+   && printf '%s' "$sched_out" | grep -q 'No private key could be found' \
+   && printf '%s' "$sched_out" | grep -q 'ABORTING phase'; then
+  ok "rejected requests: FAIL with Command's reason, phase aborted after 3 in a row (exit 1)"
+else
+  fail "scheduling guard (exit $rc)"; printf '%s\n' "$sched_out" | tail -8
+fi
 
 # ---- dry run -------------------------------------------------------------------
 : > "$MOCK_LOG"

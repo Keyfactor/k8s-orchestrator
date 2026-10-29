@@ -32,8 +32,8 @@ KS_FIELD=""
 mg_store() {
   local name=$1 type=$2 path=$3 props=$4 usepw=$5 existing sid
   if dry; then dsay "create store '$name' type=$type path=$path (CreateIfMissing=true)"; return 0; fi
-  existing=$(store_find "$MG_CM" "$path")
-  sid=$(mk_store "$MG_CM" "$path" "$type" "$props" "$usepw" true) || die "could not create store '$name'"
+  existing=$(store_find "$MG_CM" "$path") || die "could not look up store '$name' in Command (API error, see above)"
+  sid=$(mk_store "$MG_CM" "$path" "$type" "$props" "$usepw" true) || die "could not create store '$name': $(api_reason)"
   state_set "sid.mg.$name" "$sid"
   state_set "path.mg.$name" "$path"
   if [ -z "$existing" ]; then
@@ -58,10 +58,15 @@ mg_add() {
                          + (if $a == "" then {} else {Alias:$a} end)
                          + (if $k then {PfxPassword:$pw} else {} end))],
      Schedule:{Immediate:true}}' > "$body"
-  api POST /CertificateStores/Certificates/Add "$body" >/dev/null || warn "Add request for $label was rejected by Command"
-  rm -f "$body"
-  job_register "$label" "$MG_CM" "$(state_get "path.mg.$name")" 'Management$'
-  touch_store "$name"
+  if api POST /CertificateStores/Certificates/Add "$body" >/dev/null; then
+    rm -f "$body"; sched_ok
+    job_register "$label" "$MG_CM" "$(state_get "path.mg.$name")" 'Management$'
+    touch_store "$name"
+  else
+    rm -f "$body"
+    # rejected: FAIL now with Command's reason, nothing to wait for (sched_fail may abort the phase)
+    sched_fail "$label" "Add $cert to store '$name'"
+  fi
 }
 
 # mg_rm LABEL STORE ALIAS
@@ -72,10 +77,14 @@ mg_rm() {
   body=$(mktemp "$TMPD/rm.XXXXXX")
   jq -n --arg s "$sid" --arg a "$alias" '
     {CertificateStores:[({CertificateStoreId:$s} + (if $a == "" then {} else {Alias:$a} end))],Schedule:{Immediate:true}}' > "$body"
-  api POST /CertificateStores/Certificates/Remove "$body" >/dev/null || warn "Remove request for $label was rejected by Command"
-  rm -f "$body"
-  job_register "$label" "$MG_CM" "$(state_get "path.mg.$name")" 'Management$'
-  touch_store "$name"
+  if api POST /CertificateStores/Certificates/Remove "$body" >/dev/null; then
+    rm -f "$body"; sched_ok
+    job_register "$label" "$MG_CM" "$(state_get "path.mg.$name")" 'Management$'
+    touch_store "$name"
+  else
+    rm -f "$body"
+    sched_fail "$label" "Remove '$alias' from store '$name'"
+  fi
 }
 
 wave_begin() { TOUCHED=""; batch_begin; }
@@ -93,7 +102,11 @@ wave_end() {
     job_register "inv.$n" "$MG_CM" "$(state_get "path.mg.$n")" 'Inventory$'
   done
   # shellcheck disable=SC2086
-  schedule_inventory $ids
+  if ! schedule_inventory $ids; then
+    warn "could not schedule the inventory refresh after the wave; not waiting for it"
+    rm -f "$WORK/jobs/pending"
+    return 0
+  fi
   batch_wait
 }
 

@@ -103,23 +103,26 @@ while IFS='|' read -r -u 3 id type src path props usepw desc; do
   fi
   if [ "$src" = manual ]; then
     cm=$CM_MANUAL
-    existing=$(store_find "$cm" "$path")
-    sid=$(mk_store "$cm" "$path" "$type" "$props" "$usepw" false)
-    [ -n "$existing" ] && schedule_inventory "$sid"
+    existing=$(store_find "$cm" "$path") || die "$id: cannot list the Command stores (API error, see above)"
+    sid=$(mk_store "$cm" "$path" "$type" "$props" "$usepw" false) || { sched_fail "i.$id" "create the $type store $path"; continue; }
+    if [ -n "$existing" ] && ! schedule_inventory "$sid"; then sched_fail "i.$id" "inventory of store $path"; continue; fi
+    sched_ok
     psuf=$path
   else
     cm=$PREFIX-$src
-    sid=$(store_find_suffix "$cm" "$path")
+    sid=$(store_find_suffix "$cm" "$path") || die "$id: cannot list the Command stores (API error, see above)"
     if [ -z "$sid" ]; then
       state_set "sid.$id" ""
       warn "$id: no discovered store ending in '$path' for client machine $cm (run discovery.sh first)"
       continue
     fi
-    if [ "$(stores_all | jq -r --arg id "$sid" '[.[]? | select(.Id == $id) | .Approved][0] // false')" = true ]; then
-      schedule_inventory "$sid"
+    approved=$(stores_all | jq -r --arg id "$sid" '[.[]? | select(.Id == $id) | .Approved][0] // false') || die "$id: cannot list the Command stores (API error, see above)"
+    if [ "$approved" = true ]; then
+      schedule_inventory "$sid" || { sched_fail "i.$id" "inventory of store $path"; continue; }
     else
-      approve_discovered "$sid" "$type" "$props" "$usepw" || { warn "$id: approve failed"; continue; }
+      approve_discovered "$sid" "$type" "$props" "$usepw" || { sched_fail "i.$id" "approve the discovered $type store $path"; continue; }
     fi
+    sched_ok
     psuf=$path
   fi
   state_set "sid.$id" "$sid"

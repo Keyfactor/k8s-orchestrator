@@ -405,6 +405,12 @@ management phase and mis-reported cleanup. Each finding changed the suite:
   error) and cleanup then exits non-zero with "cleanup FAILED ... NOTHING is verified"; the post-delete verification
   fails closed the same way. `scripts/e2e/selftest.sh` proves this offline with a mock `curl` (HTTP 000, 500, a body
   that is not a list, no token, unreachable cluster) and a positive control.
+- **A rejected Add still waited out the full job timeout.** `mg_add` only warned about the HTTP 400 and registered the
+  job anyway, so each of the 12 rejected Adds waited `E2E_JOB_TIMEOUT` (300 s), about an hour in all. Now every helper
+  that asks Command to schedule something (Add, Remove, Schedule/inventory refresh, discovery job, approve, store create)
+  treats a non-2xx answer as a `FAIL` on the spot, with Command's `FailedOperations` reason (no secrets in it), and does
+  not register a job; dependent cases fail with the same reason; `E2E_MAX_REJECTS` (default 3) rejections in a row abort
+  the phase. A job history that cannot be read for about a minute also ends the waits.
 
 ## Appendix: case IDs to scripts
 

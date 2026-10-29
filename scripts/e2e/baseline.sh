@@ -37,23 +37,31 @@ i=0
 for spec in $B1_SPECS; do
   type=${spec%%:*}; rest=${spec#*:}; cm=$PREFIX-${rest%%:*}; dirs=${rest#*:}
   ign=""; case $cm in *-sec-ign) ign=$NS_IGN ;; esac
-  disc_submit "$type" "$cm" "$dirs" "$ign" "" "" && job_register "b.B1.$i" "$cm" "" 'Discovery$'
+  if disc_submit "$type" "$cm" "$dirs" "$ign" "" ""; then
+    sched_ok; job_register "b.B1.$i" "$cm" "" 'Discovery$'
+  else
+    sched_fail "b.B1.$i" "discovery job for $type ($cm)"
+  fi
   i=$((i + 1))
 done
 
 # ---- B2..B5: re-inventory stores approved by inventory.sh -------------------
 sid_jks=""; sid_p12=""; sid_ns=""; sid_key=""
 if ! dry; then
-  sid_key=$(store_find "$CM_MANUAL" "$A/op-keyonly")
-  sid_jks=$(store_find_suffix "$PREFIX-jks-list" "$A/secrets/jks-a")
-  sid_p12=$(store_find_suffix "$PREFIX-p12-list" "$A/secrets/p12-a")
-  sid_ns=$(store_find_suffix "$PREFIX-ns-all" "namespace/all")
+  sid_key=$(store_find "$CM_MANUAL" "$A/op-keyonly") || die "cannot list the Command stores (API error, see above)"
+  sid_jks=$(store_find_suffix "$PREFIX-jks-list" "$A/secrets/jks-a") || die "cannot list the Command stores (API error, see above)"
+  sid_p12=$(store_find_suffix "$PREFIX-p12-list" "$A/secrets/p12-a") || die "cannot list the Command stores (API error, see above)"
+  sid_ns=$(store_find_suffix "$PREFIX-ns-all" "namespace/all") || die "cannot list the Command stores (API error, see above)"
   # shellcheck disable=SC2086
-  schedule_inventory $sid_key $sid_jks $sid_p12 $sid_ns
-  [ -n "$sid_key" ] && job_register b.B2 "$CM_MANUAL" "$A/op-keyonly" 'Inventory$'
-  [ -n "$sid_jks" ] && job_register b.B3 "$PREFIX-jks-list" "$A/secrets/jks-a" 'Inventory$'
-  [ -n "$sid_p12" ] && job_register b.B4 "$PREFIX-p12-list" "$A/secrets/p12-a" 'Inventory$'
-  [ -n "$sid_ns" ] && job_register b.B5 "$PREFIX-ns-all" "namespace/all" 'Inventory$'
+  if schedule_inventory $sid_key $sid_jks $sid_p12 $sid_ns; then
+    sched_ok
+    [ -n "$sid_key" ] && job_register b.B2 "$CM_MANUAL" "$A/op-keyonly" 'Inventory$'
+    [ -n "$sid_jks" ] && job_register b.B3 "$PREFIX-jks-list" "$A/secrets/jks-a" 'Inventory$'
+    [ -n "$sid_p12" ] && job_register b.B4 "$PREFIX-p12-list" "$A/secrets/p12-a" 'Inventory$'
+    [ -n "$sid_ns" ] && job_register b.B5 "$PREFIX-ns-all" "namespace/all" 'Inventory$'
+  else
+    sched_fail b.B2 "inventory refresh of the approved stores"
+  fi
 else
   dsay "re-inventory the approved stores for op-keyonly, jks-a, p12-a and namespace 'all' with the previous build"
 fi

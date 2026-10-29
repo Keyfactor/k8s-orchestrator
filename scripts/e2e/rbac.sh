@@ -81,12 +81,22 @@ IGN2=$(ns_live | grep -vx "$A" | grep -vx "$B" | grep -vx "$I" | paste -sd, -)
 dry && { IGN="<every namespace except $A and $B>"; IGN2="<same, without $I>"; }
 
 batch_begin
-disc_submit K8SSecret   "$PREFIX-sa-sec"  all "$IGN"  "" "" "$KC"; job_register d.D17a "$PREFIX-sa-sec"  "" 'Discovery$'
-disc_submit K8STLSSecr  "$PREFIX-sa-tls"  all "$IGN"  "" "" "$KC"; job_register d.D17b "$PREFIX-sa-tls"  "" 'Discovery$'
-disc_submit K8SJKS      "$PREFIX-sa-jks"  all "$IGN"  "" "" "$KC"; job_register d.D17c "$PREFIX-sa-jks"  "" 'Discovery$'
-disc_submit K8SPKCS12   "$PREFIX-sa-p12"  all "$IGN"  "" "" "$KC"; job_register d.D17d "$PREFIX-sa-p12"  "" 'Discovery$'
-disc_submit K8SSecret   "$PREFIX-sa-list" "$A,$I" "$I" "" "" "$KC"; job_register d.D18 "$PREFIX-sa-list" "" 'Discovery$'
-disc_submit K8SSecret   "$PREFIX-sa-neg"  all "$IGN2" "" "" "$KC"; job_register d.D19 "$PREFIX-sa-neg"  "" 'Discovery$'
+# rb_disc LABEL TYPE CM DIRS IGNORED : submit a scoped-SA discovery job; register it only when Command accepted it
+rb_disc() {
+  local label=$1 type=$2 cm=$3 dirs=$4 ign=$5
+  if disc_submit "$type" "$cm" "$dirs" "$ign" "" "" "$KC"; then
+    sched_ok; job_register "d.$label" "$cm" "" 'Discovery$'
+  else
+    sched_fail "d.$label" "discovery job for $label ($type, scoped service account)"
+  fi
+}
+rb_disc D17a K8SSecret   "$PREFIX-sa-sec"  all "$IGN"
+rb_disc D17b K8STLSSecr  "$PREFIX-sa-tls"  all "$IGN"
+rb_disc D17c K8SJKS      "$PREFIX-sa-jks"  all "$IGN"
+rb_disc D17d K8SPKCS12   "$PREFIX-sa-p12"  all "$IGN"
+rb_disc D18  K8SSecret   "$PREFIX-sa-list" "$A,$I" "$I"
+rb_disc D19  K8SSecret   "$PREFIX-sa-neg"  all "$IGN2"
+
 say "-- waiting for the UO to run the discovery jobs (timeout ${E2E_JOB_TIMEOUT}s each)"
 batch_wait
 

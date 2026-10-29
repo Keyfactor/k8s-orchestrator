@@ -57,6 +57,8 @@
 #     E2E_JOB_TIMEOUT       seconds to wait for each Command job (default 300)
 #     E2E_JOB_POLL          seconds between job-history polls (default 5)
 #     E2E_TOKEN_TTL         seconds a fetched token is reused (default 240)
+#     E2E_MAX_REJECTS       abort a phase when Command rejects this many scheduling requests
+#                           in a row (default 3); every rejected request is a FAIL at once
 #     E2E_STRICT_XPASS      true: an unexpectedly passing known-issue case fails the run
 
 if [ -n "${E2E_ENV_FILE:-}" ]; then
@@ -77,6 +79,7 @@ fi
 : "${E2E_JOB_POLL:=5}"
 : "${E2E_TOKEN_TTL:=240}"
 : "${E2E_STRICT_XPASS:=false}"
+: "${E2E_MAX_REJECTS:=3}"
 # Where the UO pod and its extension directory live (kfclab conventions; override for another lab).
 : "${E2E_UO_NAMESPACE:=keyfactor-lab}"
 : "${E2E_UO_SELECTOR:=app.kubernetes.io/instance=uo-${E2E_UO_NAME:-unset}}"

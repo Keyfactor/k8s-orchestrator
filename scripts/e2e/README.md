@@ -72,6 +72,7 @@ default that is secret or lab-specific. A missing variable stops the run with a 
 | `E2E_EXT_NAME` | optional | extension name in the spec (default `k8s-orchestrator`) |
 | `E2E_RBAC_API_SERVER` | optional | API server URL **as seen from the UO pod** (default `https://kubernetes.default.svc:443`) |
 | `E2E_JOB_TIMEOUT` / `E2E_JOB_POLL` | optional | seconds to wait per job (300) / poll interval (5) |
+| `E2E_MAX_REJECTS` | optional | abort a phase after this many scheduling requests in a row that Command rejects (default 3) |
 | `E2E_STRICT_XPASS` | optional | `true`: a known-issue case that unexpectedly passes fails the run |
 | `E2E_ENV_FILE` | optional | a shell file sourced first; keep it out of git |
 
@@ -145,11 +146,16 @@ Exit codes: `0` ok, `1` at least one unexpected FAIL (or cleanup could not verif
 
 - Case IDs come from the plan; sub-IDs (`D11a`, `M8b`, ...) split one plan row into separately reported checks.
 - Waiting is by polling Command's job history for a job on the same client machine and store path that is newer than
-  the batch start. A job the UO never picks up reports a timeout, which fails the case.
+  the batch start. A job the UO never picks up reports a timeout, which fails the case. A request that Command rejects
+  at scheduling (HTTP 4xx, e.g. an Add refused because the certificate has no private key) is not waited for: it is a
+  `FAIL` immediately, with Command's reason, and the cases that depend on it fail with the same message. After
+  `E2E_MAX_REJECTS` rejections in a row the phase stops ("ABORTING phase ..."), so a systematic problem costs seconds,
+  not an hour of timeouts. If the job history cannot be read for about a minute the waits end as errors as well.
 - `K108` needs `E2E_UO_LOG_CMD`; the log line layout it parses is described in the plan.
 - The scripts were derived from an earlier manual run. Their read-only assumptions about the lab and the Command API
-  were checked against a real lab (section 12 of the plan lists each as confirmed, corrected or not probed); the write
-  paths (stores, Add/Remove, staging) have not run yet.
+  were checked against a real lab (section 12 of the plan lists each as confirmed, corrected or not probed). Staging,
+  discovery and inventory have run for real; the management phase has not yet completed a run (section 12 records what
+  the first attempt taught).
 
 ## Staging risk
 

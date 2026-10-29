@@ -275,7 +275,8 @@ api_token() {
 
 # api METHOD PATH [BODYFILE] : prints the response body; returns 0 on 2xx and non-zero on
 # anything else (HTTP 4xx/5xx, HTTP 000 = no response, no token, no scratch dir). The HTTP
-# status is left in $TMPD/last_code (000 when no request could be made; subshell safe).
+# status is left in $TMPD/last_code (000 when no request could be made) and the body of a
+# failed request in $TMPD/last_err (subshell safe).
 api() {
   local m=$1 p=$2 b=${3:-} out code url tok
   if dry; then
@@ -287,6 +288,7 @@ api() {
     warn "API $m $p not sent: scratch dir $TMPD is missing and cannot be recreated"
     return 1
   fi
+  rm -f "$TMPD/last_err"
   printf '000' > "$TMPD/last_code"
   tok=$(api_token) || { warn "API $m $p not sent: no API token"; return 1; }
   out=$(mktemp "$TMPD/resp.XXXXXX") || { warn "API $m $p not sent: cannot create a response file in $TMPD"; return 1; }
@@ -301,10 +303,47 @@ api() {
   printf '%s' "$code" > "$TMPD/last_code"
   case $code in
     2??) cat "$out"; rm -f "$out"; return 0 ;;
-    *)   warn "API $m $p -> HTTP $code: $(head -c 300 "$out" | tr '\n' ' ')"; rm -f "$out"; return 1 ;;
+    *)   head -c 4000 "$out" > "$TMPD/last_err" 2>/dev/null
+         warn "API $m $p -> HTTP $code: $(head -c 300 "$out" | tr '\n' ' ')"; rm -f "$out"; return 1 ;;
   esac
 }
 api_code() { cat "$TMPD/last_code" 2>/dev/null || printf '000'; }
+
+# api_reason : short human text for the last failed request (Command's FailedOperations reasons,
+# else its Message). Error bodies do not echo the request, so no secrets can appear here.
+api_reason() {
+  local r
+  r=$(jq -r '
+        if ((.FailedOperations // []) | length) > 0 then ([.FailedOperations[] | .Reason // empty] | join("; "))
+        elif (.Message // "") != "" then .Message
+        else empty end' "$TMPD/last_err" 2>/dev/null | tr '\n' ' ' | sed 's/[[:space:]]*$//' | cut -c1-300)
+  [ -n "$r" ] || r=$(head -c 200 "$TMPD/last_err" 2>/dev/null | tr '\n' ' ')
+  printf '%s' "${r:-no response body}"
+}
+
+# -------------------------------------------------------- scheduling guard ---
+# Every helper that asks Command to schedule a job (Add, Remove, Schedule, DiscoveryJob, ...)
+# reports the outcome here. A rejected request is a FAIL right away (with Command's reason),
+# the job is NOT registered (nothing to wait for), and E2E_MAX_REJECTS consecutive rejections
+# abort the phase instead of hammering the lab.
+SCHED_STREAK=0
+sched_ok() { SCHED_STREAK=0; }
+# sched_fail LABEL WHAT : record the rejected request; call right after the failed api call
+sched_fail() {
+  local label=$1 what=$2 code reason
+  code=$(api_code); reason=$(api_reason)
+  SCHED_STREAK=$((SCHED_STREAK + 1))
+  # a synthetic job result, so that dependent verdicts fail with the reason instead of waiting
+  jq -n --arg m "scheduling rejected by Command (HTTP $code): $reason" '{Result:"Rejected",Status:"Rejected",Message:$m}' \
+    > "$WORK/jobs/$label.json" 2>/dev/null || true
+  N_FAIL=$((N_FAIL + 1))
+  _emit FAIL "$label" "$what: request rejected, no job scheduled" "Command accepts the request and schedules a job" "HTTP $code: $reason" ""
+  if [ "$SCHED_STREAK" -ge "${E2E_MAX_REJECTS:-3}" ]; then
+    say "== ABORTING phase $PHASE: Command rejected $SCHED_STREAK scheduling requests in a row (last: HTTP $code: $reason)."
+    say "==   No more requests are sent. Fix the cause first; run cleanup.sh for anything already created."
+    finish
+  fi
+}
 
 # --------------------------------------------------------- lab discovery ----
 # resolve_lab : agent id of the UO and store type ids / capabilities, cached in state
@@ -327,12 +366,18 @@ st_id() { state_get "st.$1"; }
 # ------------------------------------------------------------- job history --
 # NB: the Keyfactor API's SortAscending is inverted: 0 = ascending, 1 = descending.
 hist_recent() { api GET "/OrchestratorJobs/JobHistory?PageReturned=1&ReturnLimit=${E2E_HIST_LIMIT:-500}&SortField=OperationStart&SortAscending=1"; }
-hist_max_id() { hist_recent | jq -r 'if type == "array" then (map(.JobHistoryId) | max // 0) else 0 end'; }
+# hist_max_id : highest job history id; non-zero when the history cannot be read (a base of 0
+# would make every old job look like a result of this batch)
+hist_max_id() {
+  local j
+  j=$(hist_recent) || return 1
+  printf '%s' "$j" | jq -e 'if type == "array" then (map(.JobHistoryId) | max // 0) else error("not an array") end' 2>/dev/null
+}
 
 BATCH_BASE=0
 batch_begin() {
   if dry; then BATCH_BASE=0; return 0; fi
-  BATCH_BASE=$(hist_max_id)
+  BATCH_BASE=$(hist_max_id) || die "cannot read the Command job history (API error, see above)"
   rm -f "$WORK/jobs/pending"
 }
 
@@ -349,12 +394,15 @@ job_register() {
 # 5 minutes, and every retry is a NEW history entry with a higher JobHistoryId but the SAME
 # JobId. Each job the suite has already waited for is therefore remembered by JobId, and its
 # later retries are never taken for the result of a newer job on the same store.
-_wait_one() { # BASE CM PSUF TRE OUT -> 0 found, 1 timeout
-  local base=$1 cm=$2 psuf=$3 tre=$4 out=$5 deadline entry seen
+# Returns 0 found, 1 timeout, 2 when the job history could not be read for ~1 minute in a row.
+_wait_one() { # BASE CM PSUF TRE OUT
+  local base=$1 cm=$2 psuf=$3 tre=$4 out=$5 deadline entry seen hist hfail=0
   deadline=$(( $(date +%s) + E2E_JOB_TIMEOUT ))
   while :; do
     seen=$(cat "$WORK/state/jobids.seen" 2>/dev/null || true)
-    entry=$(hist_recent | jq -c --argjson b "$base" --arg cm "$cm" --arg ps "$psuf" --arg tre "$tre" --arg seen "$seen" '
+    if hist=$(hist_recent); then hfail=0; else hfail=$((hfail + 1)); hist=""; fi
+    [ "$hfail" -ge 12 ] && return 2
+    entry=$(printf '%s' "$hist" | jq -c --argjson b "$base" --arg cm "$cm" --arg ps "$psuf" --arg tre "$tre" --arg seen "$seen" '
       ($seen | split("\n")) as $S
       | [ .[]? | select(.JobHistoryId > $b
                       and .ClientMachine == $cm
@@ -362,7 +410,7 @@ _wait_one() { # BASE CM PSUF TRE OUT -> 0 found, 1 timeout
                       and ($ps == "" or ((.StorePath // "") | endswith($ps)))
                       and ((.Status // "") | test("^Completed"))
                       and ((.JobId // "") as $j | $j == "" or ($S | index($j)) == null)) ]
-      | sort_by(.JobHistoryId) | last // empty')
+      | sort_by(.JobHistoryId) | last // empty' 2>/dev/null)
     if [ -n "$entry" ]; then
       printf '%s' "$entry" > "$out"
       printf '%s' "$entry" | jq -r '.JobId // empty' >> "$WORK/state/jobids.seen"
@@ -375,16 +423,20 @@ _wait_one() { # BASE CM PSUF TRE OUT -> 0 found, 1 timeout
 
 # batch_wait : wait for every registered job; results in $WORK/jobs/LABEL.json
 batch_wait() {
-  local label base cm psuf tre
+  local label base cm psuf tre rc
   dry && return 0
   [ -f "$WORK/jobs/pending" ] || return 0
   while IFS='|' read -r -u 3 label base cm psuf tre; do
-    if ! _wait_one "$base" "$cm" "$psuf" "$tre" "$WORK/jobs/$label.json"; then
-      jq -n --arg m "timed out after ${E2E_JOB_TIMEOUT}s waiting for the job in Command job history" '{Result:"Timeout",Status:"Timeout",Message:$m}' > "$WORK/jobs/$label.json"
-    fi
+    _wait_one "$base" "$cm" "$psuf" "$tre" "$WORK/jobs/$label.json"; rc=$?
+    case $rc in
+      0) : ;;
+      2) jq -n '{Result:"Error",Status:"Error",Message:"the Command job history could not be read (API errors for about a minute); not waiting any longer"}' > "$WORK/jobs/$label.json" ;;
+      *) jq -n --arg m "timed out after ${E2E_JOB_TIMEOUT}s waiting for the job in Command job history" '{Result:"Timeout",Status:"Timeout",Message:$m}' > "$WORK/jobs/$label.json" ;;
+    esac
   done 3< "$WORK/jobs/pending"
   rm -f "$WORK/jobs/pending"
 }
+
 job_result()  { jq -r '.Result // ""'  "$WORK/jobs/$1.json" 2>/dev/null; }
 job_message() { jq -r '.Message // ""' "$WORK/jobs/$1.json" 2>/dev/null; }
 job_status()  { jq -r '.Status // ""'  "$WORK/jobs/$1.json" 2>/dev/null; }
@@ -471,14 +523,15 @@ discovered_paths() {
 
 # schedule_inventory IDS... : immediate inventory
 schedule_inventory() {
-  local body ids
+  local body ids rc
   [ $# -gt 0 ] || return 0
   dry && { dsay "POST /CertificateStores/Schedule (immediate inventory for $# store(s))"; return 0; }
-  body=$(mktemp "$TMPD/sch.XXXXXX")
+  body=$(mktemp "$TMPD/sch.XXXXXX") || return 1
   ids=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
   jq -n --argjson ids "$ids" '{StoreIds:$ids,Schedule:{Immediate:true}}' > "$body"
-  api POST /CertificateStores/Schedule "$body" >/dev/null
+  api POST /CertificateStores/Schedule "$body" >/dev/null; rc=$?
   rm -f "$body"
+  return $rc
 }
 
 # store_props EXTRA_JSON : the store Properties string. The UO authenticates with

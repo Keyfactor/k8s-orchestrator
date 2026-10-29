@@ -75,7 +75,8 @@ while IFS='|' read -r -u 3 id type cm dirs ign ext pat desc; do
   [ -n "$id" ] || continue
   desc=${desc# }
   want "$id" || continue
-  disc_submit "$type" "$cm" "$dirs" "$ign" "$ext" "$pat" || { warn "could not submit $id"; continue; }
+  disc_submit "$type" "$cm" "$dirs" "$ign" "$ext" "$pat" || { sched_fail "d.$id" "discovery job for $id ($type)"; continue; }
+  sched_ok
   job_register "d.$id" "$cm" "" 'Discovery$'
   SUBMITTED="$SUBMITTED $id"
 done 3<<EOF
