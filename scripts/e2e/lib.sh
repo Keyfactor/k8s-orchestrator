@@ -78,6 +78,7 @@ e2e_init() {
   if dry; then
     # Dry run: an ephemeral scratch dir, never the real work dir.
     WORK=$(mktemp -d "${TMPDIR:-/tmp}/e2e-dry.XXXXXX")
+    TMPD=$WORK/tmp/$$
     trap 'rm -rf "$WORK"' EXIT
   else
     WORK=${WORK_ARG:-${TMPDIR:-/tmp}/e2e-lab-$PREFIX}
@@ -90,9 +91,16 @@ e2e_init() {
       [ -d "$WORK" ] && [ -z "$(ls -A "$WORK" 2>/dev/null)" ] && [ "$(cd "$WORK" && pwd)" != "$(pwd)" ] \
         || die "work dir $WORK exists and was not created by this suite; choose another --workdir"
     fi
-    trap 'rm -rf "$WORK/tmp"' EXIT
+    # Scratch space is PER PROCESS ($WORK/tmp/<pid>). $WORK is shared with the child phases a
+    # script starts (cleanup.sh -> stage-extension.sh) and with scripts running at the same
+    # time; a process must only ever remove its own scratch dir, never a shared one.
+    TMPD=$WORK/tmp/$$
+    trap 'rm -rf "$TMPD"' EXIT
   fi
-  ( umask 077; mkdir -p "$WORK/state" "$WORK/tmp" "$WORK/jobs" "$WORK/pki" )
+  # make INT/TERM run the EXIT trap too
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  ( umask 077; mkdir -p "$WORK/state" "$TMPD" "$WORK/jobs" "$WORK/pki" ) || die "cannot create the work dir $WORK"
   dry || printf '%s\n' "$PREFIX" > "$WORK/.e2e-suite-workdir"
   RESULTS=$WORK/results.tsv
   KSPW_FILE=$WORK/state/ks.pw
@@ -243,41 +251,60 @@ apply_labelled() {
 }
 
 # ------------------------------------------------------------ command api ---
-_tok_file() { printf '%s' "$WORK/tmp/.tok"; }
+_tok_file() { printf '%s' "$TMPD/.tok"; }
 
-# api_token : cached bearer token on stdout
+# tmp_ensure : the per-process scratch dir must exist; recreate it when something removed it
+tmp_ensure() {
+  [ -d "$TMPD" ] && return 0
+  ( umask 077; mkdir -p "$TMPD" ) 2>/dev/null && [ -d "$TMPD" ]
+}
+
+# api_token : cached bearer token on stdout. Returns non-zero (never prints a partial token)
+# when no token can be obtained. Callers must test the status: `die` inside a command
+# substitution would only end that subshell.
 api_token() {
   local f; f=$(_tok_file)
+  tmp_ensure || { warn "scratch dir $TMPD is missing and cannot be recreated"; return 1; }
   if [ ! -s "$f" ] || [ -n "$(find "$f" -mmin +"$(( (E2E_TOKEN_TTL + 59) / 60 ))" 2>/dev/null)" ]; then
-    ( umask 077; lab_token > "$f.new" ) || { rm -f "$f.new"; die "could not obtain an API token (E2E_TOKEN_CMD)"; }
-    mv "$f.new" "$f"; chmod 600 "$f"
+    ( umask 077; lab_token > "$f.new" ) || { rm -f "$f.new"; warn "could not obtain an API token (E2E_TOKEN_CMD)"; return 1; }
+    { mv "$f.new" "$f" && chmod 600 "$f"; } || { rm -f "$f.new"; return 1; }
   fi
+  [ -s "$f" ] || return 1
   cat "$f"
 }
 
-# api METHOD PATH [BODYFILE] : prints the response body; returns 0 on 2xx.
-# The HTTP status is left in $WORK/tmp/last_code (subshell safe).
+# api METHOD PATH [BODYFILE] : prints the response body; returns 0 on 2xx and non-zero on
+# anything else (HTTP 4xx/5xx, HTTP 000 = no response, no token, no scratch dir). The HTTP
+# status is left in $TMPD/last_code (000 when no request could be made; subshell safe).
 api() {
-  local m=$1 p=$2 b=${3:-} out code url
+  local m=$1 p=$2 b=${3:-} out code url tok
   if dry; then
     [ "$m" = GET ] || dsay "$m $p${b:+ (with request body)}"
     return 0
   fi
   url="$E2E_COMMAND_URL$p"
-  out=$(mktemp "$WORK/tmp/resp.XXXXXX")
+  if ! tmp_ensure; then
+    warn "API $m $p not sent: scratch dir $TMPD is missing and cannot be recreated"
+    return 1
+  fi
+  printf '000' > "$TMPD/last_code"
+  tok=$(api_token) || { warn "API $m $p not sent: no API token"; return 1; }
+  out=$(mktemp "$TMPD/resp.XXXXXX") || { warn "API $m $p not sent: cannot create a response file in $TMPD"; return 1; }
   local args=(-sS -o "$out" -w '%{http_code}' -K - -X "$m"
               -H 'Content-Type: application/json' -H 'x-keyfactor-requested-with: APIClient')
   [ -n "${E2E_CA_CERT:-}" ] && args+=(--cacert "$E2E_CA_CERT")
   [ -n "$b" ] && args+=(--data "@$b")
   # The token goes to curl through stdin (-K -), never through argv.
-  code=$(printf 'header = "Authorization: Bearer %s"\n' "$(api_token)" | curl "${args[@]}" "$url") || code=000
-  printf '%s' "$code" > "$WORK/tmp/last_code"
+  code=$(printf 'header = "Authorization: Bearer %s"\n' "$tok" | curl "${args[@]}" "$url") || code=000
+  tok=""
+  case $code in [0-9][0-9][0-9]) : ;; *) code=000 ;; esac
+  printf '%s' "$code" > "$TMPD/last_code"
   case $code in
     2??) cat "$out"; rm -f "$out"; return 0 ;;
     *)   warn "API $m $p -> HTTP $code: $(head -c 300 "$out" | tr '\n' ' ')"; rm -f "$out"; return 1 ;;
   esac
 }
-api_code() { cat "$WORK/tmp/last_code" 2>/dev/null || printf '000'; }
+api_code() { cat "$TMPD/last_code" 2>/dev/null || printf '000'; }
 
 # --------------------------------------------------------- lab discovery ----
 # resolve_lab : agent id of the UO and store type ids / capabilities, cached in state
@@ -364,7 +391,16 @@ job_status()  { jq -r '.Status // ""'  "$WORK/jobs/$1.json" 2>/dev/null; }
 job_id()      { jq -r '.JobHistoryId // ""' "$WORK/jobs/$1.json" 2>/dev/null; }
 
 # ---------------------------------------------------------------- stores ----
-stores_all() { api GET "/CertificateStores?PageReturned=1&ReturnLimit=3000"; }
+# stores_all : the JSON array of every certificate store. Non-zero (and no output) when the
+# request failed or the answer is not a JSON array; an empty list is "[]" with status 0, so
+# callers can tell "no stores" from "could not ask".
+stores_all() {
+  local j
+  dry && return 0
+  j=$(api GET "/CertificateStores?PageReturned=1&ReturnLimit=3000") || return 1
+  printf '%s' "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { warn "unexpected answer while listing certificate stores (not a JSON array)"; return 1; }
+  printf '%s' "$j"
+}
 
 # store_find CM PATH : id of the store with exactly this client machine + path
 store_find() {
@@ -377,37 +413,54 @@ store_find_suffix() {
 store_field() { # ID FIELD
   api GET "/CertificateStores/$1" | jq -r --arg f "$2" '.[$f] // empty'
 }
-# own_store_ids : ids of every store this run owns (client machine = PREFIX or PREFIX-*)
+# own_store_ids : ids of every store this run owns (client machine = PREFIX or PREFIX-*).
+# FAILS (non-zero) when Command cannot be asked; an empty result with status 0 means "none".
 own_store_ids() {
-  stores_all | jq -r --arg p "$PREFIX" '.[]? | select(.ClientMachine == $p or (.ClientMachine | startswith($p + "-"))) | .Id'
+  local j
+  j=$(stores_all) || return 1
+  printf '%s' "$j" | jq -r --arg p "$PREFIX" '.[]? | select(.ClientMachine == $p or (.ClientMachine | startswith($p + "-"))) | .Id'
+}
+# own_cert_ids : ids of the Command certificates issued by this run's test CAs. Same contract
+# as own_store_ids: non-zero when Command cannot be asked.
+own_cert_ids() {
+  local q j
+  q=$(printf 'IssuerDN -contains "%s"' "$PREFIX" | jq -sRr @uri)
+  j=$(api GET "/Certificates?QueryString=$q&PageReturned=1&ReturnLimit=500") || return 1
+  printf '%s' "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { warn "unexpected answer while listing certificates (not a JSON array)"; return 1; }
+  printf '%s' "$j" | jq -r --arg p "$PREFIX" '.[]? | select((.IssuerDN // "") | test("CN=" + $p + " (Root|Intermediate) CA")) | .Id'
 }
 # delete_stores IDS... : delete by id. Refuses ids that are not owned by this prefix.
+# Returns non-zero when Command did not accept the delete.
 delete_stores() {
-  local own id body keep
+  local own id body keep rc
   [ $# -gt 0 ] || return 0
   if dry; then dsay "DELETE /CertificateStores ($# store(s) owned by prefix $PREFIX)"; return 0; fi
-  own=$(own_store_ids)
+  own=$(own_store_ids) || return 1
   keep=""
   for id in "$@"; do
     if printf '%s\n' "$own" | grep -qx "$id"; then keep="$keep $id"; else warn "refusing to delete store $id: not owned by prefix $PREFIX"; fi
   done
   [ -n "$keep" ] || return 0
-  body=$(mktemp "$WORK/tmp/del.XXXXXX")
+  body=$(mktemp "$TMPD/del.XXXXXX") || return 1
   # shellcheck disable=SC2086
   printf '%s\n' $keep | jq -R . | jq -s . > "$body"
-  api DELETE /CertificateStores "$body" >/dev/null
+  api DELETE /CertificateStores "$body" >/dev/null; rc=$?
   rm -f "$body"
+  return $rc
 }
-# purge_cm CM : remove leftover stores of one of our client machines (idempotent reruns)
+# purge_cm CM : remove leftover stores of one of our client machines (idempotent reruns).
+# Non-zero when Command cannot be asked or refuses the delete.
 purge_cm() {
-  local cm=$1 ids
+  local cm=$1 ids j
   case $cm in "$PREFIX"|"$PREFIX"-*) : ;; *) die "purge_cm: '$cm' is outside prefix $PREFIX" ;; esac
   dry && { dsay "remove leftover Command stores for client machine $cm (if any)"; return 0; }
-  ids=$(stores_all | jq -r --arg cm "$cm" '.[]? | select(.ClientMachine == $cm) | .Id')
+  j=$(stores_all) || return 1
+  ids=$(printf '%s' "$j" | jq -r --arg cm "$cm" '.[]? | select(.ClientMachine == $cm) | .Id') || return 1
+  [ -n "$ids" ] || return 0
   # shellcheck disable=SC2086
-  [ -n "$ids" ] && delete_stores $ids
-  return 0
+  delete_stores $ids
 }
+
 # norm_path PATH : drop the leading cluster/host segment of a discovered path
 norm_path() { sed 's#^[^/]*/##'; }
 
@@ -421,7 +474,7 @@ schedule_inventory() {
   local body ids
   [ $# -gt 0 ] || return 0
   dry && { dsay "POST /CertificateStores/Schedule (immediate inventory for $# store(s))"; return 0; }
-  body=$(mktemp "$WORK/tmp/sch.XXXXXX")
+  body=$(mktemp "$TMPD/sch.XXXXXX")
   ids=$(printf '%s\n' "$@" | jq -R . | jq -s -c .)
   jq -n --argjson ids "$ids" '{StoreIds:$ids,Schedule:{Immediate:true}}' > "$body"
   api POST /CertificateStores/Schedule "$body" >/dev/null
@@ -442,10 +495,10 @@ store_props() {
 mk_store() {
   local cm=$1 path=$2 type=$3 extra=$4 usepw=${5:-} cim=${6:-false} id body props agent
   if dry; then dsay "create store type=$type cm=$cm path=$path props=$extra createIfMissing=$cim"; return 0; fi
-  id=$(store_find "$cm" "$path")
+  id=$(store_find "$cm" "$path") || return 1   # cannot tell whether it exists: do not create a duplicate
   if [ -n "$id" ]; then printf '%s' "$id"; return 0; fi
   agent=$(state_get agent.id)
-  body=$(mktemp "$WORK/tmp/mk.XXXXXX")
+  body=$(mktemp "$TMPD/mk.XXXXXX") || return 1
   props=$(store_props "$extra")
   jq -n --arg cm "$cm" --arg sp "$path" --argjson t "$(st_id "$type")" --arg props "$props" \
         --arg agent "$agent" --argjson cim "$cim" --arg usepw "$usepw" --rawfile pw "$KSPW_FILE" \
@@ -517,7 +570,7 @@ pem_names() {
   [ -s "$f" ] || return 0
   n=$(grep -c 'BEGIN CERTIFICATE' "$f" || true)
   [ "${n:-0}" -gt 0 ] || return 0
-  d=$(mktemp -d "$WORK/tmp/pem.XXXXXX")
+  d=$(mktemp -d "$TMPD/pem.XXXXXX")
   awk -v d="$d" '/-----BEGIN CERTIFICATE-----/ {k++} k > 0 {print > (d "/c" k ".pem")}' "$f"
   i=1
   while [ "$i" -le "$n" ]; do
@@ -539,21 +592,21 @@ sec_field() {
 }
 # sec_chain NS NAME FIELD : ordered names of the certs in a PEM field, comma separated
 sec_chain() {
-  local f; f=$(mktemp "$WORK/tmp/fld.XXXXXX")
+  local f; f=$(mktemp "$TMPD/fld.XXXXXX")
   sec_field "$1" "$2" "$3" "$f"
   pem_names "$f" | csv
   rm -f "$f"
 }
 # sec_has_key NS NAME FIELD : yes | no (non-empty private key material present)
 sec_has_key() {
-  local f r; f=$(mktemp "$WORK/tmp/fld.XXXXXX")
+  local f r; f=$(mktemp "$TMPD/fld.XXXXXX")
   sec_field "$1" "$2" "$3" "$f"
   if grep -q 'PRIVATE KEY' "$f" 2>/dev/null; then r=yes; else r=no; fi
   rm -f "$f"; printf '%s' "$r"
 }
 # sec_field_size NS NAME FIELD : bytes (0 when absent or empty)
 sec_field_size() {
-  local f s; f=$(mktemp "$WORK/tmp/fld.XXXXXX")
+  local f s; f=$(mktemp "$TMPD/fld.XXXXXX")
   sec_field "$1" "$2" "$3" "$f"
   s=$(wc -c < "$f" | tr -d ' ')
   rm -f "$f"; printf '%s' "$s"
@@ -693,14 +746,14 @@ cert_import() {
       return 1
     fi
     say "certificate $n exists in Command without a private key (created by an inventory?); replacing it with the PFX import"
-    body=$(mktemp "$WORK/tmp/delc.XXXXXX") || return 1
+    body=$(mktemp "$TMPD/delc.XXXXXX") || return 1
     printf '[%s]' "$id" > "$body"
     api DELETE /Certificates "$body" >/dev/null || { rm -f "$body"; warn "could not delete the keyless record of $n (Command id $id)"; return 1; }
     rm -f "$body"
     id=""
   fi
   if [ -z "$id" ]; then
-    body=$(mktemp "$WORK/tmp/imp.XXXXXX") || return 1
+    body=$(mktemp "$TMPD/imp.XXXXXX") || return 1
     if [ "$kind" = pfx ]; then
       jq -n --rawfile c <(base64 < "$WORK/pki/$n.pfx" | tr -d '\n') --rawfile p "$KSPW_FILE" '{Certificate:$c,Password:$p}' > "$body"
     else
@@ -718,6 +771,7 @@ cert_import() {
   fi
   state_set "cid.$n" "$id"
 }
+
 cid() { state_get "cid.$1"; }
 
 # ------------------------------------------------------------- discovery ----
@@ -728,13 +782,13 @@ cid() { state_get "cid.$1"; }
 #   Leftover stores of the same client machine are removed first (idempotent).
 disc_submit() {
   local type=$1 cm=$2 dirs=$3 ign=${4:-} ext=${5:-} pat=${6:-} kcf=${7:-} body now
-  purge_cm "$cm"
+  purge_cm "$cm" || return 1
   if dry; then
     dsay "PUT /CertificateStores/DiscoveryJob type=$type cm=$cm dirs='$dirs' ignored='$ign' extensions='$ext' patterns='$pat'${kcf:+ (scoped service-account kubeconfig as credential)}"
     return 0
   fi
   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-  body=$(mktemp "$WORK/tmp/disc.XXXXXX")
+  body=$(mktemp "$TMPD/disc.XXXXXX")
   jq -n --arg cm "$cm" --argjson t "$(st_id "$type")" --arg agent "$(state_get agent.id)" --arg now "$now" \
         --arg dirs "$dirs" --arg ign "$ign" --arg ext "$ext" --arg pat "$pat" --arg kcf "$kcf" \
         --rawfile kc "${kcf:-/dev/null}" '

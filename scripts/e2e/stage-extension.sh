@@ -112,8 +112,8 @@ stage)
   say "-- staging $(basename "$E2E_EXT_BUILD_PATH") on $E2E_UO_NAME"
   lab_ext_apply "$SPEC" || die "kfclab extension update failed; run '$0 restore' to put the previous extension back"
   wait_uo_back "$before"
-  if [ -d "$E2E_EXT_BUILD_PATH" ] && lab_ext_deployed_fp > "$WORK/tmp/ext.fp.staged" 2>/dev/null; then
-    if [ "$(lab_ext_dir_fp "$E2E_EXT_BUILD_PATH")" = "$(cat "$WORK/tmp/ext.fp.staged")" ]; then
+  if [ -d "$E2E_EXT_BUILD_PATH" ] && lab_ext_deployed_fp > "$TMPD/ext.fp.staged" 2>/dev/null; then
+    if [ "$(lab_ext_dir_fp "$E2E_EXT_BUILD_PATH")" = "$(cat "$TMPD/ext.fp.staged")" ]; then
       say "verified: the UO's extension directory matches the build under test"
     else
       warn "the UO's extension directory differs from E2E_EXT_BUILD_PATH after staging; results may not reflect the build under test"
@@ -136,8 +136,8 @@ restore)
   lab_ext_apply "$SPEC" || die "kfclab extension update failed while restoring; the previous entry is in $NODE_ORIG"
   wait_uo_back "$before"
   state_set ext.staged no
-  if [ -s "$FP_BEFORE" ] && lab_ext_deployed_fp > "$WORK/tmp/ext.fp.after" 2>/dev/null; then
-    if [ "$(cat "$FP_BEFORE")" = "$(cat "$WORK/tmp/ext.fp.after")" ]; then
+  if [ -s "$FP_BEFORE" ] && lab_ext_deployed_fp > "$TMPD/ext.fp.after" 2>/dev/null; then
+    if [ "$(cat "$FP_BEFORE")" = "$(cat "$TMPD/ext.fp.after")" ]; then
       say "restored: the UO's extension directory matches what was deployed before staging"
     else
       warn "the UO's extension directory differs from what was deployed before staging; compare $FP_BEFORE with the pod's extension directory"

@@ -25,7 +25,9 @@ Kubernetes namespaces, and (with `--stage`) restarts a UO.
 - `E2E_KUBE_CONTEXT=kf-integrations` (the integration-test cluster) is refused.
 - Generated key material, the keystore password (random per run), the scoped kubeconfig and the lab-spec copy live only
   in the work dir (`${TMPDIR:-/tmp}/e2e-lab-<prefix>`, mode 700), which `cleanup.sh` removes. Nothing secret is printed,
-  `set -x` is never used, and the API token is passed to `curl` over stdin, never on a command line.
+  `set -x` is never used, and the API token is passed to `curl` over stdin, never on a command line. Every process
+  (a phase, and the child phases it starts) uses its own scratch dir `<work dir>/tmp/<pid>` for response files and its
+  cached token and removes only that dir on exit, so one script finishing never breaks another that is still running.
 - `--dry-run` prints what every phase would do and touches nothing (no kubectl, no Command, no kfclab; it uses a
   throwaway temp dir that is removed on exit).
 
@@ -116,7 +118,8 @@ Phases (each can be run on its own, in this order):
 | `management.sh` | M1-M24, K105-K108 | import certs into Command, create stores with CreateIfMissing, drive Add/Remove in waves, verify with kubectl/openssl/keytool |
 | `rbac.sh` | D17-D19 | scoped service account that cannot list secrets in the ignored namespace |
 | `baseline.sh` | B1-B5 | re-run key cases against the previous build and report whether the old behaviour reproduces |
-| `cleanup.sh` | - | restore the extension if needed, delete everything carrying the prefix, verify, remove the work dir |
+| `cleanup.sh` | - | restore the extension if needed, delete everything carrying the prefix, verify, remove the work dir. **Fails closed**: when Command or the cluster cannot be asked (no token, HTTP 000, HTTP 4xx/5xx, an answer that is not a list) it exits non-zero without printing "verified"; an empty list only counts when the answer was a successful one |
+| `selftest.sh` | - | offline self-test (mock `curl`/`kubectl`/`kfclab`, no lab needed) of the safety nets above: cleanup failing closed, scratch-dir handling, `--dry-run` making no external call |
 
 `discovery.sh` must precede `inventory.sh` (it approves what discovery found), and `baseline.sh` needs
 `inventory.sh` to have created its stores. `management.sh` refuses to start when `<prefix>-m` already holds secrets
@@ -166,5 +169,6 @@ files on disk, and would load them on a restart (or if they load a dependency la
 ```bash
 for f in scripts/e2e/*.sh; do bash -n "$f"; done
 shellcheck -x scripts/e2e/*.sh
+scripts/e2e/selftest.sh                                          # offline, no lab
 scripts/e2e/run-all.sh --dry-run --baseline --prefix e2e-check   # with obviously fake E2E_* values
 ```

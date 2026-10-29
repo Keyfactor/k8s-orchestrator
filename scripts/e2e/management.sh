@@ -24,7 +24,7 @@ resolve_lab
 M=$NS_M
 MG_CM=$PREFIX-mgmt
 TOUCHED=""
-KS_FILE=$WORK/tmp/ks.file
+KS_FILE=$TMPD/ks.file
 KS_FIELD=""
 
 # ------------------------------------------------------------- helpers ------
@@ -51,7 +51,7 @@ mg_add() {
   local label=$1 name=$2 cert=$3 alias=$4 key=$5 ow=$6 body sid
   if dry; then dsay "Add cert=$cert -> store '$name' alias='$alias' includePrivateKey=$key overwrite=$ow  [$label]"; return 0; fi
   sid=$(state_get "sid.mg.$name")
-  body=$(mktemp "$WORK/tmp/add.XXXXXX")
+  body=$(mktemp "$TMPD/add.XXXXXX")
   jq -n --arg s "$sid" --argjson c "$(cid "$cert")" --arg a "$alias" --argjson k "$key" --argjson o "$ow" --rawfile pw "$KSPW_FILE" '
     {CertificateId:$c,
      CertificateStores:[({CertificateStoreId:$s,Overwrite:$o,IncludePrivateKey:$k}
@@ -69,7 +69,7 @@ mg_rm() {
   local label=$1 name=$2 alias=$3 body sid
   if dry; then dsay "Remove alias='$alias' from store '$name'  [$label]"; return 0; fi
   sid=$(state_get "sid.mg.$name")
-  body=$(mktemp "$WORK/tmp/rm.XXXXXX")
+  body=$(mktemp "$TMPD/rm.XXXXXX")
   jq -n --arg s "$sid" --arg a "$alias" '
     {CertificateStores:[({CertificateStoreId:$s} + (if $a == "" then {} else {Alias:$a} end))],Schedule:{Immediate:true}}' > "$body"
   api POST /CertificateStores/Certificates/Remove "$body" >/dev/null || warn "Remove request for $label was rejected by Command"
@@ -201,7 +201,7 @@ if want M24; then
     verdict M24 1 "K8SCert Add/Remove is refused by Command at scheduling" "HTTP 4xx for both" ""
   else
     ksid=$(mk_store "$MG_CM" "$CSR_NAME" K8SCert "{\"KubeSecretName\":\"$CSR_NAME\"}" "" false)
-    body=$(mktemp "$WORK/tmp/m24.XXXXXX")
+    body=$(mktemp "$TMPD/m24.XXXXXX")
     jq -n --arg s "$ksid" --argjson c "$(cid leaf3)" '{CertificateId:$c,CertificateStores:[{CertificateStoreId:$s,Overwrite:false,IncludePrivateKey:false}],Schedule:{Immediate:true}}' > "$body"
     api POST /CertificateStores/Certificates/Add "$body" >/dev/null 2>&1; add_code=$(api_code)
     jq -n --arg s "$ksid" --arg a "$CSR_NAME" '{CertificateStores:[{CertificateStoreId:$s,Alias:$a}],Schedule:{Immediate:true}}' > "$body"
@@ -519,20 +519,20 @@ if want K108; then
     skip K108 "log noise on successful jobs" "E2E_UO_LOG_CMD is not set (command that prints the UO log)"
   else
     E2E_HIST_LIMIT=2000
-    hist_recent | jq -r --arg p "$PREFIX" '.[]? | select((.ClientMachine | startswith($p + "-")) and .Result == "Success") | .JobHistoryId' > "$WORK/tmp/okids"
-    lab_uo_logs > "$WORK/tmp/uolog" || true
-    if [ ! -s "$WORK/tmp/uolog" ]; then
+    hist_recent | jq -r --arg p "$PREFIX" '.[]? | select((.ClientMachine | startswith($p + "-")) and .Result == "Success") | .JobHistoryId' > "$TMPD/okids"
+    lab_uo_logs > "$TMPD/uolog" || true
+    if [ ! -s "$TMPD/uolog" ]; then
       skip K108 "log noise on successful jobs" "E2E_UO_LOG_CMD printed nothing"
     else
       # log line: <date> <time> <jobguid> <jobhistoryid> <logger> [Level] - message   (messages are never printed)
       noise=$(awk 'NR == FNR {ids[$1] = 1; next}
                    ($4 in ids) && $5 ~ /^Keyfactor\.Extensions\.Orchestrator\.K8S/ && ($6 == "[Error]" || $6 == "[Warn]") {n++; c[$5 " " $6]++}
-                   END {print n + 0; for (k in c) print "  " c[k] "x " k}' "$WORK/tmp/okids" "$WORK/tmp/uolog")
+                   END {print n + 0; for (k in c) print "  " c[k] "x " k}' "$TMPD/okids" "$TMPD/uolog")
       n=$(printf '%s\n' "$noise" | head -1)
       # A container log is rotated by size. When it no longer reaches back to the run's first
       # successful job, "0 lines" proves nothing (it would report XPASS for a bug that is still there).
-      first=$(sort -n "$WORK/tmp/okids" | head -1)
-      if [ "$n" = 0 ] && ! awk -v id="$first" '$4 == id {found = 1; exit} END {exit !found}' "$WORK/tmp/uolog"; then
+      first=$(sort -n "$TMPD/okids" | head -1)
+      if [ "$n" = 0 ] && ! awk -v id="$first" '$4 == id {found = 1; exit} END {exit !found}' "$TMPD/uolog"; then
         skip K108 "log noise on successful jobs" "the UO log does not reach back to the run's first successful job ($first); it was probably rotated. Use a log source with the full history"
       else
         verdict K108 "$([ "$n" = 0 ] && echo 1 || echo 0)" "no Error/Warn log lines from the extension for successful jobs" \

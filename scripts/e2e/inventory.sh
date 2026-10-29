@@ -79,7 +79,7 @@ L() { printf '%s\n' "$@"; }
 # approve_discovered STOREID TYPE PROPS USEPW
 approve_discovered() {
   local sid=$1 type=$2 extra=$3 usepw=$4 body
-  body=$(mktemp "$WORK/tmp/appr.XXXXXX")
+  body=$(mktemp "$TMPD/appr.XXXXXX")
   jq -n --arg id "$sid" --argjson t "$(st_id "$type")" --arg props "$(store_props "$extra")" \
         --arg usepw "$usepw" --rawfile pw "$KSPW_FILE" '
     [{Id:$id,CertStoreType:$t,Properties:$props,InventorySchedule:{Immediate:true}}

@@ -395,6 +395,16 @@ management phase and mis-reported cleanup. Each finding changed the suite:
   imports the PFX again, and fails the phase when the record still has no key afterwards. Proven against the lab with a
   minimal store: keyless record from an inventory -> Add rejected -> `cert_import` replaces it -> Add accepted, the
   Management job completed `Success`, the secret holds leaf, intermediate, root and a private key.
+- **Cleanup reported "verified" while 157 stores and 8 certificates were still in Command.** Every phase removed the
+  shared `<work dir>/tmp` on exit. `cleanup.sh` starts `stage-extension.sh restore` as a child; when that child exited it
+  deleted the directory the parent was still using (a management phase that was still running lost it the same way),
+  so every later API call failed ("mkstemp failed", no token, HTTP 000). The listing helpers turned each failure into an
+  empty result, and "found 0 store(s)" ended in "cleanup verified" with exit 0. Fixes: scratch space is per process
+  (`<work dir>/tmp/<pid>`, only removed by its owner, recreated if it vanishes); every list of owned stores, certificates
+  and cluster objects distinguishes "empty" from "could not ask" (no token, HTTP 000, non-2xx, not a JSON array, kubectl
+  error) and cleanup then exits non-zero with "cleanup FAILED ... NOTHING is verified"; the post-delete verification
+  fails closed the same way. `scripts/e2e/selftest.sh` proves this offline with a mock `curl` (HTTP 000, 500, a body
+  that is not a list, no token, unreachable cluster) and a positive control.
 
 ## Appendix: case IDs to scripts
 
