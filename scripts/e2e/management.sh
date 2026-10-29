@@ -529,8 +529,15 @@ if want K108; then
                    ($4 in ids) && $5 ~ /^Keyfactor\.Extensions\.Orchestrator\.K8S/ && ($6 == "[Error]" || $6 == "[Warn]") {n++; c[$5 " " $6]++}
                    END {print n + 0; for (k in c) print "  " c[k] "x " k}' "$WORK/tmp/okids" "$WORK/tmp/uolog")
       n=$(printf '%s\n' "$noise" | head -1)
-      verdict K108 "$([ "$n" = 0 ] && echo 1 || echo 0)" "no Error/Warn log lines from the extension for successful jobs" \
-        "0 lines" "$n line(s); top sources: $(printf '%s\n' "$noise" | sed 1d | sort -rn | head -5 | csv)" 108
+      # A container log is rotated by size. When it no longer reaches back to the run's first
+      # successful job, "0 lines" proves nothing (it would report XPASS for a bug that is still there).
+      first=$(sort -n "$WORK/tmp/okids" | head -1)
+      if [ "$n" = 0 ] && ! awk -v id="$first" '$4 == id {found = 1; exit} END {exit !found}' "$WORK/tmp/uolog"; then
+        skip K108 "log noise on successful jobs" "the UO log does not reach back to the run's first successful job ($first); it was probably rotated. Use a log source with the full history"
+      else
+        verdict K108 "$([ "$n" = 0 ] && echo 1 || echo 0)" "no Error/Warn log lines from the extension for successful jobs" \
+          "0 lines" "$n line(s); top sources: $(printf '%s\n' "$noise" | sed 1d | sort -rn | head -5 | csv)" 108
+      fi
     fi
   fi
 fi
