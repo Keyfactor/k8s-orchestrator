@@ -71,6 +71,13 @@ fi
 : "${E2E_JOB_POLL:=5}"
 : "${E2E_TOKEN_TTL:=240}"
 : "${E2E_STRICT_XPASS:=false}"
+# Where the UO pod and its extension directory live (kfclab conventions; override for another lab).
+: "${E2E_UO_NAMESPACE:=keyfactor-lab}"
+: "${E2E_UO_SELECTOR:=app.kubernetes.io/instance=uo-${E2E_UO_NAME:-unset}}"
+: "${E2E_UO_EXT_DIR:=/app/extensions}"
+
+# E2E_TOKEN_CMD and E2E_UO_LOG_CMD run under `bash -c`; let them refer to these.
+export E2E_KFCLAB_SPEC E2E_KUBECONFIG E2E_KUBE_CONTEXT E2E_UO_NAME E2E_UO_NAMESPACE E2E_UO_SELECTOR E2E_COMMAND_URL
 
 # lab_require VAR... : fail with a clear message naming every missing variable.
 lab_require() {
@@ -85,10 +92,21 @@ lab_require() {
   fi
 }
 
-lab_require_kube() { lab_require E2E_KUBE_CONTEXT; }
+# The suite creates and deletes namespaces and RBAC objects. The integration tests
+# have their own cluster (context kf-integrations); never point the suite at it.
+lab_require_kube() {
+  lab_require E2E_KUBE_CONTEXT
+  case $E2E_KUBE_CONTEXT in
+    kf-integrations)
+      echo "ERROR: E2E_KUBE_CONTEXT='$E2E_KUBE_CONTEXT' is the integration-test cluster; the e2e suite must run against the lab cluster the UO runs in" >&2
+      exit 2
+      ;;
+  esac
+}
 
 lab_require_command() {
-  lab_require E2E_KUBE_CONTEXT E2E_COMMAND_URL E2E_TOKEN_CMD E2E_UO_NAME
+  lab_require_kube
+  lab_require E2E_COMMAND_URL E2E_TOKEN_CMD E2E_UO_NAME
   : "${E2E_UO_AGENT:=kfclab-uo-${E2E_UO_NAME}}"
   E2E_COMMAND_URL=${E2E_COMMAND_URL%/}
 }
