@@ -318,18 +318,29 @@ job_register() {
   rm -f "$WORK/jobs/$1.json"
 }
 
+# Command re-queues a job whose result was a failure (status CompletedWillRetry) about every
+# 5 minutes, and every retry is a NEW history entry with a higher JobHistoryId but the SAME
+# JobId. Each job the suite has already waited for is therefore remembered by JobId, and its
+# later retries are never taken for the result of a newer job on the same store.
 _wait_one() { # BASE CM PSUF TRE OUT -> 0 found, 1 timeout
-  local base=$1 cm=$2 psuf=$3 tre=$4 out=$5 deadline entry
+  local base=$1 cm=$2 psuf=$3 tre=$4 out=$5 deadline entry seen
   deadline=$(( $(date +%s) + E2E_JOB_TIMEOUT ))
   while :; do
-    entry=$(hist_recent | jq -c --argjson b "$base" --arg cm "$cm" --arg ps "$psuf" --arg tre "$tre" '
-      [ .[]? | select(.JobHistoryId > $b
+    seen=$(cat "$WORK/state/jobids.seen" 2>/dev/null || true)
+    entry=$(hist_recent | jq -c --argjson b "$base" --arg cm "$cm" --arg ps "$psuf" --arg tre "$tre" --arg seen "$seen" '
+      ($seen | split("\n")) as $S
+      | [ .[]? | select(.JobHistoryId > $b
                       and .ClientMachine == $cm
                       and (.JobType | test($tre))
                       and ($ps == "" or ((.StorePath // "") | endswith($ps)))
-                      and ((.Status // "") | test("^Completed"))) ]
+                      and ((.Status // "") | test("^Completed"))
+                      and ((.JobId // "") as $j | $j == "" or ($S | index($j)) == null)) ]
       | sort_by(.JobHistoryId) | last // empty')
-    if [ -n "$entry" ]; then printf '%s' "$entry" > "$out"; return 0; fi
+    if [ -n "$entry" ]; then
+      printf '%s' "$entry" > "$out"
+      printf '%s' "$entry" | jq -r '.JobId // empty' >> "$WORK/state/jobids.seen"
+      return 0
+    fi
     [ "$(date +%s)" -ge "$deadline" ] && return 1
     sleep "$E2E_JOB_POLL"
   done
