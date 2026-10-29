@@ -89,6 +89,12 @@ else
 fi
 
 say ""
-if dry; then say "== dry-run complete: nothing was executed against any lab system"; exit 0; fi
+if dry; then
+  # A dry run still reports configuration errors (a missing E2E_* variable stops a phase with a hard error);
+  # it must not claim success then.
+  if [ "$RC" = 0 ]; then say "== dry-run complete: nothing was executed against any lab system"
+  else say "== dry-run found problems (see above): nothing was executed against any lab system"; fi
+  exit "$RC"
+fi
 if [ "$RC" = 0 ]; then say "== e2e suite finished: no unexpected failures"; else say "== e2e suite finished: FAILURES or errors (see above)"; fi
 exit "$RC"
