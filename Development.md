@@ -9,6 +9,7 @@ This document describes how to build and test the Kubernetes Orchestrator Extens
   - [Unit Tests](#unit-tests)
   - [Integration Tests](#integration-tests)
   - [Store-Type Specific Tests](#store-type-specific-tests)
+  - [End-to-End Lab Tests](#end-to-end-lab-tests)
   - [Code Coverage](#code-coverage)
 - [Architecture](#architecture)
 - [Debugging](#debugging)
@@ -112,6 +113,16 @@ Or run tests for a specific store type with cleanup:
 ```bash
 make test-store-type STORE=K8SJKS
 ```
+
+### End-to-End Lab Tests
+
+Beyond the unit and integration tests, a runnable end-to-end suite drives the extension through Keyfactor Command and a
+real Universal Orchestrator: discovery, approve + inventory, management (Add/Remove) and scoped-service-account
+discovery, plus a comparison against the previously deployed build. It is documented in
+[docs/e2e-lab-test-plan.md](docs/e2e-lab-test-plan.md) (cases, expected results, known issues) and implemented by the
+scripts in [scripts/e2e/](scripts/e2e/README.md). It is not part of CI and is not run by any `make` target; it needs a
+lab you own. Every resource it creates carries a run prefix, and `scripts/e2e/run-all.sh --dry-run` prints what it would
+do without touching anything.
 
 ### Handler and Base Class Tests
 

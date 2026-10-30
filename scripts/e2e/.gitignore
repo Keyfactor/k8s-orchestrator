@@ -1,0 +1,10 @@
+# Local lab settings and anything the suite generates must never be committed.
+lab-env.local.sh
+*.local.sh
+*.env
+*.pem
+*.key
+*.pfx
+*.p12
+*.jks
+kubeconfig*
