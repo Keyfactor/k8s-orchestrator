@@ -66,7 +66,9 @@ default that is secret or lab-specific. A missing variable stops the run with a 
 | `E2E_UO_AGENT` | optional | the UO's orchestrator name in Command (default `kfclab-uo-<E2E_UO_NAME>`) |
 | `E2E_KUBECONFIG` | optional | kubeconfig file (default: kubectl's default). kfclab writes a separate kubeconfig for its lab cluster, so set this together with `E2E_KUBE_CONTEXT` |
 | `E2E_CA_CERT` | optional | PEM CA bundle for the Command endpoint (default: system trust) |
-| `E2E_UO_LOG_CMD` | optional | command that prints the whole UO log; enables case K108 (otherwise it is SKIPped), e.g. `kubectl --kubeconfig "$E2E_KUBECONFIG" --context "$E2E_KUBE_CONTEXT" -n "$E2E_UO_NAMESPACE" logs -l "$E2E_UO_SELECTOR"`. K108 is skipped when the log was rotated and no longer reaches the run's first job |
+| `E2E_UO_LOG_CMD` | optional | command that prints the whole UO log (the container's own line layout, oldest first); enables case K108 (otherwise it is SKIPped). Either `kubectl --kubeconfig "$E2E_KUBECONFIG" --context "$E2E_KUBE_CONTEXT" -n "$E2E_UO_NAMESPACE" logs -l "$E2E_UO_SELECTOR"` (the container log is rotated by size, so on a busy lab it no longer reaches the run's first job and K108 is skipped) or, when the logs are shipped to Loki, `"$E2E_DIR/uo-log-loki.sh"` (see below). The command may read `E2E_LOG_SINCE`, which `management.sh` sets to 10 minutes before the first job of the run |
+| `E2E_LOKI_SERVICE` | only for `uo-log-loki.sh` | `<namespace>/<service>:<port>` of Loki inside the cluster (reached through the API server's service proxy; no ingress or hostname needed). `E2E_LOKI_QUERY` (LogQL selector, default: the UO pod found through `E2E_UO_NAMESPACE`/`E2E_UO_SELECTOR`), `E2E_LOG_SINCE` / `E2E_LOG_UNTIL` (RFC 3339 UTC window, default the last 6 hours) are optional |
+| `E2E_NO_UNSCHEDULE` | optional | `true`: do not unschedule failed jobs (see "Known limits"); Command then retries them every ~5 minutes |
 | `E2E_UO_NAMESPACE` / `E2E_UO_SELECTOR` / `E2E_UO_EXT_DIR` | optional | where the UO pod and its extension directory are, used to read back what is deployed (`kubectl exec`). Defaults follow kfclab: namespace `keyfactor-lab`, selector `app.kubernetes.io/instance=uo-<E2E_UO_NAME>`, directory `/app/extensions` |
 | `E2E_ALLOW_PREVIOUS_MISMATCH` | optional | `true`: stage even though the spec's previous build differs from what is deployed (restore will then not return the UO to its current build) |
 | `E2E_EXT_NAME` | optional | extension name in the spec (default `k8s-orchestrator`) |
@@ -116,11 +118,12 @@ Phases (each can be run on its own, in this order):
 | `fixtures.sh` | - | test PKI, namespaces, secrets, one issued CSR. Idempotent. Needs only `E2E_KUBE_CONTEXT` |
 | `discovery.sh` | D1-D16 | one Command discovery job per case, compared with the expected store set |
 | `inventory.sh` | I1-I13 | approve discovered stores (plus two hand-made ones), run inventory, compare alias / key flag / thumbprints |
-| `management.sh` | M1-M24, K105-K108 | import certs into Command, create stores with CreateIfMissing, drive Add/Remove in waves, verify with kubectl/openssl/keytool |
+| `management.sh` | M1-M24, K105-K108 (K107b) | import certs into Command, create stores with CreateIfMissing, drive Add/Remove in waves, verify with kubectl/openssl/keytool |
 | `rbac.sh` | D17-D19 | scoped service account that cannot list secrets in the ignored namespace |
 | `baseline.sh` | B1-B5 | re-run key cases against the previous build and report whether the old behaviour reproduces |
 | `cleanup.sh` | - | restore the extension if needed, delete everything carrying the prefix, verify, remove the work dir. **Fails closed**: when Command or the cluster cannot be asked (no token, HTTP 000, HTTP 4xx/5xx, an answer that is not a list) it exits non-zero without printing "verified"; an empty list only counts when the answer was a successful one |
-| `selftest.sh` | - | offline self-test (mock `curl`/`kubectl`/`kfclab`, no lab needed) of the safety nets above: cleanup failing closed, scratch-dir handling, `--dry-run` making no external call |
+| `uo-log-loki.sh` | - | prints the UO log from Loki (read-only); an `E2E_UO_LOG_CMD` for K108 on a lab whose container logs rotate |
+| `selftest.sh` | - | offline self-test (mock `curl`/`kubectl`/`kfclab`, no lab needed) of the safety nets above: cleanup failing closed, scratch-dir handling, the scheduling guard, the expect-rejection mode, unscheduling of failed jobs, `uo-log-loki.sh` paging, `--dry-run` making no external call |
 
 `discovery.sh` must precede `inventory.sh` (it approves what discovery found), and `baseline.sh` needs
 `inventory.sh` to have created its stores. `management.sh` refuses to start when `<prefix>-m` already holds secrets
@@ -151,11 +154,25 @@ Exit codes: `0` ok, `1` at least one unexpected FAIL (or cleanup could not verif
   `FAIL` immediately, with Command's reason, and the cases that depend on it fail with the same message. After
   `E2E_MAX_REJECTS` rejections in a row the phase stops ("ABORTING phase ..."), so a systematic problem costs seconds,
   not an hour of timeouts. If the job history cannot be read for about a minute the waits end as errors as well.
-- `K108` needs `E2E_UO_LOG_CMD`; the log line layout it parses is described in the plan.
+- `K108` needs `E2E_UO_LOG_CMD`; the log line layout it parses is described in the plan. A container log that was rotated
+  is detected (K108 SKIPs). `uo-log-loki.sh` reads the whole window from Loki instead (read-only, paged: Loki returns at most
+  5000 entries per query); use it as `E2E_UO_LOG_CMD='"$E2E_DIR/uo-log-loki.sh"'` together with
+  `E2E_LOKI_SERVICE`.
+- **Refusal cases** (M4, M10, M21): the request may be refused by Command at scheduling (HTTP 4xx, recorded as the job
+  result `Refused`, not a FAIL, and not counted towards `E2E_MAX_REJECTS`) or by the extension (the job Fails with its
+  message). The case passes at either layer, provided the existing data is unchanged; it fails when the request is
+  accepted and succeeded. The report says which layer refused (`refused-by=`).
+- **Failed jobs are unscheduled.** Command re-runs a job that failed (`CompletedWillRetry`) about every 5 minutes, and a
+  retry re-applies the same request to whatever the store holds by then. The first real run showed it: a refused Add
+  (M4) was retried after M7's Remove had deleted the secret and created it again, so M7 saw the secret still there.
+  `batch_wait` therefore calls `POST /OrchestratorJobs/Unschedule` for every job it has recorded as failed-and-retrying
+  (best effort; `E2E_NO_UNSCHEDULE=true` turns it off).
 - The scripts were derived from an earlier manual run. Their read-only assumptions about the lab and the Command API
   were checked against a real lab (section 12 of the plan lists each as confirmed, corrected or not probed). Staging,
-  discovery and inventory have run for real; the management phase has not yet completed a run (section 12 records what
-  the first attempt taught).
+  discovery and inventory have run for real. The first complete run (PASS=80 FAIL=8 XFAIL=5 SKIP=2) was triaged: all
+  8 FAILs were suite or Command-behaviour problems, none an extension defect (section 12 of the plan, "What the first
+  complete run taught"); the fixes have been proven offline (`selftest.sh`) and M7's cause on the lab, but the
+  management phase has not been re-run end to end since.
 
 ## Staging risk
 

@@ -414,6 +414,66 @@ management phase and mis-reported cleanup. Each finding changed the suite:
   not register a job; dependent cases fail with the same reason; `E2E_MAX_REJECTS` (default 3) rejections in a row abort
   the phase. A job history that cannot be read for about a minute also ends the waits.
 
+### What the first complete run taught
+
+The first complete run (`secondary-uo`, PR #103 build staged, prefix `e2e-lab-1030`; cleanup verified, extension restored)
+ended `PASS=80 FAIL=8 XFAIL=5 SKIP=2`. Triage of the 8 FAILs and the K108 SKIP found **no extension defect**: every
+FAIL was a suite or Command-behaviour problem.
+
+- **M7 (K8SSecret Remove left the secret behind): Command re-ran a refused Add after the Remove.** The Remove job
+  reported Success and did delete the secret; Command's job history for `mg-opaque` shows what happened next. The
+  refused Add of M4 (job `73f443eb`, overwrite=false on the existing secret) was `CompletedWillRetry` / Failure at 22:45,
+  retried (Failure again, the secret still existed) at 22:50, the Remove (job `54e62e25`) completed at 22:50 and Command's
+  own inventory at 22:50 said "Store not found", and at 22:55 the **same job `73f443eb` ran again, Success: the Add
+  recreated the secret** (cert-only, no key) before the suite looked. The extension is not at fault:
+  `OpaqueSecretHandler.HandleRemove` deletes the whole secret unconditionally (Opaque secrets are single-entry; `ca.crt`
+  or other keys do not change that), the same code as `TlsSecretHandler.HandleRemove` (M12b passed), and the Add /
+  Remove code paths (`OpaqueSecretHandler`, `SecretHandlerBase.DeleteSecret`, `KubeClient.DeleteCertificateStoreSecret`,
+  `ManagementBase`) have no change between `release-2.0` and the PR #103 branch (`git diff origin/release-2.0...origin/fix/discovery-job-properties`). **Reproduced on the lab's current
+  build** (the original, pre-PR one: its extension DLL differs from the PR #103 build directory) with two K8SSecret stores under prefix `e2e-lab-tri1`: Add with key (Success), cert-only Add
+  with overwrite=false (Failure, `CompletedWillRetry`), Remove by the secret-name alias (Success, secret gone). Store A:
+  the refused Add's retry ran 5 minutes later, Success, secret back. Store B: the refused job was unscheduled before the
+  Remove (`POST /OrchestratorJobs/Unschedule`, HTTP 204) and the secret stayed gone. Fix: `batch_wait` unschedules every
+  job it recorded as failed-and-retrying. (The other retried refusals were harmless this time only by luck: M10's
+  cert-only Add was never scheduled, or M12b would have failed the same way.)
+  Side observation for the extension owners (not a defect found by the suite): a *refused* Add makes the job `Failure`,
+  which Command retries about every 5 minutes (the lab showed 3 retries within 15 minutes; no upper bound was observed), and a retry after the situation changed (here: the secret was
+  removed) applies the Add. That is Command's retry semantics, not something the extension can avoid short of returning a
+  non-retryable result.
+- **M24 (K8SCert Add/Remove refused): Add answered HTTP 400, Remove HTTP 500.** The refusal is the point and no job is
+  scheduled; the 500 is a Command quirk. The assertion accepts any HTTP >= 400 for both.
+- **M10 and M8c (K8STLSSecr overwrite and remove with an empty alias): the suite was wrong.** Command refuses an Add
+  with `Overwrite=true` and no alias ("A certificate with alias '' does not exist in certificate store ...") and a Remove
+  without one ("'Alias' cannot be empty"). For K8SSecret and K8STLSSecr the Command inventory alias is the secret name,
+  as M5, M6b, M12a and M12b already used. `w2.T1` and `w2.T2` now send the secret name. No other overwrite or remove case
+  used an empty alias (the empty-alias Adds are plain creates with `Overwrite=false`, which Command accepts).
+- **M21 (K8SNS Add on an existing alias, overwrite=false): Command refused at scheduling** ("Overwrite must be true in
+  order to replace the certificate with alias 'tls/ns-tls1'"), so the extension never ran. Since a rejected request is an
+  immediate FAIL, an *expected* refusal was reported as a failure. The management helpers have an "expect refusal"
+  mode (`mg_add ... refuse`): a 4xx at scheduling is recorded as the job result `Refused` (no FAIL, and neither counted
+  in nor resetting the `E2E_MAX_REJECTS` streak), and the case (`refused_ok`) passes when EITHER Command refused OR the
+  job ran and failed with the extension's message, **and** the existing data is unchanged. A request that was accepted and
+  succeeded still fails the case. A 5xx is no refusal. Applied to M4, M10, M21 (the report shows `refused-by=`). K106a/b
+  stay as they are: they pin an extension bug, so a refusal at either layer would be reported as XPASS wrongly.
+- **K108 SKIP: the container log had rotated.** The lab runs Loki and Promtail (stream label `pod`, same line layout).
+  `scripts/e2e/uo-log-loki.sh` prints the UO log from Loki, paged and read-only, through the API server's service proxy
+  (`E2E_LOKI_SERVICE=<namespace>/<service>:<port>`, no hostname), and `management.sh` sets `E2E_LOG_SINCE` to 10 minutes
+  before the run's first job. Checked read-only against the window of `e2e-lab-1030`: 89061 lines (equal to Loki's
+  `count_over_time`), the oldest successful job id present, and the K108 counting logic then reports **1116 Error/Warn
+  lines from the extension across 193 successful jobs**, i.e. K108 would be `XFAIL` as expected. The noise is
+  dominated by `KubeCertificateManagerClient` (a `[Warn]` "Failed to parse kubeconfig, using empty configuration:
+  kubeconfig is null or empty" and an `[Error]` "kubeconfig is null or empty" on nearly every job, because the lab uses the
+  UO's in-cluster identity), `PAM field is empty` warnings, and `CertificateUtilities [Error]` "Error loading PKCS12
+  store: illegal object in GetInstance" on successful jobs.
+- **K8SCluster `CreateIfMissing`**: the Create job fails with "Invalid cluster alias format: ''" (a WARN in the log
+  before). Same class as #107; now case K107b, tagged known issue 107.
+- **Cleanup gap found while verifying**: the certificate the fixtures' approved CSR gets is issued by the cluster's own
+  client CA (K8SCert inventory records it in Command as `CN=<p>-csr-user,O=<p>`), so the "issuer contains the prefix" query
+  missed it (one record of `e2e-lab-1030` stayed behind). `own_cert_ids` now also finds it by its exact subject.
+
+Re-run to prove these fixes: fixtures and management only (`fixtures.sh`, then `management.sh`, with a fresh prefix and
+the PR #103 build staged), not the whole suite.
+
 ## Appendix: case IDs to scripts
 
 | IDs | Script |
@@ -421,6 +481,6 @@ management phase and mis-reported cleanup. Each finding changed the suite:
 | D1-D15 (D11a/b, D13a/b, D14a-c), D16 | `discovery.sh` |
 | D17a-d, D18, D19 | `rbac.sh` |
 | I1-I13 (I9a/b, I10a-d) | `inventory.sh` |
-| M1-M24 and sub-IDs, K105-K108 | `management.sh` |
+| M1-M24 and sub-IDs, K105-K108 (K107b) | `management.sh` |
 | B1-B5 | `baseline.sh` |
 | (K108 log source, optional) | `uo-log-loki.sh` |
