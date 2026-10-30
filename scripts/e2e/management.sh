@@ -184,7 +184,19 @@ if want K107; then
       "Management job Success (not retried)" "result='$r' status='$(job_status c.mg-ns)' message='$(jm c.mg-ns)'" 107
   fi
 fi
-for n in mg-opaque mg-opaque-sep mg-opaque-nochain mg-opaque2 mg-tls mg-tls-sep mg-tls-conflict mg-tls2 mg-jks mg-jks-nochain mg-jks-field mg-p12 mg-cluster; do
+# K107b: K8SCluster CreateIfMissing (same class as K107: the Create job is handed an empty alias)
+if want K107b; then
+  if dry; then
+    verdict K107b 1 "K8SCluster store with CreateIfMissing: the Create job succeeds" "Management job Success (not retried)" "" 107
+  elif [ "$(state_get fresh.mg.mg-cluster)" != yes ]; then
+    skip K107b "K8SCluster CreateIfMissing" "the store already existed from an earlier run; use a fresh --prefix"
+  else
+    r=$(jr c.mg-cluster)
+    verdict K107b "$([ "$r" = Success ] && echo 1 || echo 0)" "K8SCluster store with CreateIfMissing: the Create job succeeds" \
+      "Management job Success (not retried)" "result='$r' status='$(job_status c.mg-cluster)' message='$(jm c.mg-cluster)'" 107
+  fi
+fi
+for n in mg-opaque mg-opaque-sep mg-opaque-nochain mg-opaque2 mg-tls mg-tls-sep mg-tls-conflict mg-tls2 mg-jks mg-jks-nochain mg-jks-field mg-p12; do
   dry && break
   if [ "$(state_get "fresh.mg.$n")" = yes ] && [ "$(jr "c.$n")" != Success ]; then
     warn "Create job for store $n: result='$(jr "c.$n")' message='$(jm "c.$n")'"
