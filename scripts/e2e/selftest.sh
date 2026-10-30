@@ -143,6 +143,64 @@ else
   fail "scheduling guard (exit $rc)"; printf '%s\n' "$sched_out" | tail -8
 fi
 
+# ---- expect-rejection mode -------------------------------------------------------
+# A case whose expected outcome is a refusal passes when EITHER Command rejects at scheduling
+# (4xx: recorded as the job result "Refused", not a FAIL, the abort streak is left alone) OR the
+# job runs and fails with the extension's message. It must still fail when the request is
+# accepted and succeeded. A 5xx is no refusal.
+ref_out=$(
+  PHASE=selftest
+  . "$HERE/lib.sh"
+  e2e_init --prefix "$P" --workdir "$T/w4" > /dev/null
+  export MOCK_CURL=rejected E2E_MAX_REJECTS=3
+  api POST /CertificateStores/Certificates/Add > /dev/null 2>&1
+  sched_fail "r1" "Add a" 2>/dev/null
+  sched_fail "r2" "Add b" 2>/dev/null
+  sched_refused "rr" "Add c" 2>/dev/null          # expected refusal: neither a FAIL nor part of the streak
+  echo "AFTER-REFUSAL streak=$SCHED_STREAK fails=$N_FAIL result=$(job_result rr) layer=$(refusal_layer rr)"
+  refused_ok rr 'already exists' && echo "REFUSED-AT-SCHEDULING-OK"
+  # the job ran and the extension refused
+  jq -n '{Result:"Failure",Status:"CompletedWillRetry",Message:"Secret x already exists. Set overwrite=true to replace."}' > "$WORK/jobs/ext.json"
+  refused_ok ext 'already exists' && echo "REFUSED-BY-EXTENSION-OK layer=$(refusal_layer ext)"
+  # failed for some other reason, or succeeded (the existing alias was replaced): NOT a refusal
+  jq -n '{Result:"Failure",Message:"Kubernetes API timeout"}' > "$WORK/jobs/other.json"
+  refused_ok other 'already exists' || echo "OTHER-FAILURE-NOT-A-REFUSAL"
+  jq -n '{Result:"Success",Status:"Completed",Message:""}' > "$WORK/jobs/ok.json"
+  refused_ok ok 'already exists' || echo "SUCCESS-NOT-A-REFUSAL layer=$(refusal_layer ok)"
+  # the third REAL rejection in a row still aborts, so the refusal did not reset or advance the streak
+  sched_fail "r3" "Add d" 2>/dev/null
+  echo "NOT REACHED"
+) 2>&1
+ref_rc=$?
+if [ "$ref_rc" -eq 1 ] \
+   && printf '%s' "$ref_out" | grep -q 'AFTER-REFUSAL streak=2 fails=2 result=Refused layer=command-scheduling' \
+   && printf '%s' "$ref_out" | grep -q 'REFUSED-AT-SCHEDULING-OK' \
+   && printf '%s' "$ref_out" | grep -q 'REFUSED-BY-EXTENSION-OK layer=extension-job' \
+   && printf '%s' "$ref_out" | grep -q 'OTHER-FAILURE-NOT-A-REFUSAL' \
+   && printf '%s' "$ref_out" | grep -q 'SUCCESS-NOT-A-REFUSAL layer=none' \
+   && printf '%s' "$ref_out" | grep -q 'ABORTING phase' \
+   && ! printf '%s' "$ref_out" | grep -q 'NOT REACHED' \
+   && [ "$(printf '%s\n' "$ref_out" | grep -c '^FAIL ')" -eq 3 ]; then
+  ok "expect-rejection mode: Command's 4xx and the extension's failure both count as a refusal, a success or another failure does not, and an expected refusal stays out of the abort streak"
+else
+  fail "expect-rejection mode (exit $ref_rc)"; printf '%s\n' "$ref_out" | tail -12
+fi
+
+h500=$(
+  PHASE=selftest
+  . "$HERE/lib.sh"
+  e2e_init --prefix "$P" --workdir "$T/w5" > /dev/null
+  export MOCK_CURL=http500 E2E_MAX_REJECTS=3
+  api POST /CertificateStores/Certificates/Add > /dev/null 2>&1
+  sched_refused "r5" "Add e" 2>/dev/null
+  echo "RESULT=$(job_result r5) fails=$N_FAIL"
+) 2>&1
+if printf '%s' "$h500" | grep -q 'RESULT=Rejected fails=1' && printf '%s\n' "$h500" | grep -q '^FAIL '; then
+  ok "expect-rejection mode: an HTTP 5xx is not a refusal (it is a FAIL)"
+else
+  fail "expect-rejection mode must not take an HTTP 5xx for a refusal"; printf '%s\n' "$h500" | tail -5
+fi
+
 # ---- dry run -------------------------------------------------------------------
 : > "$MOCK_LOG"
 for s in fixtures discovery inventory management rbac baseline cleanup; do

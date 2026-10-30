@@ -221,7 +221,7 @@ not part of the contract.
 | M1 | K8SSecret (IncludeCertChain=true, SeparateChain=false) | Add leaf3 + key | job Success; `tls.crt` = leaf3, int, root (leaf first); `tls.key` present |
 | M2 | K8SSecret (SeparateChain=true) | Add leaf3 + key | `tls.crt` = leaf3 only; `ca.crt` = {int, root}; `tls.key` present |
 | M3 | K8SSecret (IncludeCertChain=false) | Add leaf3 + key | `tls.crt` = leaf3 only; no `ca.crt` |
-| M4 | K8SSecret (existing, M1) | Add cert-only leaf6, overwrite=false | job **Failure**, message contains "already exists" (Set overwrite=true); secret unchanged (still leaf3, int, root + key) |
+| M4 | K8SSecret (existing, M1) | Add cert-only leaf6, overwrite=false | **refused**, at either layer: Command rejects the request at scheduling, or the job **Fails** with "already exists" (Set overwrite=true). Secret unchanged (still leaf3, int, root + key) |
 | M5 | K8SSecret (M2) | overwrite=true via the inventory alias (secret name), leaf4 + key | job Success; `tls.crt` = leaf4; `ca.crt` = {int, root}; key present |
 | M6 | K8SSecret (fresh) | cert-only Add leaf6 | job Success; `tls.crt` leaf6; no private key; Command shows key=No |
 | M6b | same | Remove via inventory alias | job Success; secret deleted |
@@ -230,7 +230,7 @@ not part of the contract.
 | M8b | K8STLSSecr (SeparateChain=true) | Add leaf3 + key | `tls.crt` = leaf3; `ca.crt` = {int, root}; key present |
 | M8c | same | Remove (alias = secret name; Command refuses an empty alias) | job Success; secret deleted |
 | M9 | K8STLSSecr (SeparateChain=true **and** IncludeCertChain=false) | Add leaf3 + key | SeparateChain is overridden: `tls.crt` = leaf3 (1 cert), **no** `ca.crt`; key present |
-| M10 | K8STLSSecr (holds leaf3 + key) | cert-only Add leaf6, overwrite=true | job **Failure** (intentional guard: a cert-only add must not strip an existing key); secret unchanged |
+| M10 | K8STLSSecr (holds leaf3 + key) | cert-only Add leaf6, overwrite=true, alias = secret name (Command refuses an empty alias) | **refused**, at either layer: the job **Fails** (intentional guard in the extension: a cert-only add must not strip an existing key) or Command rejects the request; secret unchanged |
 | M11 | K8STLSSecr (fresh) | cert-only Add leaf6 | job Success; type tls; `tls.crt` leaf6; `tls.key` present but **empty** (a warning is logged); Command shows key=No |
 | M11b | same | Remove | job Success; secret deleted |
 | M12a | K8STLSSecr (M8a) | overwrite=true, alias = secret name, leaf4 + key | `tls.crt` = leaf4, int, root; key present (replaced) |
@@ -249,7 +249,7 @@ not part of the contract.
 | M19 | K8SNS | Add `tls/ns-tls1` (leaf3 + key) and `opaque/ns-op1` (leaf4 + key) | both jobs Success; secret `ns-tls1` is `kubernetes.io/tls`, `ns-op1` is Opaque, both with a key |
 | M19i | K8SNS | inventory afterwards | lists `tls/ns-tls1` and `opaque/ns-op1` |
 | M20 | K8SNS | overwrite `opaque/ns-op1` with leaf2 (EC) + key | `tls.crt` = leaf2, int, root; key present (replaced) |
-| M21 | K8SNS | Add `tls/ns-tls1` again, overwrite=false | job **Failure**; secret unchanged (leaf3, int, root) |
+| M21 | K8SNS | Add `tls/ns-tls1` again, overwrite=false | **refused**, at either layer: Command rejects the request at scheduling ("Overwrite must be true in order to replace the certificate with alias ..."; what the lab does), or the job **Fails**. Secret unchanged (leaf3, int, root) |
 | M22a | K8SNS | cert-only Add `opaque/ns-nokey` (leaf6) | created, Opaque, `tls.crt` leaf6, no key |
 | M22b | K8SNS | cert-only Add `tls/ns-tlsnokey` (leaf6) | created, `kubernetes.io/tls`, `tls.key` present but empty |
 | M22c | K8SNS | Remove `opaque/ns-op1` | secret deleted |

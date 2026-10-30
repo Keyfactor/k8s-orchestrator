@@ -46,9 +46,11 @@ mg_store() {
 
 touch_store() { case " $TOUCHED " in *" $1 "*) : ;; *) TOUCHED="$TOUCHED $1" ;; esac; }
 
-# mg_add LABEL STORE CERT ALIAS KEY OVERWRITE
+# mg_add LABEL STORE CERT ALIAS KEY OVERWRITE [refuse]
+#   refuse: the case expects the request to be REFUSED (by Command at scheduling or by the
+#   extension in the job); a 4xx answer from Command is then recorded as "Refused", not as a FAIL
 mg_add() {
-  local label=$1 name=$2 cert=$3 alias=$4 key=$5 ow=$6 body sid
+  local label=$1 name=$2 cert=$3 alias=$4 key=$5 ow=$6 refuse=${7:-} body sid
   if dry; then dsay "Add cert=$cert -> store '$name' alias='$alias' includePrivateKey=$key overwrite=$ow  [$label]"; return 0; fi
   sid=$(state_get "sid.mg.$name")
   body=$(mktemp "$TMPD/add.XXXXXX")
@@ -64,14 +66,15 @@ mg_add() {
     touch_store "$name"
   else
     rm -f "$body"
-    # rejected: FAIL now with Command's reason, nothing to wait for (sched_fail may abort the phase)
-    sched_fail "$label" "Add $cert to store '$name'"
+    # rejected: FAIL now with Command's reason, nothing to wait for (sched_fail may abort the phase);
+    # an expected refusal is recorded for the verdict instead
+    if [ -n "$refuse" ]; then sched_refused "$label" "Add $cert to store '$name'"; else sched_fail "$label" "Add $cert to store '$name'"; fi
   fi
 }
 
-# mg_rm LABEL STORE ALIAS
+# mg_rm LABEL STORE ALIAS [refuse]
 mg_rm() {
-  local label=$1 name=$2 alias=$3 body sid
+  local label=$1 name=$2 alias=$3 refuse=${4:-} body sid
   if dry; then dsay "Remove alias='$alias' from store '$name'  [$label]"; return 0; fi
   sid=$(state_get "sid.mg.$name")
   body=$(mktemp "$TMPD/rm.XXXXXX")
@@ -83,7 +86,7 @@ mg_rm() {
     touch_store "$name"
   else
     rm -f "$body"
-    sched_fail "$label" "Remove '$alias' from store '$name'"
+    if [ -n "$refuse" ]; then sched_refused "$label" "Remove '$alias' from store '$name'"; else sched_fail "$label" "Remove '$alias' from store '$name'"; fi
   fi
 }
 
@@ -301,10 +304,10 @@ verdict K105b "$([ "$r" = Success ] && [ "$keys" = keystore.p12 ] && echo 1 || e
 # ---------------------------------------------------------- wave 2 ---------
 say "-- wave 2: refusals, overwrite, removes, second ops on shared stores"
 wave_begin
-mg_add w2.O1 mg-opaque      leaf6 ""           false false
+mg_add w2.O1 mg-opaque      leaf6 ""           false false refuse
 mg_add w2.O2 mg-opaque-sep  leaf4 mg-opaque-sep true true
 mg_rm  w2.O4 mg-opaque2     mg-opaque2
-mg_add w2.T1 mg-tls         leaf6 mg-tls       false true
+mg_add w2.T1 mg-tls         leaf6 mg-tls       false true  refuse
 mg_rm  w2.T2 mg-tls-sep     mg-tls-sep
 mg_rm  w2.T4 mg-tls2        mg-tls2
 mg_add w2.J1 mg-jks         leaf6 leaf6        false false
@@ -315,9 +318,9 @@ mg_add w2.C1 mg-cluster     leaf3 "$M/secrets/tls/cl-tls1" true false
 wave_end
 
 r=$(jr w2.O1); m=$(jm w2.O1); chain=$(sec_chain "$M" mg-opaque tls.crt); key=$(sec_has_key "$M" mg-opaque tls.key)
-ok=0; [ "$r" = Failure ] && printf '%s' "$(job_message w2.O1)" | grep -qi 'already exists' && chain_is "$chain" leaf3 leaf3,int,root && [ "$key" = yes ] && ok=1
-verdict M4 "$ok" "K8SSecret Add on an existing secret with overwrite=false is refused ('already exists. Set overwrite=true')" \
-  "job Failure mentioning 'already exists'; secret unchanged (leaf3,int,root + key)" "job=$r tls.crt=$chain tls.key=$key message='$m'"
+ok=0; refused_ok w2.O1 'already exists' && chain_is "$chain" leaf3 leaf3,int,root && [ "$key" = yes ] && ok=1
+verdict M4 "$ok" "K8SSecret Add on an existing secret with overwrite=false is refused (by Command at scheduling, or by the extension: 'already exists. Set overwrite=true')" \
+  "refused at either layer (job Failure mentioning 'already exists', or Command rejects the request); secret unchanged (leaf3,int,root + key)" "job=$r refused-by=$(refusal_layer w2.O1) tls.crt=$chain tls.key=$key message='$m'"
 
 r=$(jr w2.O2); chain=$(sec_chain "$M" mg-opaque-sep tls.crt); ca=$(sec_chain "$M" mg-opaque-sep ca.crt); key=$(sec_has_key "$M" mg-opaque-sep tls.key)
 ok=0; [ "$r" = Success ] && [ "$chain" = leaf4 ] && chain_is "$ca" "${ca%%,*}" int,root && [ "$key" = yes ] && ok=1
@@ -329,9 +332,9 @@ verdict M6b "$ok" "K8SSecret Remove of the cert-only secret (inventory alias): s
   "job=$(jr w2.O4) secret-exists=$(sec_exists "$M" mg-opaque2 && echo yes || echo no)"
 
 r=$(jr w2.T1); chain=$(sec_chain "$M" mg-tls tls.crt); key=$(sec_has_key "$M" mg-tls tls.key)
-ok=0; [ "$r" = Failure ] && chain_is "$chain" leaf3 leaf3,int,root && [ "$key" = yes ] && ok=1
-verdict M10 "$ok" "K8STLSSecr cert-only Add (overwrite=true) onto a secret that has a key is refused (intentional guard)" \
-  "job Failure; secret unchanged (leaf3,int,root + key)" "job=$r tls.crt=$chain tls.key=$key message='$(jm w2.T1)'"
+ok=0; refused_ok w2.T1 'cannot update|private key' && chain_is "$chain" leaf3 leaf3,int,root && [ "$key" = yes ] && ok=1
+verdict M10 "$ok" "K8STLSSecr cert-only Add (overwrite=true, alias = secret name) onto a secret that has a key is refused (intentional guard in the extension; Command may refuse first)" \
+  "refused at either layer (job Failure about the existing private key, or Command rejects the request); secret unchanged (leaf3,int,root + key)" "job=$r refused-by=$(refusal_layer w2.T1) tls.crt=$chain tls.key=$key message='$(jm w2.T1)'"
 
 ok=0; [ "$(jr w2.T2)" = Success ] && ! sec_exists "$M" mg-tls-sep && ok=1
 verdict M8c "$ok" "K8STLSSecr Remove (no alias): secret deleted" "job Success; secret gone" \
@@ -421,7 +424,7 @@ wave_begin
 mg_rm  w4.T1 mg-tls      mg-tls
 mg_rm  w4.J1 mg-jks      keystore.jks/leaf6
 mg_add w4.P1 mg-p12      leaf2 "$P1F/leaf3" true true
-mg_add w4.N1 mg-ns       leaf4 tls/ns-tls1 true false
+mg_add w4.N1 mg-ns       leaf4 tls/ns-tls1 true false refuse
 mg_add w4.C1 mg-cluster  leaf2 "$M/secrets/tls/cl-tls1" true true
 wave_end
 
@@ -442,9 +445,9 @@ verdict M18c "$ok" "K8SPKCS12 overwrite existing alias (<field>/leaf3) with leaf
   "job Success; alias leaf3 now holds leaf2" "job=$r alias leaf3 holds ${t:-<none>}"
 
 r=$(jr w4.N1); chain=$(sec_chain "$M" ns-tls1 tls.crt)
-ok=0; [ "$r" = Failure ] && chain_is "$chain" leaf3 leaf3,int,root && ok=1
-verdict M21 "$ok" "K8SNS Add on an existing alias with overwrite=false is refused" \
-  "job Failure; tls/ns-tls1 unchanged (leaf3,int,root)" "job=$r tls.crt=$chain message='$(jm w4.N1)'"
+ok=0; refused_ok w4.N1 'already exists|overwrite' && chain_is "$chain" leaf3 leaf3,int,root && ok=1
+verdict M21 "$ok" "K8SNS Add on an existing alias with overwrite=false is refused (by Command at scheduling, or by the extension)" \
+  "refused at either layer (Command rejects the request, or the job Fails about the existing secret); tls/ns-tls1 unchanged (leaf3,int,root)" "job=$r refused-by=$(refusal_layer w4.N1) tls.crt=$chain message='$(jm w4.N1)'"
 
 r=$(jr w4.C1); chain=$(sec_chain "$M" cl-tls1 tls.crt)
 ok=0; [ "$r" = Success ] && chain_is "$chain" leaf2 leaf2,int,root && ok=1

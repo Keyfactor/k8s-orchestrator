@@ -345,6 +345,44 @@ sched_fail() {
   fi
 }
 
+# sched_refused LABEL WHAT : like sched_fail, for a request whose EXPECTED outcome is a refusal
+# ("expect rejection" mode). Command and the extension both validate (Command at scheduling,
+# the extension in the job), so a refusal case passes when either layer says no. A 4xx answer
+# is recorded as the job result "Refused" with Command's reason, is NOT a FAIL and does not
+# touch the abort streak (neither counts it nor resets it); the case's own verdict (refused_ok)
+# decides. Anything else (no answer, HTTP 5xx) is no refusal: it is an ordinary sched_fail.
+sched_refused() {
+  local label=$1 what=$2 code reason
+  code=$(api_code)
+  case $code in
+    4??) : ;;
+    *) sched_fail "$label" "$what"; return 0 ;;
+  esac
+  reason=$(api_reason)
+  jq -n --arg m "refused by Command at scheduling (HTTP $code): $reason" '{Result:"Refused",Status:"Refused",Message:$m}' \
+    > "$WORK/jobs/$label.json" 2>/dev/null || true
+}
+
+# refused_ok LABEL PATTERN : did the request get refused, at either layer? True when Command
+# refused it at scheduling, or the job ran and failed with a message matching PATTERN (egrep, any
+# case). A job that succeeded, or failed for another reason, is not an accepted refusal; the
+# caller must also check that the existing data is unchanged.
+refused_ok() {
+  case $(job_result "$1") in
+    Refused) return 0 ;;
+    Failure) job_message "$1" | grep -Eqi "$2" ;;
+    *) return 1 ;;
+  esac
+}
+# refusal_layer LABEL : where the refusal happened, for the report
+refusal_layer() {
+  case $(job_result "$1") in
+    Refused) printf 'command-scheduling' ;;
+    Failure) printf 'extension-job' ;;
+    *) printf 'none' ;;
+  esac
+}
+
 # --------------------------------------------------------- lab discovery ----
 # resolve_lab : agent id of the UO and store type ids / capabilities, cached in state
 resolve_lab() {
