@@ -532,11 +532,18 @@ own_store_ids() {
 # own_cert_ids : ids of the Command certificates issued by this run's test CAs. Same contract
 # as own_store_ids: non-zero when Command cannot be asked.
 own_cert_ids() {
-  local q j
+  local q j ids1 ids2
   q=$(printf 'IssuerDN -contains "%s"' "$PREFIX" | jq -sRr @uri)
   j=$(api GET "/Certificates?QueryString=$q&PageReturned=1&ReturnLimit=500") || return 1
   printf '%s' "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { warn "unexpected answer while listing certificates (not a JSON array)"; return 1; }
-  printf '%s' "$j" | jq -r --arg p "$PREFIX" '.[]? | select((.IssuerDN // "") | test("CN=" + $p + " (Root|Intermediate) CA")) | .Id'
+  ids1=$(printf '%s' "$j" | jq -r --arg p "$PREFIX" '.[]? | select((.IssuerDN // "") | test("CN=" + $p + " (Root|Intermediate) CA")) | .Id')
+  # the certificate of the fixtures' approved CSR is issued by the cluster's own client CA (K8SCert inventory
+  # records it in Command), so it is found by its exact subject instead
+  q=$(printf 'IssuedDN -contains "CN=%s-csr-user,O=%s"' "$PREFIX" "$PREFIX" | jq -sRr @uri)
+  j=$(api GET "/Certificates?QueryString=$q&PageReturned=1&ReturnLimit=500") || return 1
+  printf '%s' "$j" | jq -e 'type == "array"' >/dev/null 2>&1 || { warn "unexpected answer while listing certificates (not a JSON array)"; return 1; }
+  ids2=$(printf '%s' "$j" | jq -r --arg s "CN=$PREFIX-csr-user,O=$PREFIX" '.[]? | select((.IssuedDN // "") == $s) | .Id')
+  printf '%s\n%s\n' "$ids1" "$ids2" | sed '/^$/d' | sort -un
 }
 # delete_stores IDS... : delete by id. Refuses ids that are not owned by this prefix.
 # Returns non-zero when Command did not accept the delete.
