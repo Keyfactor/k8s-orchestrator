@@ -282,8 +282,9 @@ They never fail the run (unless `E2E_STRICT_XPASS=true`).
 | K107b | #107 (same class) | a K8SCluster store created with `CreateIfMissing` completes its Create job with Success | fails with "Invalid cluster alias format: ''. Expected: namespace/secrets/type/name" and is retried (the suite unschedules the retries) |
 | K108 | [#108](https://github.com/Keyfactor/k8s-orchestrator/issues/108) | jobs that finished `Success` leave no `[Error]` / `[Warn]` log lines from `Keyfactor.Extensions.Orchestrator.K8S.*` in the UO log | noisy Error/Warn lines on successful jobs |
 
-K107 needs a fresh prefix (the Create job only runs when the store is created). K108 needs `E2E_UO_LOG_CMD`; it reads
-the UO log, keeps lines whose fourth field (the job history id) belongs to a successful job of this run and whose
+K107 and K107b need a fresh prefix (the Create job only runs when the store is created). K108 needs `E2E_UO_LOG_CMD`; it reads
+the UO log (the log of the whole run: with the container log, which rotates, it SKIPs when the log no longer reaches the
+run's first job; `scripts/e2e/uo-log-loki.sh` reads it from Loki instead), keeps lines whose fourth field (the job history id) belongs to a successful job of this run and whose
 logger starts with `Keyfactor.Extensions.Orchestrator.K8S`, counts the `[Error]` and `[Warn]` ones, and prints only
 counts per logger (never log messages). Otherwise it reports SKIP.
 
@@ -361,7 +362,7 @@ suite was changed), or **not probed** (the check would have to change state; the
 | 9 | `kfclab extension update` on an edited private copy of the spec re-stages the build and restarts the UO | confirmed, with corrections | It resolves the artifact, stages it, rollout-restarts the UO, waits for the new pod to be Ready and compares the primary DLL hash in the running pod with the artifact. **Corrected:** `kfclab extension list` is a listing of kfclab's global plugin cache (not per UO), ignores `--json`, and its `--uo` filter compares against the *source* so it never matches; it cannot confirm a restore. The suite now fingerprints the extension directory inside the UO pod (sha256 of every `*.dll` and `manifest.json`, via `kubectl exec`) before staging, after staging and after restore |
 | 9b | The spec's "previous" extension is what is deployed | confirmed, now enforced | For the lab checked, the fingerprint of the spec's local build directory equals the pod's. That directory is a developer's working build output though, so `stage-extension.sh` now refuses to stage when it differs (`E2E_ALLOW_PREVIOUS_MISMATCH=true` overrides) |
 | 9c | Staging affects only the target UO | **no** | The extension directory is one volume shared by every UO of the lab (mounted per extension by sub-path); `kfclab extension update` restarts only the target UO's pod. The other UOs keep the assemblies they loaded at startup but see the new files on disk, and may load them if they restart or load a dependency lazily. See "Staging risk" in the [README](../scripts/e2e/README.md) |
-| 10 | K108 log line layout | confirmed | `<date> <time> <job guid> <job history id> <logger> [Level] - message`; the fourth field equals `JobHistoryId`. The lab's UO logs at Trace and the container log is rotated by size, so the suite now skips K108 instead of reporting XPASS when the log does not reach back to the run's first successful job |
+| 10 | K108 log line layout | confirmed | `<date> <time> <job guid> <job history id> <logger> [Level] - message`; the fourth field equals `JobHistoryId`. The lab's UO logs at Trace and the container log is rotated by size, so the suite skips K108 instead of reporting XPASS when the log does not reach back to the run's first successful job. The lab ships the UO logs to Loki (Promtail, stream label `pod`), which keeps them in the very same layout, so `uo-log-loki.sh` can serve as `E2E_UO_LOG_CMD` (checked against the first run's window: 89061 lines, exactly Loki's own `count_over_time`; the oldest successful job id was present) |
 | 11 | Duration | not measured | dominated by waiting on the UO; record the first real run's duration here |
 
 Setup facts the probe established (generic; the real values belong in your env file):
@@ -422,3 +423,4 @@ management phase and mis-reported cleanup. Each finding changed the suite:
 | I1-I13 (I9a/b, I10a-d) | `inventory.sh` |
 | M1-M24 and sub-IDs, K105-K108 | `management.sh` |
 | B1-B5 | `baseline.sh` |
+| (K108 log source, optional) | `uo-log-loki.sh` |

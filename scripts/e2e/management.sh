@@ -552,6 +552,12 @@ if want K108; then
   else
     E2E_HIST_LIMIT=2000
     hist_recent | jq -r --arg p "$PREFIX" '.[]? | select((.ClientMachine | startswith($p + "-")) and .Result == "Success") | .JobHistoryId' > "$TMPD/okids"
+    # A log source that can be windowed (scripts/e2e/uo-log-loki.sh) reads E2E_LOG_SINCE: start
+    # 10 minutes before the first job of this run (any phase), so the whole run is covered.
+    if [ -z "${E2E_LOG_SINCE:-}" ]; then
+      E2E_LOG_SINCE=$(hist_recent | jq -r --arg p "$PREFIX" '[.[]? | select((.ClientMachine | startswith($p + "-")) and ((.OperationStart // "") != "")) | .OperationStart | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601] | min // empty | . - 600 | todate' 2>/dev/null) || E2E_LOG_SINCE=""
+    fi
+    export E2E_LOG_SINCE
     lab_uo_logs > "$TMPD/uolog" || true
     if [ ! -s "$TMPD/uolog" ]; then
       skip K108 "log noise on successful jobs" "E2E_UO_LOG_CMD printed nothing"

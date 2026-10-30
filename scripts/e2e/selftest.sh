@@ -59,6 +59,11 @@ cat > "$T/bin/kubectl" <<'EOF'
 #!/usr/bin/env bash
 printf 'kubectl %s\n' "$*" >> "$MOCK_LOG"
 [ "${MOCK_KUBE:-ok}" = down ] && { echo "Unable to connect to the server" >&2; exit 1; }
+case "$*" in
+  *"get --raw"*query_range*)
+    n=$(cat "$MOCK_LOKI_DIR/n" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$MOCK_LOKI_DIR/n"
+    cat "$MOCK_LOKI_DIR/page$n.json" ;;
+esac
 exit 0
 EOF
 cat > "$T/bin/kfclab" <<'EOF'
@@ -233,6 +238,36 @@ fi
 n_un=$(unsched true)
 if [ "$n_un" = 0 ]; then ok "E2E_NO_UNSCHEDULE=true keeps Command's retries (0 Unschedule calls)"
 else fail "E2E_NO_UNSCHEDULE=true must not unschedule (calls: $n_un)"; fi
+
+# ---- uo-log-loki.sh paging ----------------------------------------------------------
+# Loki returns at most 5000 entries per query. Page 1 is full and ends with two entries that
+# share a timestamp; page 2 (the next query starts AT that timestamp) repeats them and adds a third
+# entry with the same timestamp plus one later entry. Expected: every line exactly once, in order.
+export MOCK_LOKI_DIR=$T/loki; mkdir -p "$MOCK_LOKI_DIR"; rm -f "$MOCK_LOKI_DIR"/*
+# timestamps are 19-digit strings (as Loki sends them; jq numbers would lose the precision)
+TSP=1000000000000   # ts(i) = TSP + (100000 + i)
+jq -n --arg p "$TSP" '
+  def ts($i): $p + (($i + 100000) | tostring);
+  def e($i; $t): [$t, "line \($i)"];
+  {status:"success", data:{resultType:"streams", result:[{stream:{}, values:
+    ([range(1; 4999) | e(.; ts(.))] + [e(4999; ts(4999)), e(5000; ts(4999))])}]}}' > "$MOCK_LOKI_DIR/page1.json"
+jq -n --arg p "$TSP" '
+  def ts($i): $p + (($i + 100000) | tostring);
+  {status:"success", data:{resultType:"streams", result:[{stream:{}, values:
+    [[ts(4999), "line 4999"], [ts(4999), "line 5000"], [ts(4999), "line 5001"], [ts(5000), "line 5002"]]}]}}' > "$MOCK_LOKI_DIR/page2.json"
+: > "$MOCK_LOG"
+loki_out=$(E2E_LOKI_SERVICE=ns1/loki-svc:3100 E2E_LOKI_QUERY='{pod="p"}' E2E_LOG_SINCE=2026-01-01T00:00:00Z E2E_LOG_UNTIL=2026-01-01T01:00:00Z \
+           "$HERE/uo-log-loki.sh" 2>"$T/loki.err"); loki_rc=$?
+if [ "$loki_rc" -eq 0 ] \
+   && [ "$(printf '%s\n' "$loki_out" | wc -l | tr -d ' ')" -eq 5002 ] \
+   && [ "$(printf '%s\n' "$loki_out" | sort | uniq -d | wc -l | tr -d ' ')" -eq 0 ] \
+   && [ "$(printf '%s\n' "$loki_out" | sed -n 5001p)" = "line 5001" ] \
+   && [ "$(printf '%s\n' "$loki_out" | tail -1)" = "line 5002" ] \
+   && grep -q "start=${TSP}104999" "$MOCK_LOG"; then
+  ok "uo-log-loki.sh pages through Loki without duplicating or losing entries that share a timestamp"
+else
+  fail "uo-log-loki.sh paging (exit $loki_rc, $(printf '%s\n' "$loki_out" | wc -l | tr -d ' ') lines)"; head -3 "$T/loki.err"
+fi
 
 # ---- dry run -------------------------------------------------------------------
 : > "$MOCK_LOG"
