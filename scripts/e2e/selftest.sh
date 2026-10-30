@@ -33,7 +33,7 @@ fail() { printf 'FAIL  %s\n' "$1"; FAILS=$((FAILS + 1)); }
 mkdir -p "$T/bin"
 cat > "$T/bin/curl" <<'EOF'
 #!/usr/bin/env bash
-# mock curl: MOCK_CURL = down | http500 | notarray | empty | rejected
+# mock curl: MOCK_CURL = down | http500 | notarray | empty | rejected | history
 out=""; method=GET; url=""
 while [ $# -gt 0 ]; do
   case $1 in
@@ -52,6 +52,7 @@ case ${MOCK_CURL:-down} in
   notarray) printf '{}' > "$out"; printf '200' ;;
   empty)    printf '[]' > "$out"; printf '200' ;;
   rejected) printf '{"ErrorCode":"0xA0110010","Message":"Jobs could not be scheduled.","FailedOperations":[{"Identifier":"x","Reason":"No private key could be found for the given certificate"}]}' > "$out"; printf '400' ;;
+  history)  case $url in *JobHistory*) cp "$MOCK_HIST" "$out" ;; *) printf '{}' > "$out" ;; esac; printf '200' ;;
 esac
 EOF
 cat > "$T/bin/kubectl" <<'EOF'
@@ -200,6 +201,38 @@ if printf '%s' "$h500" | grep -q 'RESULT=Rejected fails=1' && printf '%s\n' "$h5
 else
   fail "expect-rejection mode must not take an HTTP 5xx for a refusal"; printf '%s\n' "$h500" | tail -5
 fi
+
+# ---- failed jobs are unscheduled ---------------------------------------------------
+# Command re-runs a failed job every ~5 minutes; a retry of a refused Add recreated a secret that
+# a later Remove had deleted (first real run, M7). batch_wait unschedules such a job.
+export MOCK_HIST=$T/hist.json
+jq -n '[{JobHistoryId:5,JobId:"11111111-2222-3333-4444-555555555555",ClientMachine:"cm-x",StorePath:"ns/sec",JobType:"K8SSecretManagement",Status:"CompletedWillRetry",Result:"Failure",Message:"refused"},
+        {JobHistoryId:6,JobId:"66666666-2222-3333-4444-555555555555",ClientMachine:"cm-x",StorePath:"ns/other",JobType:"K8SSecretManagement",Status:"Completed",Result:"Success",Message:""}]' > "$MOCK_HIST"
+unsched() { # NO_UNSCHEDULE (true|false) -> number of Unschedule calls
+  : > "$MOCK_LOG"
+  (
+    PHASE=selftest
+    . "$HERE/lib.sh"
+    e2e_init --prefix "$P" --workdir "$T/w6$$$RANDOM" > /dev/null
+    export MOCK_CURL=history
+    export E2E_NO_UNSCHEDULE=$1
+    BATCH_BASE=0
+    job_register fail1 cm-x ns/sec 'Management$'
+    job_register good1 cm-x ns/other 'Management$'
+    batch_wait
+    echo "RESULTS $(job_result fail1)/$(job_result good1)"
+  ) > "$T/unsched.out" 2>&1
+  grep -c 'POST .*OrchestratorJobs/Unschedule' "$MOCK_LOG" || true
+}
+n_un=$(unsched false)
+if [ "$n_un" = 1 ] && grep -q 'RESULTS Failure/Success' "$T/unsched.out"; then
+  ok "a failed (CompletedWillRetry) job is unscheduled, a successful one is left alone (1 Unschedule call)"
+else
+  fail "batch_wait must unschedule exactly the failed job (calls: $n_un)"; tail -5 "$T/unsched.out"
+fi
+n_un=$(unsched true)
+if [ "$n_un" = 0 ]; then ok "E2E_NO_UNSCHEDULE=true keeps Command's retries (0 Unschedule calls)"
+else fail "E2E_NO_UNSCHEDULE=true must not unschedule (calls: $n_un)"; fi
 
 # ---- dry run -------------------------------------------------------------------
 : > "$MOCK_LOG"

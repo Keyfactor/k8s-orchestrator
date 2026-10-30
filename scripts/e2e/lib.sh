@@ -459,7 +459,26 @@ _wait_one() { # BASE CM PSUF TRE OUT
   done
 }
 
+# job_unschedule JOBID : stop Command from re-running a failed job. A job that failed is retried
+# about every 5 minutes, and a retry re-applies the same request to whatever the store holds by
+# then (the first real run: a refused Add was retried after a later Remove had deleted the
+# secret, and recreated it). The suite has already recorded the failure it waited for, so the
+# retries have no value and can only disturb later cases. Best effort: a failure here is a
+# warning. E2E_NO_UNSCHEDULE=true keeps Command's retries.
+job_unschedule() {
+  local jid=$1 body
+  dry && return 0
+  [ "${E2E_NO_UNSCHEDULE:-false}" = true ] && return 0
+  [ -n "$jid" ] || return 0
+  body=$(mktemp "$TMPD/unsch.XXXXXX") || return 0
+  jq -n --arg j "$jid" '{JobIds:[$j]}' > "$body"
+  api POST /OrchestratorJobs/Unschedule "$body" >/dev/null || warn "could not unschedule the retries of failed job $jid: $(api_reason)"
+  rm -f "$body"
+  return 0
+}
+
 # batch_wait : wait for every registered job; results in $WORK/jobs/LABEL.json
+# (a job that failed and will be retried by Command is unscheduled, see job_unschedule)
 batch_wait() {
   local label base cm psuf tre rc
   dry && return 0
@@ -467,7 +486,7 @@ batch_wait() {
   while IFS='|' read -r -u 3 label base cm psuf tre; do
     _wait_one "$base" "$cm" "$psuf" "$tre" "$WORK/jobs/$label.json"; rc=$?
     case $rc in
-      0) : ;;
+      0) [ "$(job_status "$label")" = CompletedWillRetry ] && job_unschedule "$(jq -r '.JobId // empty' "$WORK/jobs/$label.json" 2>/dev/null)" ;;
       2) jq -n '{Result:"Error",Status:"Error",Message:"the Command job history could not be read (API errors for about a minute); not waiting any longer"}' > "$WORK/jobs/$label.json" ;;
       *) jq -n --arg m "timed out after ${E2E_JOB_TIMEOUT}s waiting for the job in Command job history" '{Result:"Timeout",Status:"Timeout",Message:$m}' > "$WORK/jobs/$label.json" ;;
     esac
