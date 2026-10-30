@@ -260,7 +260,7 @@ not part of the contract.
 | M23d | K8SCluster | cert-only Add `<m>/secrets/opaque/cl-nokey` (leaf6) | created, no key |
 | M23e | K8SCluster | Remove `<m>/secrets/tls/cl-tls1` | secret deleted |
 | M23f | K8SCluster | Remove `<m>/secrets/opaque/cl-nokey` | secret deleted |
-| M24 | K8SCert | Add and Remove | **Command refuses at scheduling** (HTTP 4xx for both); K8SCert is read-only |
+| M24 | K8SCert | Add and Remove | **Command refuses at scheduling** (any HTTP >= 400 for both, no job scheduled; the lab answers the Add with 400 and the Remove with 500, a Command quirk); K8SCert is read-only |
 
 `<m>` is the namespace `<p>-m`. The management sequence is single-shot: it refuses to start if `<p>-m` already holds
 secrets.
