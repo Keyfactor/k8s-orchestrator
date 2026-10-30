@@ -228,7 +228,7 @@ not part of the contract.
 | M7 | K8SSecret (M1) | Remove via the inventory alias | job Success; secret deleted |
 | M8a | K8STLSSecr (include chain) | Add leaf3 + key | type `kubernetes.io/tls`; `tls.crt` = leaf3, int, root; key present |
 | M8b | K8STLSSecr (SeparateChain=true) | Add leaf3 + key | `tls.crt` = leaf3; `ca.crt` = {int, root}; key present |
-| M8c | same | Remove (no alias) | job Success; secret deleted |
+| M8c | same | Remove (alias = secret name; Command refuses an empty alias) | job Success; secret deleted |
 | M9 | K8STLSSecr (SeparateChain=true **and** IncludeCertChain=false) | Add leaf3 + key | SeparateChain is overridden: `tls.crt` = leaf3 (1 cert), **no** `ca.crt`; key present |
 | M10 | K8STLSSecr (holds leaf3 + key) | cert-only Add leaf6, overwrite=true | job **Failure** (intentional guard: a cert-only add must not strip an existing key); secret unchanged |
 | M11 | K8STLSSecr (fresh) | cert-only Add leaf6 | job Success; type tls; `tls.crt` leaf6; `tls.key` present but **empty** (a warning is logged); Command shows key=No |

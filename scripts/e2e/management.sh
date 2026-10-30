@@ -304,8 +304,8 @@ wave_begin
 mg_add w2.O1 mg-opaque      leaf6 ""           false false
 mg_add w2.O2 mg-opaque-sep  leaf4 mg-opaque-sep true true
 mg_rm  w2.O4 mg-opaque2     mg-opaque2
-mg_add w2.T1 mg-tls         leaf6 ""           false true
-mg_rm  w2.T2 mg-tls-sep     ""
+mg_add w2.T1 mg-tls         leaf6 mg-tls       false true
+mg_rm  w2.T2 mg-tls-sep     mg-tls-sep
 mg_rm  w2.T4 mg-tls2        mg-tls2
 mg_add w2.J1 mg-jks         leaf6 leaf6        false false
 mg_add w2.J2 mg-jks-nochain leaf4 leaf3        true  false
